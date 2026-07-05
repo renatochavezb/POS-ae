@@ -1,0 +1,165 @@
+import { NextResponse } from "next/server";
+import connectMongo from "@/libs/mongoose";
+import { requirePosSession } from "@/libs/posAuth";
+import { mapAppointmentDoc } from "@/libs/posMappers";
+import PosAppointment from "@/models/PosAppointment";
+import PosStaff from "@/models/PosStaff";
+import PosClient from "@/models/PosClient";
+import PosReceptionist from "@/models/PosReceptionist";
+import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
+import { mapReceptionistDoc } from "@/libs/posMappers";
+import { seedPosReceptionistsIfEmpty, refreshReceptionistDailyCounts } from "@/libs/posSeed";
+import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
+import { upsertDailySnapshot } from "@/libs/posDailyStats";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const authResult = await requirePosSession();
+    if (authResult.error) return authResult.error;
+
+    await connectMongo();
+
+    const appointments = await PosAppointment.find().sort({ date: 1, time: 1 });
+    return NextResponse.json(appointments.map(mapAppointmentDoc));
+  } catch (error) {
+    console.error("GET /api/pos/appointments", error);
+    return NextResponse.json(
+      { error: error.message || "No se pudo cargar la agenda" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req) {
+  try {
+    const authResult = await requirePosSession();
+    if (authResult.error) return authResult.error;
+
+    const body = await req.json();
+
+    if (
+      !body?.date ||
+      !body?.time ||
+      !body?.clientName ||
+      !body?.clientId ||
+      !body?.staffId ||
+      !body?.serviceName
+    ) {
+      return NextResponse.json(
+        { error: "Faltan datos obligatorios para crear la cita" },
+        { status: 400 }
+      );
+    }
+
+    await connectMongo();
+    await seedPosReceptionistsIfEmpty();
+
+    const duration = body.duration ?? 60;
+    const conflict = await findConflictingAppointment({
+      date: body.date,
+      staffId: body.staffId,
+      time: body.time,
+      duration,
+    });
+
+    if (conflict) {
+      return NextResponse.json(
+        {
+          error: `Horario ocupado: ${conflict.clientName} ya tiene cita con ${conflict.staffName} a las ${conflict.time}.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    const appointmentCode =
+      body.appointmentCode || `APP-${Date.now().toString()}`;
+
+    const headerReceptionistId = (req.headers.get("x-pos-receptionist-id") || "").trim();
+    let bookedByReceptionistId = (
+      body.bookedByReceptionistId ||
+      headerReceptionistId ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+    const todayLabel = getTodaySpanishShortDate();
+    let bookedByReceptionistName = (body.bookedByReceptionistName || "").trim();
+
+    if (bookedByReceptionistId && !bookedByReceptionistName) {
+      const receptionist = await PosReceptionist.findOne({
+        receptionistCode: bookedByReceptionistId,
+      });
+      bookedByReceptionistName = receptionist?.name || "";
+    }
+
+    const created = await PosAppointment.create({
+      appointmentCode,
+      date: body.date,
+      time: body.time,
+      serviceName: body.serviceName,
+      serviceSubtitle: body.serviceSubtitle || "",
+      serviceImage: body.serviceImage || "",
+      clientName: body.clientName,
+      clientId: body.clientId,
+      staffId: body.staffId,
+      staffName: body.staffName,
+      staffInitials: body.staffInitials,
+      cost: body.cost ?? 0,
+      duration: body.duration ?? 60,
+      status: body.status || "agendado",
+      bookedByReceptionistId,
+      bookedByReceptionistName,
+      bookedOnDate: bookedByReceptionistId ? todayLabel : "",
+    });
+
+    if (body.staffStats) {
+      await PosStaff.findOneAndUpdate(
+        { staffCode: body.staffStats.staffId || body.staffId },
+        {
+          totalToday: body.staffStats.totalToday,
+          weeklyRevenue: body.staffStats.weeklyRevenue,
+        }
+      );
+    }
+
+    if (body.clientStats?.clientId) {
+      await PosClient.findOneAndUpdate(
+        { clientCode: body.clientStats.clientId },
+        {
+          visitsCount: body.clientStats.visitsCount,
+          totalSpent: body.clientStats.totalSpent,
+          averageTicket: body.clientStats.averageTicket,
+        }
+      );
+    }
+
+    if (bookedByReceptionistId) {
+      await refreshReceptionistDailyCounts(todayLabel);
+    }
+
+    await upsertDailySnapshot(body.date);
+
+    let receptionistsSnapshot = null;
+    if (bookedByReceptionistId) {
+      const receptionists = await PosReceptionist.find().sort({ name: 1 });
+      receptionistsSnapshot = receptionists.map(mapReceptionistDoc);
+    }
+
+    return NextResponse.json(
+      {
+        ...mapAppointmentDoc(created),
+        ...(receptionistsSnapshot ? { receptionists: receptionistsSnapshot } : {}),
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("POST /api/pos/appointments", error);
+    return NextResponse.json(
+      { error: error.message || "No se pudo crear la cita" },
+      { status: 500 }
+    );
+  }
+}

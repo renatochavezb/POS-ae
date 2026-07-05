@@ -1,0 +1,63 @@
+import { NextResponse } from "next/server";
+import connectMongo from "@/libs/mongoose";
+import { requirePosSession } from "@/libs/posAuth";
+import { mapBlockedSlotDoc } from "@/libs/posMappers";
+import PosBlockedSlot from "@/models/PosBlockedSlot";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const authResult = await requirePosSession();
+    if (authResult.error) return authResult.error;
+
+    await connectMongo();
+
+    const blockedSlots = await PosBlockedSlot.find().sort({ date: 1, time: 1 });
+    return NextResponse.json(blockedSlots.map(mapBlockedSlotDoc));
+  } catch (error) {
+    console.error("GET /api/pos/blocked-slots", error);
+    return NextResponse.json(
+      { error: error.message || "No se pudieron cargar los cierres de horario" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req) {
+  try {
+    const authResult = await requirePosSession();
+    if (authResult.error) return authResult.error;
+
+    const body = await req.json();
+
+    if (!body?.date || !body?.staffId || !body?.time) {
+      return NextResponse.json(
+        { error: "Fecha, manicurista y hora son obligatorios" },
+        { status: 400 }
+      );
+    }
+
+    await connectMongo();
+
+    const blockedSlotCode =
+      body.blockedSlotCode || `BLK-${Date.now().toString().slice(-6)}`;
+
+    const created = await PosBlockedSlot.create({
+      blockedSlotCode,
+      date: body.date,
+      staffId: body.staffId,
+      time: body.time,
+      duration: body.duration ?? 30,
+      reason: body.reason || "",
+    });
+
+    return NextResponse.json(mapBlockedSlotDoc(created), { status: 201 });
+  } catch (error) {
+    console.error("POST /api/pos/blocked-slots", error);
+    return NextResponse.json(
+      { error: error.message || "No se pudo cerrar el horario" },
+      { status: 500 }
+    );
+  }
+}

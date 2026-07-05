@@ -1,0 +1,929 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Trash2,
+  Lock,
+  X,
+  CheckCircle2
+} from 'lucide-react';
+import { Appointment, DailyStats, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
+import {
+  buildCalendarHourSlots,
+  DEFAULT_SCHEDULE_CONFIG,
+  formatAppointmentTimeRange,
+  formatDuration,
+  getMonday,
+  formatSpanishShortDate,
+  addDays,
+  parseTimeToMinutes,
+  isStaffTimeBlocked,
+  getDurationOptionsFromConfig,
+} from '../scheduleUtils';
+import posApi from '@/libs/posApi';
+import { getStaffById } from '../staffColors';
+import { formatServicePrice } from '../data';
+import AppointmentStatusControls from './AppointmentStatusControls';
+import {
+  canCancelAppointment,
+  canDeleteAppointment,
+  isAppointmentPaid,
+  isAppointmentUnconfirmed,
+  normalizeAppointmentStatus,
+} from '../appointmentStatus';
+import { AppointmentStatus } from '../types';
+
+interface AgendaViewProps {
+  appointments: Appointment[];
+  staffList: Staff[];
+  blockedSlots: StaffBlockedSlot[];
+  scheduleConfig?: ScheduleConfig;
+  onOpenNewAppointment: (defaultDay?: string, defaultTime?: string, staffId?: string) => void;
+  onSelectStaff: (id: string) => void;
+  onDeleteAppointment: (appointmentId: string) => void;
+  onCancelAppointment: (appointmentId: string) => void;
+  onUpdateAppointmentStatus: (appointmentId: string, status: AppointmentStatus) => void;
+  onCloseStaffSlot: (slot: Omit<StaffBlockedSlot, 'id'>) => void;
+  onRemoveBlockedSlot: (blockedSlotId: string) => void;
+}
+
+type CloseDraft = {
+  date: string;
+  time: string;
+  staffId: string;
+  duration: number;
+  reason: string;
+};
+
+type WeekDay = {
+  name: string;
+  date: string;
+  fullDate: string;
+  rawDate: Date;
+};
+
+const generateWeekDays = (monday: Date): WeekDay[] => {
+  const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const tempDate = new Date(monday);
+    tempDate.setDate(monday.getDate() + index);
+
+    return {
+      name: dayNames[index],
+      date: String(tempDate.getDate()),
+      fullDate: `${tempDate.getDate()} ${monthNames[tempDate.getMonth()]}, ${tempDate.getFullYear()}`,
+      rawDate: tempDate
+    };
+  });
+};
+
+const isSameCalendarDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const HALF_HOUR_HEIGHT = 44;
+
+function getTimelineMetrics(config: ScheduleConfig) {
+  const startMinutes = config.startHour * 60;
+  const endMinutes = config.endHour * 60;
+  const totalMinutes = endMinutes - startMinutes;
+  const halfHourSlots = totalMinutes / 30;
+  const height = halfHourSlots * HALF_HOUR_HEIGHT;
+
+  return { startMinutes, endMinutes, totalMinutes, halfHourSlots, height };
+}
+
+const EMPTY_DAILY_STATS: DailyStats = {
+  date: '',
+  citas: 0,
+  sinConfirmar: 0,
+  pagadas: 0,
+  canceladas: 0,
+};
+
+export default function AgendaView({
+  appointments,
+  staffList,
+  blockedSlots,
+  scheduleConfig = DEFAULT_SCHEDULE_CONFIG,
+  onOpenNewAppointment,
+  onSelectStaff,
+  onDeleteAppointment,
+  onCancelAppointment,
+  onUpdateAppointmentStatus,
+  onCloseStaffSlot,
+  onRemoveBlockedSlot
+}: AgendaViewProps) {
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getMonday(new Date()));
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [closeMode, setCloseMode] = useState(false);
+  const [closeDraft, setCloseDraft] = useState<CloseDraft | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [dailyStats, setDailyStats] = useState<DailyStats>(EMPTY_DAILY_STATS);
+
+  const timeline = useMemo(() => getTimelineMetrics(scheduleConfig), [scheduleConfig]);
+  const hours = useMemo(() => buildCalendarHourSlots(scheduleConfig), [scheduleConfig]);
+
+  const days = useMemo(() => generateWeekDays(currentWeekStart), [currentWeekStart]);
+  const selectedDayLabel = formatSpanishShortDate(selectedDate);
+
+  const todayAppointments = useMemo(
+    () => appointments.filter((app) => app.date === selectedDayLabel),
+    [appointments, selectedDayLabel]
+  );
+
+  const todayBlockedSlots = useMemo(
+    () => blockedSlots.filter((slot) => slot.date === selectedDayLabel),
+    [blockedSlots, selectedDayLabel]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    posApi
+      .getAppointmentDailyStats(selectedDayLabel)
+      .then((stats) => {
+        if (!cancelled) setDailyStats(stats);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDailyStats({
+            date: selectedDayLabel,
+            citas: todayAppointments.length,
+            sinConfirmar: todayAppointments.filter((app) =>
+              isAppointmentUnconfirmed(app.status)
+            ).length,
+            pagadas: todayAppointments.filter((app) => isAppointmentPaid(app.status)).length,
+            canceladas: todayAppointments.filter(
+              (app) => normalizeAppointmentStatus(app.status) === 'cancelled'
+            ).length,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDayLabel, appointments, todayAppointments]);
+
+  const getIsToday = (dayFullDate: string) => {
+    const normalizedDay = dayFullDate.replace(',', '');
+    const normalizedToday = formatSpanishShortDate(new Date()).replace(',', '');
+    return normalizedDay === normalizedToday;
+  };
+
+  const getIsSelectedDay = (dayFullDate: string) => dayFullDate === selectedDayLabel;
+
+  const handleGoToToday = () => {
+    const today = new Date();
+    setCurrentWeekStart(getMonday(today));
+    setSelectedDate(today);
+  };
+
+  const handlePrevWeek = () => {
+    const prevMonday = addDays(currentWeekStart, -7);
+    setCurrentWeekStart(prevMonday);
+    setSelectedDate(prevMonday);
+  };
+
+  const handleNextWeek = () => {
+    const nextMonday = addDays(currentWeekStart, 7);
+    setCurrentWeekStart(nextMonday);
+    setSelectedDate(nextMonday);
+  };
+
+  const formatSelectedDayHeading = (date: Date) => {
+    const months = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    const weekdays = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    return `${weekdays[date.getDay()]}, ${date.getDate()} de ${months[date.getMonth()]} ${date.getFullYear()}`;
+  };
+
+  const handleDeleteAppointment = (appointment: Appointment) => {
+    if (!canDeleteAppointment(appointment.status)) {
+      window.alert('No se puede eliminar una cita confirmada o pagada.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `¿Eliminar permanentemente la cita de ${appointment.clientName} (${appointment.time})?\n\nSe borrará por completo y NO contará como cancelada.`
+    );
+    if (confirmed) {
+      onDeleteAppointment(appointment.id);
+    }
+  };
+
+  const handleCancelAppointment = (appointment: Appointment) => {
+    if (!canCancelAppointment(appointment.status)) {
+      window.alert('No se puede cancelar una cita confirmada o pagada.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `¿Cancelar la cita de ${appointment.clientName} (${appointment.time})?\n\nQuedará registrada en el contador de canceladas.`
+    );
+    if (confirmed) {
+      onCancelAppointment(appointment.id);
+      if (selectedAppointment?.id === appointment.id) {
+        setSelectedAppointment({ ...appointment, status: 'cancelled' });
+      }
+    }
+  };
+
+  const gridTemplateColumns = `48px repeat(${staffList.length}, minmax(0, 1fr))`;
+
+  const getTimelineLayout = (time: string, duration: number) => {
+    const startMinutes = parseTimeToMinutes(time);
+    if (startMinutes < timeline.startMinutes || startMinutes >= timeline.endMinutes) {
+      return null;
+    }
+
+    const top = ((startMinutes - timeline.startMinutes) / 30) * HALF_HOUR_HEIGHT;
+    const height = Math.max(
+      HALF_HOUR_HEIGHT - 4,
+      (duration / 30) * HALF_HOUR_HEIGHT - 4
+    );
+
+    return { top, height, duration };
+  };
+
+  const getAppointmentLayout = (appointment: Appointment) =>
+    getTimelineLayout(appointment.time, appointment.duration ?? 60);
+
+  const formatSlotTime = (slotIndex: number) => {
+    const totalMinutes = timeline.startMinutes + slotIndex * 30;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const handleSlotClick = (slotTime: string, staffId: string) => {
+    if (closeMode) {
+      setCloseDraft({
+        date: selectedDayLabel,
+        time: slotTime,
+        staffId,
+        duration: 30,
+        reason: scheduleConfig.closeReasons[0] || 'Descanso'
+      });
+      return;
+    }
+
+    if (isStaffTimeBlocked(blockedSlots, selectedDayLabel, staffId, slotTime, 30)) {
+      return;
+    }
+
+    onOpenNewAppointment(selectedDayLabel, slotTime, staffId);
+  };
+
+  const handleConfirmCloseSlot = () => {
+    if (!closeDraft) return;
+
+    onCloseStaffSlot({
+      date: closeDraft.date,
+      staffId: closeDraft.staffId,
+      time: closeDraft.time,
+      duration: closeDraft.duration,
+      reason: closeDraft.reason
+    });
+    setCloseDraft(null);
+    setCloseMode(false);
+  };
+
+  const handleRemoveBlockedSlot = (slot: StaffBlockedSlot) => {
+    const staffName = staffList.find((member) => member.id === slot.staffId)?.name ?? slot.staffId;
+    const confirmed = window.confirm(
+      `¿Abrir el horario de ${staffName} (${slot.time}, ${formatDuration(slot.duration)})?`
+    );
+    if (confirmed) {
+      onRemoveBlockedSlot(slot.id);
+    }
+  };
+
+  return (
+    <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-full mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Agenda por especialista</span>
+          <h2 className="font-display text-3xl font-bold text-primary mt-1">Calendario del Día</h2>
+          <p className="text-on-surface-variant text-sm mt-1">
+            {closeMode
+              ? 'Haz clic en un horario para cerrarlo. No se podrán agendar citas en ese bloque.'
+              : 'Cada columna es una manicurista. Usa "Cerrar horario" para bloquear tiempos no disponibles.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setCloseMode((prev) => !prev);
+              setCloseDraft(null);
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all border ${
+              closeMode
+                ? 'bg-primary text-on-primary border-primary shadow-sm'
+                : 'border-primary/10 text-primary hover:bg-surface-container-low'
+            }`}
+          >
+            <Lock className="w-4 h-4" />
+            <span>{closeMode ? 'Cerrar: activo' : 'Cerrar horario'}</span>
+          </button>
+          <button
+            onClick={() => onOpenNewAppointment(selectedDayLabel)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-all shadow-sm"
+          >
+            <Plus className="w-4 h-4 text-secondary" />
+            <span>Reservar Cita</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden flex flex-col">
+          <div className="p-4 md:p-6 border-b border-primary/5 bg-surface-container-low/30 space-y-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <Calendar className="w-5 h-5 text-secondary shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-display font-bold text-primary text-base">{formatSelectedDayHeading(selectedDate)}</h3>
+                  <p className="text-[10px] text-outline uppercase tracking-widest mt-0.5">Vista operativa · 09:00 – 21:00</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="px-3 py-2 rounded-xl border border-primary/10 bg-primary/5 text-center min-w-[76px]">
+                    <p className="text-lg font-display font-extrabold text-primary leading-none">
+                      {dailyStats.citas}
+                    </p>
+                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Citas</p>
+                  </div>
+                  <div className="px-3 py-2 rounded-xl border border-sky-200 bg-sky-50 text-center min-w-[76px]">
+                    <p className="text-lg font-display font-extrabold text-sky-700 leading-none">
+                      {dailyStats.sinConfirmar}
+                    </p>
+                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Sin confirmar</p>
+                  </div>
+                  <div className="px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-center min-w-[76px]">
+                    <p className="text-lg font-display font-extrabold text-emerald-700 leading-none">
+                      {dailyStats.pagadas}
+                    </p>
+                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Pagadas</p>
+                  </div>
+                  <div className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-center min-w-[76px]">
+                    <p className="text-lg font-display font-extrabold text-red-700 leading-none">
+                      {dailyStats.canceladas}
+                    </p>
+                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Canceladas</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handlePrevWeek}
+                    title="Semana anterior"
+                    className="p-1.5 rounded-lg border border-primary/5 hover:bg-surface-container-low text-primary transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleGoToToday}
+                    className="px-3 py-1 text-xs font-sans font-bold uppercase tracking-wider text-primary hover:bg-surface-container-low rounded-lg transition-colors cursor-pointer"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    onClick={handleNextWeek}
+                    title="Semana siguiente"
+                    className="p-1.5 rounded-lg border border-primary/5 hover:bg-surface-container-low text-primary transition-colors cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-2">
+              {days.map((day) => {
+                const isToday = getIsToday(day.fullDate);
+                const isSelected = getIsSelectedDay(day.fullDate);
+                const dayCount = appointments.filter((app) => app.date === day.fullDate).length;
+
+                return (
+                  <button
+                    key={day.fullDate}
+                    type="button"
+                    onClick={() => setSelectedDate(new Date(day.rawDate))}
+                    className={`rounded-xl border px-2 py-2 text-center transition-all ${
+                      isSelected
+                        ? 'border-primary bg-primary text-on-primary shadow-sm'
+                        : isToday
+                        ? 'border-secondary/40 bg-secondary/10 text-primary'
+                        : 'border-primary/10 hover:bg-surface-container-low text-primary'
+                    }`}
+                  >
+                    <span className="text-[10px] font-bold uppercase block opacity-80">{day.name}</span>
+                    <span className="text-sm font-display font-extrabold block">{day.date}</span>
+                    {dayCount > 0 && (
+                      <span className={`text-[9px] font-bold mt-1 block ${isSelected ? 'text-on-primary/80' : 'text-secondary'}`}>
+                        {dayCount} cita{dayCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {todayAppointments.length === 0 && (
+              <p className="text-[11px] text-outline leading-relaxed px-1">
+                No hay citas para este día. Haz clic en cualquier celda del calendario para agendar.
+              </p>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <div className="w-full min-w-[860px]">
+              <div
+                className="border-b border-primary/5 bg-surface-container-low/20"
+                style={{ display: 'grid', gridTemplateColumns }}
+              >
+                <div className="px-1 py-2 border-r border-primary/5 flex items-center justify-center text-[9px] text-outline font-bold uppercase tracking-widest">
+                  Hora
+                </div>
+                {staffList.map((staff) => (
+                  <button
+                    key={staff.id}
+                    type="button"
+                    onClick={() => onSelectStaff(staff.id)}
+                    title={`${staff.name} — ${staff.role}`}
+                    className="px-1 py-2 border-r border-primary/5 text-center hover:bg-surface-container-low/40 transition-colors min-w-0"
+                    style={{ borderTop: `3px solid ${staff.color}` }}
+                  >
+                    <div
+                      className="w-7 h-7 rounded-full mx-auto flex items-center justify-center text-[9px] font-bold"
+                      style={{ backgroundColor: staff.colorLight, color: staff.color }}
+                    >
+                      {staff.id}
+                    </div>
+                    <p className="text-[10px] font-bold text-primary mt-1 truncate px-0.5">{staff.name}</p>
+                  </button>
+                ))}
+              </div>
+
+              <div className="max-h-[calc(100vh-280px)] min-h-[520px] overflow-y-auto">
+                <div
+                  className="relative"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns,
+                    height: timeline.height
+                  }}
+                >
+                  <div className="relative border-r border-primary/5 bg-surface-container-lowest">
+                    {hours.map((hour, index) => (
+                      <div
+                        key={hour}
+                        className="absolute left-0 right-0 -translate-y-1/2 text-center text-[10px] font-mono font-bold text-primary"
+                        style={{
+                          top: Math.min(index * HALF_HOUR_HEIGHT * 2, timeline.height - 8)
+                        }}
+                      >
+                        {hour}
+                      </div>
+                    ))}
+                  </div>
+
+                  {staffList.map((staff) => {
+                    const staffAppointments = appointments.filter(
+                      (appointment) =>
+                        appointment.date === selectedDayLabel &&
+                        appointment.staffId === staff.id
+                    );
+                    const staffBlockedSlots = blockedSlots.filter(
+                      (slot) => slot.date === selectedDayLabel && slot.staffId === staff.id
+                    );
+                    const isTodaySelected = isSameCalendarDay(selectedDate, new Date());
+
+                    return (
+                      <div
+                        key={staff.id}
+                        className={`relative border-r border-primary/5 min-w-0 ${
+                          isTodaySelected ? 'bg-primary/[0.015]' : ''
+                        }`}
+                      >
+                        {Array.from({ length: timeline.halfHourSlots }).map((_, slotIndex) => {
+                          const slotTime = formatSlotTime(slotIndex);
+                          const isHourBoundary = slotIndex % 2 === 0;
+                          const isBlocked = isStaffTimeBlocked(
+                            blockedSlots,
+                            selectedDayLabel,
+                            staff.id,
+                            slotTime,
+                            30
+                          );
+
+                          return (
+                            <button
+                              key={`${staff.id}-${slotTime}`}
+                              type="button"
+                              onClick={() => handleSlotClick(slotTime, staff.id)}
+                              className={`absolute left-0 right-0 border-primary/5 transition-colors group ${
+                                isHourBoundary ? 'border-t' : 'border-t border-dashed opacity-70'
+                              } ${
+                                closeMode
+                                  ? 'hover:bg-amber-500/10 cursor-crosshair'
+                                  : isBlocked
+                                  ? 'cursor-not-allowed'
+                                  : 'hover:bg-surface-container-low/40 cursor-pointer'
+                              }`}
+                              style={{
+                                top: slotIndex * HALF_HOUR_HEIGHT,
+                                height: HALF_HOUR_HEIGHT
+                              }}
+                              title={
+                                closeMode
+                                  ? `Cerrar horario de ${staff.name} a las ${slotTime}`
+                                  : isBlocked
+                                  ? `Horario cerrado`
+                                  : `Reservar ${staff.name} a las ${slotTime}`
+                              }
+                            >
+                              {!isBlocked && !closeMode && (
+                                <span
+                                  className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border"
+                                  style={{
+                                    backgroundColor: staff.colorLight,
+                                    borderColor: staff.color,
+                                    color: staff.color
+                                  }}
+                                >
+                                  <Plus className="w-3 h-3" /> {slotTime}
+                                </span>
+                              )}
+                              {closeMode && (
+                                <span className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border border-amber-300 bg-amber-50 text-amber-900">
+                                  <Lock className="w-3 h-3" /> Cerrar {slotTime}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+
+                        {staffBlockedSlots.map((blockedSlot) => {
+                          const layout = getTimelineLayout(blockedSlot.time, blockedSlot.duration);
+                          if (!layout) return null;
+
+                          return (
+                            <div
+                              key={blockedSlot.id}
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute left-1 right-1 rounded-xl border border-dashed border-outline/50 px-2 py-1.5 z-20 group/blocked"
+                              style={{
+                                top: layout.top + 2,
+                                height: layout.height,
+                                background:
+                                  'repeating-linear-gradient(135deg, #eceae4 0, #eceae4 8px, #f7f5ef 8px, #f7f5ef 16px)'
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBlockedSlot(blockedSlot)}
+                                title="Abrir horario"
+                                className="absolute top-1 right-1 p-1 rounded-md opacity-50 hover:opacity-100 hover:bg-black/10 transition-all"
+                                aria-label="Abrir horario"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                              <p className="text-[9px] font-bold uppercase tracking-wider text-outline pr-4">
+                                Cerrado
+                              </p>
+                              <p className="text-[8px] text-outline mt-0.5 line-clamp-1">
+                                {blockedSlot.reason || 'No disponible'}
+                              </p>
+                              <p className="text-[8px] font-mono font-bold text-outline mt-1">
+                                {formatAppointmentTimeRange(blockedSlot.time, layout.duration)}
+                              </p>
+                            </div>
+                          );
+                        })}
+
+                        {staffAppointments.map((appointment) => {
+                          const layout = getAppointmentLayout(appointment);
+                          if (!layout) return null;
+
+                          const appointmentStaff = getStaffById(staffList, appointment.staffId) ?? staff;
+                          const canRemove = canDeleteAppointment(appointment.status);
+
+                          return (
+                            <div
+                              key={appointment.id}
+                              onClick={() => setSelectedAppointment(appointment)}
+                              className="absolute left-1 right-1 rounded-xl p-2 flex flex-col justify-between text-left transition-all hover:-translate-y-0.5 border shadow-sm group/appointment z-10 cursor-pointer"
+                              style={{
+                                top: layout.top + 2,
+                                height: layout.height,
+                                backgroundColor: appointmentStaff.colorLight,
+                                borderColor: appointmentStaff.color,
+                                color: '#1b1c1c'
+                              }}
+                            >
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteAppointment(appointment);
+                                  }}
+                                  title="Eliminar cita"
+                                  className="absolute top-1.5 right-1.5 p-1 rounded-md opacity-40 hover:opacity-100 hover:bg-black/10 transition-all"
+                                  aria-label="Eliminar cita"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                              <div className="pr-5 min-w-0">
+                                <p className="text-[10px] font-bold uppercase tracking-wider truncate">
+                                  {appointment.clientName}
+                                </p>
+                                <p className="text-[9px] opacity-80 mt-0.5 font-sans font-medium line-clamp-1">
+                                  {appointment.serviceName}
+                                </p>
+                              </div>
+                              <div className="mt-1.5 pt-1 border-t border-black/10">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-[9px] font-mono font-bold leading-tight">
+                                    {formatAppointmentTimeRange(appointment.time, layout.duration)}
+                                  </span>
+                                  <span className="text-[8px] font-bold opacity-80 shrink-0">
+                                    {formatDuration(layout.duration)}
+                                  </span>
+                                </div>
+                                <div className="mt-1">
+                                  <AppointmentStatusControls
+                                    compact
+                                    status={appointment.status}
+                                    accentColor={appointmentStaff.color}
+                                    onChange={(nextStatus) =>
+                                      onUpdateAppointmentStatus(appointment.id, nextStatus)
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      {closeDraft && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl border border-primary/5 luxury-shadow p-6 relative">
+            <button
+              type="button"
+              onClick={() => setCloseDraft(null)}
+              className="absolute top-4 right-4 text-outline hover:text-primary transition-colors"
+              title="Cerrar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">
+              Bloquear horario
+            </span>
+            <h3 className="font-display text-xl font-bold text-primary mb-4">
+              {staffList.find((member) => member.id === closeDraft.staffId)?.name ?? closeDraft.staffId}
+            </h3>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Fecha</p>
+                  <p className="font-bold text-primary">{closeDraft.date}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Inicio</p>
+                  <p className="font-bold text-primary">{closeDraft.time}</p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Duración del cierre</label>
+                <select
+                  value={closeDraft.duration}
+                  onChange={(e) =>
+                    setCloseDraft((prev) =>
+                      prev ? { ...prev, duration: Number(e.target.value) } : prev
+                    )
+                  }
+                  className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                >
+                  {getDurationOptionsFromConfig(scheduleConfig).map((minutes) => (
+                    <option key={minutes} value={minutes}>
+                      {formatDuration(minutes)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Motivo</label>
+                <select
+                  value={closeDraft.reason}
+                  onChange={(e) =>
+                    setCloseDraft((prev) =>
+                      prev ? { ...prev, reason: e.target.value } : prev
+                    )
+                  }
+                  className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                >
+                  {scheduleConfig.closeReasons.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-primary/5">
+                <button
+                  type="button"
+                  onClick={() => setCloseDraft(null)}
+                  className="px-4 py-2 border border-primary/10 text-outline hover:text-primary rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCloseSlot}
+                  className="px-5 py-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container font-sans text-xs font-bold uppercase tracking-wider transition-colors"
+                >
+                  Cerrar horario
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedAppointment && (() => {
+        const detailStaff = getStaffById(staffList, selectedAppointment.staffId) ?? staffList[0];
+        const duration = selectedAppointment.duration;
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div
+              className="bg-surface-container-lowest max-w-md w-full rounded-2xl border luxury-shadow overflow-hidden relative"
+              style={{ borderColor: `${detailStaff?.color ?? '#00261b'}40` }}
+            >
+              <div
+                className="h-1.5 w-full"
+                style={{ backgroundColor: detailStaff?.color ?? '#00261b' }}
+              />
+
+              <button
+                type="button"
+                onClick={() => setSelectedAppointment(null)}
+                className="absolute top-4 right-4 text-outline hover:text-primary transition-colors z-10"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="p-6 space-y-5">
+                <div>
+                  <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">
+                    Detalle de cita
+                  </span>
+                  <h3 className="font-display text-xl font-bold text-primary pr-8">
+                    {selectedAppointment.clientName}
+                  </h3>
+                  <p className="text-[10px] text-outline font-mono mt-0.5">
+                    ID cita: {selectedAppointment.id} · Cliente: {selectedAppointment.clientId}
+                  </p>
+                </div>
+
+                <AppointmentStatusControls
+                  status={selectedAppointment.status}
+                  onChange={(nextStatus) => {
+                    onUpdateAppointmentStatus(selectedAppointment.id, nextStatus);
+                    setSelectedAppointment({
+                      ...selectedAppointment,
+                      status: nextStatus,
+                    });
+                  }}
+                />
+
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-surface-container-low/50 border border-primary/5">
+                    <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Servicio</p>
+                    <p className="text-sm font-bold text-primary">{selectedAppointment.serviceName}</p>
+                    {selectedAppointment.serviceSubtitle && (
+                      <p className="text-xs text-on-surface-variant mt-0.5">
+                        {selectedAppointment.serviceSubtitle}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-surface-container-low/50 border border-primary/5">
+                      <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Fecha</p>
+                      <p className="text-xs font-bold text-primary">{selectedAppointment.date}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-surface-container-low/50 border border-primary/5">
+                      <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Horario</p>
+                      <p className="text-xs font-mono font-bold text-primary">
+                        {formatAppointmentTimeRange(selectedAppointment.time, duration)}
+                      </p>
+                      <p className="text-[10px] text-outline mt-0.5">{formatDuration(duration)}</p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-surface-container-low/50 border border-primary/5">
+                    <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-2">Especialista</p>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: detailStaff?.color }}
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-primary">{selectedAppointment.staffName}</p>
+                        <p className="text-[10px] text-outline">{detailStaff?.role}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-surface-container-low/50 border border-primary/5 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Inversión</p>
+                      <p className="text-sm font-display font-extrabold text-primary">
+                        {formatServicePrice(selectedAppointment.cost)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Iniciales</p>
+                      <p className="text-xs font-mono font-bold text-primary">{selectedAppointment.staffInitials}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-3 border-t border-primary/5">
+                  <div className="flex items-center gap-2">
+                    {canCancelAppointment(selectedAppointment.status) && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelAppointment(selectedAppointment)}
+                        className="px-3 py-2 text-amber-800 hover:bg-amber-50 rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors"
+                      >
+                        Cancelar cita
+                      </button>
+                    )}
+                    {canDeleteAppointment(selectedAppointment.status) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `¿Eliminar permanentemente la cita de ${selectedAppointment.clientName}?\n\nSe borrará por completo y NO contará como cancelada.`
+                            )
+                          ) {
+                            onDeleteAppointment(selectedAppointment.id);
+                            setSelectedAppointment(null);
+                          }
+                        }}
+                        className="px-3 py-2 text-red-700 hover:bg-red-50 rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAppointment(null)}
+                      className="px-4 py-2 border border-primary/10 text-outline hover:text-primary rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
