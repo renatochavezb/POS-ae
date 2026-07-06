@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock3, Download, LogIn, LogOut, Wallet } from "lucide-react";
+import { Clock3, Download, LogIn, LogOut, Shield, Wallet } from "lucide-react";
 import posApi from "@/libs/posApi";
 import { AccountantActivity } from "../types";
 import { formatMXN } from "../data";
 
 type AccountantActivityPanelProps = {
-  accountantId: string;
+  accountantId?: string;
   accountantName?: string;
   staffId?: string;
+  staffName?: string;
   limit?: number;
   refreshKey?: number;
 };
@@ -28,24 +29,39 @@ function ActionIcon({ action }: { action: AccountantActivity["action"] }) {
   return <Wallet className="w-3.5 h-3.5" />;
 }
 
+function buildPanelSubtitle({
+  accountantName,
+  staffName,
+}: {
+  accountantName?: string;
+  staffName?: string;
+}) {
+  if (staffName) return `· ${staffName}`;
+  if (accountantName) return `· ${accountantName}`;
+  return "· Administrador";
+}
+
 export default function AccountantActivityPanel({
   accountantId,
   accountantName,
   staffId,
+  staffName,
   limit = 50,
   refreshKey = 0,
 }: AccountantActivityPanelProps) {
   const [activities, setActivities] = useState<AccountantActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
+    setLoadError(null);
 
     posApi
       .getAccountantActivities({
-        accountantId,
-        staffId,
+        ...(accountantId ? { accountantId } : {}),
+        ...(staffId ? { staffId } : {}),
         limit,
       })
       .then((items) => {
@@ -53,7 +69,14 @@ export default function AccountantActivityPanel({
       })
       .catch((error) => {
         console.error(error);
-        if (!cancelled) setActivities([]);
+        if (!cancelled) {
+          setActivities([]);
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "No se pudo cargar la bitácora de contabilidad"
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -66,14 +89,18 @@ export default function AccountantActivityPanel({
 
   return (
     <div className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden">
-      <div className="px-5 py-4 border-b border-primary/5 flex items-center justify-between gap-3">
+      <div className="px-5 py-4 border-b border-primary/5 flex items-start justify-between gap-3">
         <div>
           <span className="text-[10px] text-outline font-bold uppercase tracking-widest block">
             Bitácora contabilidad
           </span>
           <h3 className="font-display text-lg font-bold text-primary">
-            Movimientos {accountantName ? `· ${accountantName}` : ""}
+            Movimientos {buildPanelSubtitle({ accountantName, staffName })}
           </h3>
+          <p className="text-[10px] text-outline mt-1 flex items-center gap-1">
+            <Shield className="w-3 h-3 text-secondary shrink-0" />
+            Solo visible con PIN de administrador
+          </p>
         </div>
         <Clock3 className="w-5 h-5 text-secondary shrink-0" />
       </div>
@@ -85,6 +112,7 @@ export default function AccountantActivityPanel({
               <th className="py-3 px-5">Fecha</th>
               <th className="py-3 px-5">Hora</th>
               <th className="py-3 px-5">Acción</th>
+              <th className="py-3 px-5">Contadora</th>
               <th className="py-3 px-5">Manicurista</th>
               <th className="py-3 px-5">Periodo</th>
               <th className="py-3 px-5 text-right">Monto</th>
@@ -93,13 +121,19 @@ export default function AccountantActivityPanel({
           <tbody className="divide-y divide-primary/5">
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="py-8 px-5 text-center text-xs text-outline">
+                <td colSpan={7} className="py-8 px-5 text-center text-xs text-outline">
                   Cargando movimientos...
+                </td>
+              </tr>
+            ) : loadError ? (
+              <tr>
+                <td colSpan={7} className="py-8 px-5 text-center text-xs text-red-600">
+                  {loadError}
                 </td>
               </tr>
             ) : activities.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-8 px-5 text-center text-xs text-outline">
+                <td colSpan={7} className="py-8 px-5 text-center text-xs text-outline">
                   Sin movimientos registrados todavía.
                 </td>
               </tr>
@@ -125,6 +159,9 @@ export default function AccountantActivityPanel({
                         <ActionIcon action={item.action} />
                         {ACTION_LABELS[item.action]}
                       </span>
+                    </td>
+                    <td className="py-3 px-5 text-xs text-on-surface-variant">
+                      {item.accountantName || item.accountantId || "—"}
                     </td>
                     <td className="py-3 px-5 text-xs text-on-surface-variant">
                       {item.staffName || "—"}

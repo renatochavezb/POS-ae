@@ -27,8 +27,7 @@ interface StaffViewProps {
   onUpdateStaffStatus: (id: string, status: StaffStatus) => void;
   onDeleteStaff: (id: string) => void;
   readOnly?: boolean;
-  accountantId?: string | null;
-  accountantName?: string | null;
+  showAccountantBitacora?: boolean;
   activityRefreshKey?: number;
 }
 
@@ -40,8 +39,7 @@ export default function StaffView({
   onUpdateStaffStatus,
   onDeleteStaff,
   readOnly = false,
-  accountantId = null,
-  accountantName = null,
+  showAccountantBitacora = false,
   activityRefreshKey = 0,
 }: StaffViewProps) {
   
@@ -131,12 +129,8 @@ export default function StaffView({
       </div>
       )}
 
-      {readOnly && accountantId ? (
-        <AccountantActivityPanel
-          accountantId={accountantId}
-          accountantName={accountantName || undefined}
-          refreshKey={activityRefreshKey}
-        />
+      {showAccountantBitacora ? (
+        <AccountantActivityPanel refreshKey={activityRefreshKey} />
       ) : null}
 
       <div className="space-y-4">

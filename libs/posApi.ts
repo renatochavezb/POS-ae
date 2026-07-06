@@ -17,10 +17,21 @@ import {
   StaffSettlementAppointmentSnapshot,
   AccountantActivity,
 } from "@/components/pos/types";
-import { getActiveReceptionistSession } from "@/libs/posSession";
+import { getActiveReceptionistSession, readPosSession } from "@/libs/posSession";
 import { INITIAL_RECEPTIONISTS } from "@/components/pos/data";
 
 const posClient = axios.create({ baseURL: "/api" });
+
+const attachMasterSessionHeader = (config: InternalAxiosRequestConfig) => {
+  if (typeof window === "undefined") return config;
+
+  const session = readPosSession();
+  if (session?.isMaster) {
+    config.headers.set("X-Pos-Master-Session", "true");
+  }
+
+  return config;
+};
 
 const attachReceptionistToRequest = (config: InternalAxiosRequestConfig) => {
   if (typeof window === "undefined") return config;
@@ -54,7 +65,9 @@ const attachReceptionistToRequest = (config: InternalAxiosRequestConfig) => {
   return config;
 };
 
-posClient.interceptors.request.use((config) => attachReceptionistToRequest(config));
+posClient.interceptors.request.use((config) =>
+  attachReceptionistToRequest(attachMasterSessionHeader(config))
+);
 
 posClient.interceptors.response.use(
   (response) => response.data,

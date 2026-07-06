@@ -47,6 +47,7 @@ interface StaffAnalyticsViewProps {
   onStaffUpdated?: (updated: Staff) => void;
   isAccountantSession?: boolean;
   loggedInAccountant?: { id: string; name: string } | null;
+  showAccountantBitacora?: boolean;
   onAccountantActivity?: () => void;
   activityRefreshKey?: number;
 }
@@ -58,6 +59,7 @@ export default function StaffAnalyticsView({
   onStaffUpdated,
   isAccountantSession = false,
   loggedInAccountant = null,
+  showAccountantBitacora = false,
   onAccountantActivity,
   activityRefreshKey = 0,
 }: StaffAnalyticsViewProps) {
@@ -728,11 +730,10 @@ export default function StaffAnalyticsView({
         loggedInAccountant={loggedInAccountant}
       />
 
-      {isAccountantSession && loggedInAccountant ? (
+      {showAccountantBitacora ? (
         <AccountantActivityPanel
-          accountantId={loggedInAccountant.id}
-          accountantName={loggedInAccountant.name}
           staffId={staff.id}
+          staffName={staff.name}
           refreshKey={activityRefreshKey}
         />
       ) : null}

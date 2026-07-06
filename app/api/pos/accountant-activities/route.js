@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { requireMasterSession, requirePosSession } from "@/libs/posAuth";
 import { mapAccountantActivityDoc } from "@/libs/posMappers";
 import PosAccountantActivity from "@/models/PosAccountantActivity";
 import { recordAccountantActivity } from "@/libs/posAccountantActivity";
@@ -13,6 +13,9 @@ export async function GET(req) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
+
+    const masterResult = requireMasterSession(req);
+    if (masterResult.error) return masterResult.error;
 
     await connectMongo();
 

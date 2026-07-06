@@ -1321,6 +1321,7 @@ export default function POSDashboard() {
               }
               onAccountantActivity={bumpAccountantActivity}
               activityRefreshKey={accountantActivityRefresh}
+              showAccountantBitacora={isMasterSession && !isAccountantSession}
             />
           );
         }
@@ -1333,8 +1334,7 @@ export default function POSDashboard() {
             onUpdateStaffStatus={handleUpdateStaffStatus}
             onDeleteStaff={handleDeleteStaff}
             readOnly={isAccountantSession}
-            accountantId={loggedInAccountantId}
-            accountantName={loggedInAccountantName}
+            showAccountantBitacora={isMasterSession && !isAccountantSession}
             activityRefreshKey={accountantActivityRefresh}
           />
         );
