@@ -12,7 +12,8 @@ import {
   Award,
   Calendar,
   DollarSign,
-  Search
+  Search,
+  Minus
 } from 'lucide-react';
 
 // Data & Types
@@ -53,11 +54,83 @@ import StaffAnalyticsView from './components/StaffAnalyticsView';
 import ServicesView from './components/ServicesView';
 import SettingsView from './components/SettingsView';
 import LoginView from './components/LoginView';
+import StudioLogo from './components/StudioLogo';
 import CajaView from './components/CajaView';
 import MasterReceptionLogView from './components/MasterReceptionLogView';
-import posApi from '@/libs/posApi';
+import posApi, { ReceptionistAuthPayload } from '@/libs/posApi';
 import { readPosSession, writePosSession, clearPosSession, PosSession, getActiveReceptionistSession } from '@/libs/posSession';
 import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus } from './appointmentStatus';
+
+type BookingServiceLine = {
+  key: string;
+  serviceId: string;
+  customName: string;
+};
+
+const createBookingServiceKey = () =>
+  `bs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const createBookingServiceLine = (
+  services: Service[],
+  serviceId?: string
+): BookingServiceLine => ({
+  key: createBookingServiceKey(),
+  serviceId: serviceId || (services[0]?.id ?? ''),
+  customName: '',
+});
+
+const getStaffForServiceIds = (serviceIds: string[], staffList: Staff[]) => {
+  const ids = serviceIds.filter(Boolean);
+  if (ids.length === 0) return staffList;
+
+  return ids.reduce((acc, serviceId, index) => {
+    const eligible = getStaffForService(serviceId, staffList);
+    if (index === 0) return eligible;
+    const eligibleIds = new Set(eligible.map((member) => member.id));
+    return acc.filter((member) => eligibleIds.has(member.id));
+  }, [] as Staff[]);
+};
+
+const resolveBookingServices = (
+  lines: BookingServiceLine[],
+  mode: 'custom' | 'catalog',
+  services: Service[]
+) => {
+  const resolved = lines.map((line) => {
+    if (mode === 'custom') {
+      return {
+        name: line.customName.trim(),
+        subtitle: 'Servicio personalizado',
+        image: '',
+        cost: 0,
+        duration: 60,
+        isValid: line.customName.trim().length > 0,
+      };
+    }
+
+    const catalog = services.find((service) => service.id === line.serviceId);
+    return {
+      name: catalog?.name ?? '',
+      subtitle: catalog?.subtitle ?? '',
+      image: catalog?.image ?? '',
+      cost: catalog?.price ?? 0,
+      duration: catalog?.duration ?? 60,
+      isValid: Boolean(catalog),
+    };
+  });
+
+  const valid = resolved.filter((item) => item.isValid);
+
+  return {
+    isValid: valid.length === lines.length && lines.length > 0,
+    serviceName: valid.map((item) => item.name).join(' + '),
+    serviceSubtitle:
+      valid.length > 1 ? 'Múltiples servicios' : valid[0]?.subtitle ?? '',
+    serviceImage: valid[0]?.image ?? '',
+    cost: valid.reduce((sum, item) => sum + item.cost, 0),
+    duration: valid.reduce((sum, item) => sum + item.duration, 0),
+  };
+};
 
 export default function POSDashboard() {
   // Main Navigation state
@@ -95,9 +168,10 @@ export default function POSDashboard() {
   const [bookingClient, setBookingClient] = useState('');
   const [bookingClientSearchMode, setBookingClientSearchMode] = useState(false);
   const [bookingClientQuery, setBookingClientQuery] = useState('');
-  const [bookingServiceId, setBookingServiceId] = useState('');
   const [bookingServiceMode, setBookingServiceMode] = useState<'custom' | 'catalog'>('custom');
-  const [bookingCustomService, setBookingCustomService] = useState('');
+  const [bookingServices, setBookingServices] = useState<BookingServiceLine[]>(() => [
+    createBookingServiceLine(INITIAL_SERVICES),
+  ]);
   const [bookingStaffId, setBookingStaffId] = useState('');
   const [bookingStaffLocked, setBookingStaffLocked] = useState(false);
   const [bookingDate, setBookingDate] = useState(getTodaySpanishShortDate());
@@ -335,10 +409,52 @@ export default function POSDashboard() {
     }
   };
 
+  const syncBookingDurationFromServices = (
+    lines: BookingServiceLine[],
+    mode: 'custom' | 'catalog'
+  ) => {
+    const resolved = resolveBookingServices(lines, mode, services);
+    setBookingDuration(resolved.duration || 60);
+  };
+
+  const updateBookingServices = (
+    updater: (prev: BookingServiceLine[]) => BookingServiceLine[],
+    mode: 'custom' | 'catalog' = bookingServiceMode
+  ) => {
+    setBookingServices((prev) => {
+      const next = updater(prev);
+      syncBookingDurationFromServices(next, mode);
+      return next;
+    });
+  };
+
+  const getEligibleBookingStaff = (
+    lines: BookingServiceLine[],
+    mode: 'custom' | 'catalog',
+    lockedStaffId?: string
+  ) => {
+    if (lockedStaffId) {
+      return staffList.filter((member) => member.id === lockedStaffId);
+    }
+
+    const catalogServiceIds =
+      mode === 'catalog' ? lines.map((line) => line.serviceId).filter(Boolean) : [];
+
+    const base =
+      mode === 'custom' || catalogServiceIds.length === 0
+        ? staffList
+        : getStaffForServiceIds(catalogServiceIds, staffList);
+
+    return base.filter((member) => member.status !== 'offline' || member.id === bookingStaffId);
+  };
+
   // Open Appointment modal with dynamic context prefilled
   const closeAppointmentModal = () => {
     setIsAppointmentModalOpen(false);
     setBookingStaffLocked(false);
+    setBookingServices([createBookingServiceLine(services)]);
+    setBookingServiceMode('custom');
+    setBookingStaffId('');
   };
 
   const handleOpenAppointmentModal = (
@@ -361,17 +477,13 @@ export default function POSDashboard() {
       }
     }
 
+    const nextMode = prefilledServiceId || lockedStaff ? 'catalog' : 'custom';
+    const initialServiceLine = createBookingServiceLine(services, defaultServiceId);
+
     setBookingClient(clientName || (clients[0] ? clients[0].name : ''));
-    setBookingServiceId(defaultServiceId);
-    setBookingServiceMode(prefilledServiceId || lockedStaff ? 'catalog' : 'custom');
-    setBookingCustomService('');
-    const eligibleStaff = defaultServiceId
-      ? getStaffForService(defaultServiceId, staffList).filter((member) => member.status !== 'offline')
-      : staffList.filter((member) => member.status !== 'offline');
-    setBookingStaffId(
-      lockedStaff?.id ||
-        (eligibleStaff[0] ? eligibleStaff[0].id : (staffList[0] ? staffList[0].id : ''))
-    );
+    setBookingServiceMode(nextMode);
+    setBookingServices([initialServiceLine]);
+    setBookingStaffId(lockedStaff?.id ?? '');
     setBookingStaffLocked(Boolean(lockedStaff));
     setBookingTime(defaultTime || '10:00');
 
@@ -406,23 +518,20 @@ export default function POSDashboard() {
     );
   }, [clients, bookingClientQuery]);
 
+  const bookingEligibleStaff = useMemo(
+    () =>
+      getEligibleBookingStaff(
+        bookingServices,
+        bookingServiceMode,
+        bookingStaffLocked ? bookingStaffId : undefined
+      ),
+    [bookingServices, bookingServiceMode, bookingStaffLocked, bookingStaffId, staffList]
+  );
+
   // Submit appointment
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      isStaffTimeBlocked(
-        blockedSlots,
-        bookingDate,
-        bookingStaffId,
-        bookingTime,
-        bookingDuration
-      )
-    ) {
-      window.alert('Este horario está cerrado para la manicurista seleccionada.');
-      return;
-    }
-    
     if (!bookingClient.trim()) {
       window.alert('Selecciona un cliente para la cita.');
       return;
@@ -434,10 +543,39 @@ export default function POSDashboard() {
       return;
     }
 
-    const catalogService = services.find(s => s.id === bookingServiceId) || services[0];
+    const resolvedServices = resolveBookingServices(
+      bookingServices,
+      bookingServiceMode,
+      services
+    );
+
+    if (!resolvedServices.isValid) {
+      window.alert(
+        bookingServiceMode === 'custom'
+          ? 'Escribe todos los servicios requeridos o elige del catálogo.'
+          : 'Selecciona un servicio válido del catálogo para cada línea.'
+      );
+      return;
+    }
+
     const staffObj = staffList.find(s => s.id === bookingStaffId);
     if (!staffObj?.id) {
-      window.alert('Selecciona una manicurista válida para la cita.');
+      window.alert('Selecciona una manicurista para la cita.');
+      return;
+    }
+
+    const appointmentDuration = bookingDuration || resolvedServices.duration;
+
+    if (
+      isStaffTimeBlocked(
+        blockedSlots,
+        bookingDate,
+        bookingStaffId,
+        bookingTime,
+        appointmentDuration
+      )
+    ) {
+      window.alert('Este horario está cerrado para la manicurista seleccionada.');
       return;
     }
 
@@ -446,7 +584,7 @@ export default function POSDashboard() {
       bookingDate,
       bookingStaffId,
       bookingTime,
-      bookingDuration
+      appointmentDuration
     );
 
     if (conflictingAppointment) {
@@ -456,19 +594,10 @@ export default function POSDashboard() {
       return;
     }
 
-    const isCustomService = bookingServiceMode === 'custom';
-
-    if (isCustomService && !bookingCustomService.trim()) {
-      window.alert('Escribe el servicio requerido o elige uno del catálogo.');
-      return;
-    }
-
-    const serviceName = isCustomService
-      ? bookingCustomService.trim()
-      : catalogService.name;
-    const serviceSubtitle = isCustomService ? 'Servicio personalizado' : catalogService.subtitle;
-    const serviceImage = isCustomService ? '' : catalogService.image;
-    const serviceCost = isCustomService ? 0 : catalogService.price;
+    const serviceName = resolvedServices.serviceName;
+    const serviceSubtitle = resolvedServices.serviceSubtitle;
+    const serviceImage = resolvedServices.serviceImage;
+    const serviceCost = resolvedServices.cost;
 
     const nextStaffStats = {
       totalToday: staffObj.totalToday + 1,
@@ -514,7 +643,7 @@ export default function POSDashboard() {
         staffName: staffObj.name,
         staffInitials: staffObj.id,
         cost: serviceCost,
-        duration: bookingDuration,
+        duration: appointmentDuration,
         status: 'agendado',
         bookedByReceptionistId: activeReceptionist?.id || '',
         bookedByReceptionistName: activeReceptionist?.name || '',
@@ -579,13 +708,15 @@ export default function POSDashboard() {
     }
   };
 
-  const handleDeleteAppointment = async (appointmentId: string) => {
+  const handleDeleteAppointment = async (
+    appointmentId: string,
+    auth: ReceptionistAuthPayload
+  ) => {
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment) return;
 
     if (!canDeleteAppointment(appointment.status)) {
-      window.alert('No se puede eliminar una cita confirmada o pagada.');
-      return;
+      throw new Error('No se puede eliminar una cita confirmada o pagada.');
     }
 
     // Eliminar = borrado permanente en MongoDB. No cambia el estatus a "cancelled".
@@ -637,6 +768,8 @@ export default function POSDashboard() {
         staffStats: nextStaffStats,
         clientStats: nextClientStats,
         receptionistStats: nextReceptionistStats,
+        receptionistId: auth.receptionistId,
+        pin: auth.pin,
       });
 
       setAppointments((prev) => prev.filter((item) => item.id !== appointmentId));
@@ -686,17 +819,21 @@ export default function POSDashboard() {
       await loadPosData({ silent: true });
     } catch (error) {
       console.error(error);
-      window.alert('No se pudo eliminar la cita de la base de datos.');
+      throw error instanceof Error
+        ? error
+        : new Error('No se pudo eliminar la cita de la base de datos.');
     }
   };
 
-  const handleCancelAppointment = async (appointmentId: string) => {
+  const handleCancelAppointment = async (
+    appointmentId: string,
+    auth: ReceptionistAuthPayload
+  ) => {
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment || appointment.status === 'cancelled') return;
 
     if (!canCancelAppointment(appointment.status)) {
-      window.alert('No se puede cancelar una cita confirmada o pagada.');
-      return;
+      throw new Error('No se puede cancelar una cita confirmada o pagada.');
     }
 
     const staffObj = staffList.find((staff) => staff.id === appointment.staffId);
@@ -711,6 +848,8 @@ export default function POSDashboard() {
     try {
       await posApi.updateAppointment(appointmentId, {
         status: 'cancelled',
+        receptionistId: auth.receptionistId,
+        pin: auth.pin,
         staffStats: staffObj
           ? {
               staffId: staffObj.id,
@@ -738,7 +877,9 @@ export default function POSDashboard() {
       await loadPosData({ silent: true });
     } catch (error) {
       console.error(error);
-      window.alert('No se pudo cancelar la cita en la base de datos.');
+      throw error instanceof Error
+        ? error
+        : new Error('No se pudo cancelar la cita en la base de datos.');
     }
   };
 
@@ -992,6 +1133,8 @@ export default function POSDashboard() {
             staffList={staffList}
             blockedSlots={blockedSlots}
             scheduleConfig={scheduleConfig}
+            receptionists={receptionists}
+            defaultReceptionistId={loggedInReceptionistId}
             onOpenNewAppointment={(day, hour, staffId) =>
               handleOpenAppointmentModal(undefined, hour, undefined, day, staffId)
             }
@@ -1164,24 +1307,19 @@ export default function POSDashboard() {
         {/* Mobile Header bar */}
         <header className="md:hidden h-16 border-b border-primary/10 px-6 flex items-center justify-between shrink-0 bg-surface">
           <div
-            className="flex items-center gap-2 min-w-0 select-none"
+            className="flex flex-col min-w-0 select-none"
             onClick={() => {
               if (isMasterSession) {
                 setMobileLogoClicks((prev) => prev + 1);
               }
             }}
           >
-            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary font-display font-bold text-xs shrink-0">
-              aé
-            </div>
-            <div className="min-w-0">
-              <h1 className="font-display text-lg font-bold text-primary leading-tight">studio aé</h1>
-              {loggedInReceptionist && (
-                <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate">
-                  {loggedInReceptionist.name} · Recepción
-                </p>
-              )}
-            </div>
+            <StudioLogo size="sm" showWordmark />
+            {loggedInReceptionist && (
+              <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
+                {loggedInReceptionist.name} · Recepción
+              </p>
+            )}
           </div>
           <button 
             onClick={() => setMobileMenuOpen(true)}
@@ -1211,11 +1349,8 @@ export default function POSDashboard() {
             </button>
 
             <div className="space-y-8 mt-8">
-              <div className="flex items-center gap-2 pb-4 border-b border-primary/5">
-                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary font-display font-bold text-sm">
-                  aé
-                </div>
-                <h1 className="font-display text-lg text-primary font-bold">studio aé</h1>
+              <div className="pb-4 border-b border-primary/5">
+                <StudioLogo size="sm" showWordmark />
               </div>
 
               <nav className="space-y-3">
@@ -1426,12 +1561,17 @@ export default function POSDashboard() {
 
               {/* Select Service */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Servicio / Tratamiento</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">
+                    Servicio / Tratamiento
+                  </label>
                   <div className="flex items-center gap-1 bg-surface-container-low rounded-lg p-0.5 border border-primary/5">
                     <button
                       type="button"
-                      onClick={() => setBookingServiceMode('custom')}
+                      onClick={() => {
+                        setBookingServiceMode('custom');
+                        syncBookingDurationFromServices(bookingServices, 'custom');
+                      }}
                       className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-colors ${
                         bookingServiceMode === 'custom'
                           ? 'bg-primary text-on-primary'
@@ -1444,11 +1584,18 @@ export default function POSDashboard() {
                       type="button"
                       onClick={() => {
                         setBookingServiceMode('catalog');
-                        const current = services.find((service) => service.id === bookingServiceId) || services[0];
-                        if (current) {
-                          setBookingServiceId(current.id);
-                          setBookingDuration(current.duration);
-                        }
+                        updateBookingServices(
+                          (prev) =>
+                            prev.map((line) => ({
+                              ...line,
+                              serviceId:
+                                line.serviceId ||
+                                services.find((service) => service.id === line.serviceId)?.id ||
+                                services[0]?.id ||
+                                '',
+                            })),
+                          'catalog'
+                        );
                       }}
                       className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-colors ${
                         bookingServiceMode === 'catalog'
@@ -1461,47 +1608,128 @@ export default function POSDashboard() {
                   </div>
                 </div>
 
-                {bookingServiceMode === 'custom' ? (
-                  <input
-                    type="text"
-                    value={bookingCustomService}
-                    onChange={(e) => setBookingCustomService(e.target.value)}
-                    placeholder="Escribe el servicio requerido (ej. Uñas acrílicas con diseño)"
-                    className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
-                    autoFocus
-                    required
-                  />
-                ) : (
-                  <select 
-                    value={bookingServiceId}
-                    onChange={(e) => {
-                      const nextServiceId = e.target.value;
-                      setBookingServiceId(nextServiceId);
-                      const nextService = services.find((service) => service.id === nextServiceId);
-                      if (nextService) {
-                        setBookingDuration(nextService.duration);
-                      }
-                      if (!bookingStaffLocked) {
-                        const eligible = getStaffForService(nextServiceId, staffList).filter(
-                          (member) => member.status !== 'offline'
-                        );
-                        if (eligible.length > 0 && !eligible.some((member) => member.id === bookingStaffId)) {
-                          setBookingStaffId(eligible[0].id);
-                        }
-                      }
-                    }}
-                    className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
-                    required
-                  >
-                    {(bookingStaffLocked
-                      ? getServicesForStaff(bookingStaffId, services, staffList)
-                      : services
-                    ).map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} — {formatServicePrice(s.price)}
-                      </option>
-                    ))}
-                  </select>
+                <div className="space-y-2">
+                  {bookingServices.map((line, index) => {
+                    const isLastLine = index === bookingServices.length - 1;
+
+                    return (
+                    <div key={line.key} className="flex items-center gap-2">
+                      {bookingServiceMode === 'custom' ? (
+                        <input
+                          type="text"
+                          value={line.customName}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            updateBookingServices(
+                              (prev) =>
+                                prev.map((item) =>
+                                  item.key === line.key ? { ...item, customName: value } : item
+                                ),
+                              'custom'
+                            );
+                          }}
+                          placeholder={
+                            index === 0
+                              ? 'Escribe el servicio requerido (ej. Uñas acrílicas con diseño)'
+                              : 'Otro servicio...'
+                          }
+                          className="flex-1 px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                          autoFocus={index === 0}
+                          required
+                        />
+                      ) : (
+                        <select
+                          value={line.serviceId}
+                          onChange={(e) => {
+                            const nextServiceId = e.target.value;
+                            updateBookingServices(
+                              (prev) =>
+                                prev.map((item) =>
+                                  item.key === line.key
+                                    ? { ...item, serviceId: nextServiceId }
+                                    : item
+                                ),
+                              'catalog'
+                            );
+
+                            if (!bookingStaffLocked && bookingStaffId) {
+                              const nextLines = bookingServices.map((item) =>
+                                item.key === line.key
+                                  ? { ...item, serviceId: nextServiceId }
+                                  : item
+                              );
+                              const eligible = getStaffForServiceIds(
+                                nextLines.map((item) => item.serviceId).filter(Boolean),
+                                staffList
+                              ).filter((member) => member.status !== 'offline');
+
+                              if (!eligible.some((member) => member.id === bookingStaffId)) {
+                                setBookingStaffId('');
+                              }
+                            }
+                          }}
+                          className="flex-1 px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                          required
+                        >
+                          {(bookingStaffLocked
+                            ? getServicesForStaff(bookingStaffId, services, staffList)
+                            : services
+                          ).map((service) => (
+                            <option key={service.id} value={service.id}>
+                              {service.name} — {formatServicePrice(service.price)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {bookingServices.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateBookingServices(
+                              (prev) => prev.filter((item) => item.key !== line.key),
+                              bookingServiceMode
+                            );
+                          }}
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-primary/10 text-outline hover:text-primary hover:bg-surface-container-low transition-colors shrink-0"
+                          title="Quitar servicio"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {isLastLine && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateBookingServices(
+                              (prev) => [
+                                ...prev,
+                                createBookingServiceLine(
+                                  services,
+                                  bookingServices[bookingServices.length - 1]?.serviceId ||
+                                    services[0]?.id
+                                ),
+                              ],
+                              bookingServiceMode
+                            );
+                          }}
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-lg border-2 border-primary bg-primary text-on-primary hover:opacity-90 transition-opacity shrink-0 shadow-sm"
+                          title="Agregar otro servicio"
+                          aria-label="Agregar otro servicio"
+                        >
+                          <Plus className="w-4 h-4" strokeWidth={2.5} />
+                        </button>
+                      )}
+                    </div>
+                    );
+                  })}
+                </div>
+
+                {bookingServices.length > 1 && (
+                  <p className="text-[9px] text-outline">
+                    {bookingServices.length} servicios en esta cita. La duración y el costo se suman automáticamente.
+                  </p>
                 )}
               </div>
 
@@ -1517,17 +1745,16 @@ export default function POSDashboard() {
                   disabled={bookingStaffLocked}
                   className={`w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary ${
                     bookingStaffLocked ? 'opacity-80 cursor-not-allowed' : ''
-                  }`}
+                  } ${!bookingStaffId && !bookingStaffLocked ? 'text-outline' : ''}`}
                   required
                 >
-                  {(bookingStaffLocked
-                    ? staffList.filter((member) => member.id === bookingStaffId)
-                    : bookingServiceMode === 'custom'
-                    ? staffList
-                    : getStaffForService(bookingServiceId, staffList))
-                    .filter(s => s.status !== 'offline' || s.id === bookingStaffId)
-                    .map(s => (
-                    <option key={s.id} value={s.id}>{s.name} — {s.role}</option>
+                  {!bookingStaffLocked && (
+                    <option value="">Seleccionar manicurista...</option>
+                  )}
+                  {bookingEligibleStaff.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} — {member.role}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1568,7 +1795,7 @@ export default function POSDashboard() {
                   >
                     {getDurationOptionsFromConfig(
                       scheduleConfig,
-                      services.find((service) => service.id === bookingServiceId)?.duration
+                      resolveBookingServices(bookingServices, bookingServiceMode, services).duration
                     ).map((minutes) => (
                       <option key={minutes} value={minutes}>
                         {formatDuration(minutes)}

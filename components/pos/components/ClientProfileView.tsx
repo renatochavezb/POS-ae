@@ -14,6 +14,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Client, Appointment } from '../types';
+import AppointmentServiceList from '../serviceDisplay';
 import { formatMXN, formatServicePrice } from '../data';
 
 interface ClientProfileViewProps {
@@ -235,7 +236,10 @@ export default function ClientProfileView({
                         <p className="text-[9px] text-outline font-mono mt-0.5">{app.time}</p>
                       </td>
                       <td className="py-4 px-6 text-xs text-on-surface font-medium">
-                        {app.serviceName}
+                        <AppointmentServiceList
+                          serviceName={app.serviceName}
+                          lineClassName="text-xs text-on-surface font-medium"
+                        />
                       </td>
                       <td className="py-4 px-6">
                         <p className="text-xs font-bold text-primary">{app.staffName}</p>

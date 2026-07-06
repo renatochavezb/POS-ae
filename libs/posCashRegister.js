@@ -1,5 +1,7 @@
 import PosPayment from "@/models/PosPayment";
 import PosCashSession from "@/models/PosCashSession";
+import { logCashRegisterAudit } from "@/libs/posReceptionistAuth";
+import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const PAYMENT_METHODS = ["efectivo", "tarjeta", "transferencia", "mixto"];
 
@@ -38,6 +40,50 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
 
 export async function getOpenCashSession() {
   return PosCashSession.findOne({ status: "open" }).sort({ createdAt: -1 });
+}
+
+export async function openCashSessionForReceptionist({
+  receptionistId,
+  receptionistName,
+  isMaster = false,
+  openingFloat = 0,
+}) {
+  const floatValue = Number(openingFloat) || 0;
+
+  if (floatValue < 0) {
+    throw new Error("El fondo de caja no puede ser negativo");
+  }
+
+  const existing = await getOpenCashSession();
+  if (existing) {
+    return { session: existing, created: false };
+  }
+
+  const sessionCode = `CS-${Date.now()}`;
+  const created = await PosCashSession.create({
+    sessionCode,
+    status: "open",
+    shiftDate: getTodaySpanishShortDate(),
+    openedByReceptionistId: receptionistId,
+    openedByReceptionistName: receptionistName,
+    openingFloat: floatValue,
+    openedWithMasterPin: isMaster,
+  });
+
+  await logCashRegisterAudit({
+    action: "caja_open",
+    receptionistId,
+    receptionistName,
+    success: true,
+    isMaster,
+    cashSessionCode: sessionCode,
+    actionDetails: {
+      shiftDate: created.shiftDate,
+      openingFloat: floatValue,
+    },
+  });
+
+  return { session: created, created: true };
 }
 
 export async function getClosedCashSessions({ date, limit = 30 } = {}) {

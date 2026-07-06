@@ -11,6 +11,7 @@ import {
   Award,
   Banknote
 } from 'lucide-react';
+import StudioLogo from './StudioLogo';
 
 interface SidebarProps {
   currentTab: string;
@@ -87,10 +88,7 @@ export default function Sidebar({
         }}
         title={isMasterSession ? 'Acceso maestro' : undefined}
       >
-        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary font-display font-bold text-lg">
-          aé
-        </div>
-        <h1 className="font-display text-xl text-primary font-bold tracking-tighter">studio aé</h1>
+        <StudioLogo size="sm" showWordmark />
       </div>
 
       {/* Navigation Links */}

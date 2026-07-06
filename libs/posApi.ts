@@ -84,6 +84,19 @@ type CreateAppointmentResponse = Appointment & {
   receptionists?: Receptionist[];
 };
 
+export type ReceptionistAuthPayload = {
+  receptionistId: string;
+  pin: string;
+};
+
+type AppointmentMutationPayload = {
+  staffStats?: StaffStatsPayload | null;
+  clientStats?: ClientStatsPayload | null;
+  receptionistStats?: ReceptionistStatsPayload | null;
+  receptionistId?: string;
+  pin?: string;
+};
+
 const posApi = {
   getLoginBootstrap(): Promise<{
     receptionists: Receptionist[];
@@ -95,12 +108,15 @@ const posApi = {
     role: "reception" | "manicurista";
     userId: string;
     pin: string;
+    openingFloat?: number;
   }): Promise<{
     success: boolean;
     role: "reception" | "manicurista";
     userId: string;
     userName: string;
     isMaster: boolean;
+    cashSession?: CashSession | null;
+    cashSessionOpened?: boolean;
   }> {
     return posClient.post("/pos/login/verify", data);
   },
@@ -156,17 +172,17 @@ const posApi = {
   },
   updateAppointment(
     appointmentId: string,
-    data: Record<string, unknown> & { staffStats?: StaffStatsPayload }
+    data: Record<string, unknown> & {
+      staffStats?: StaffStatsPayload;
+      receptionistId?: string;
+      pin?: string;
+    }
   ): Promise<Appointment> {
     return posClient.patch(`/pos/appointments/${appointmentId}`, data);
   },
   deleteAppointment(
     appointmentId: string,
-    data?: {
-      staffStats?: StaffStatsPayload | null;
-      clientStats?: ClientStatsPayload | null;
-      receptionistStats?: ReceptionistStatsPayload | null;
-    }
+    data?: AppointmentMutationPayload
   ): Promise<{ success: boolean }> {
     return posClient.delete(`/pos/appointments/${appointmentId}`, { data });
   },
@@ -182,6 +198,9 @@ const posApi = {
   getCashRegisterState(): Promise<CashRegisterState> {
     return posClient.get("/pos/cash-sessions/current");
   },
+  verifyMasterPin(pin: string): Promise<{ success: boolean }> {
+    return posClient.post("/pos/auth/verify-master", { pin });
+  },
   openCashSession(data: {
     openingFloat: number;
     receptionistId: string;
@@ -193,6 +212,8 @@ const posApi = {
     sessionId: string,
     data: {
       closingCountedCash: number;
+      closingCountedCard: number;
+      closingCountedTransfer: number;
       closingNotes?: string;
       receptionistId: string;
       pin: string;

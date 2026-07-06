@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   ChevronLeft,
@@ -9,7 +9,7 @@ import {
   X,
   CheckCircle2
 } from 'lucide-react';
-import { Appointment, DailyStats, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
+import { Appointment, DailyStats, Receptionist, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
 import {
   buildCalendarHourSlots,
   DEFAULT_SCHEDULE_CONFIG,
@@ -23,9 +23,11 @@ import {
   getDurationOptionsFromConfig,
 } from '../scheduleUtils';
 import posApi from '@/libs/posApi';
+import AppointmentServiceList from '../serviceDisplay';
 import { getStaffById } from '../staffColors';
 import { formatServicePrice } from '../data';
 import AppointmentStatusControls from './AppointmentStatusControls';
+import ReceptionistPinModal, { ReceptionistAuthPayload } from './ReceptionistPinModal';
 import {
   canCancelAppointment,
   canDeleteAppointment,
@@ -40,10 +42,12 @@ interface AgendaViewProps {
   staffList: Staff[];
   blockedSlots: StaffBlockedSlot[];
   scheduleConfig?: ScheduleConfig;
+  receptionists: Receptionist[];
+  defaultReceptionistId?: string | null;
   onOpenNewAppointment: (defaultDay?: string, defaultTime?: string, staffId?: string) => void;
   onSelectStaff: (id: string) => void;
-  onDeleteAppointment: (appointmentId: string) => void;
-  onCancelAppointment: (appointmentId: string) => void;
+  onDeleteAppointment: (appointmentId: string, auth: ReceptionistAuthPayload) => Promise<void>;
+  onCancelAppointment: (appointmentId: string, auth: ReceptionistAuthPayload) => Promise<void>;
   onUpdateAppointmentStatus: (appointmentId: string, status: AppointmentStatus) => void;
   onCloseStaffSlot: (slot: Omit<StaffBlockedSlot, 'id'>) => void;
   onRemoveBlockedSlot: (blockedSlotId: string) => void;
@@ -111,6 +115,8 @@ export default function AgendaView({
   staffList,
   blockedSlots,
   scheduleConfig = DEFAULT_SCHEDULE_CONFIG,
+  receptionists,
+  defaultReceptionistId = null,
   onOpenNewAppointment,
   onSelectStaff,
   onDeleteAppointment,
@@ -125,6 +131,14 @@ export default function AgendaView({
   const [closeDraft, setCloseDraft] = useState<CloseDraft | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [dailyStats, setDailyStats] = useState<DailyStats>(EMPTY_DAILY_STATS);
+  const [pendingAuthAction, setPendingAuthAction] = useState<{
+    type: 'cancel' | 'delete';
+    appointment: Appointment;
+  } | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isStatsBarFloating, setIsStatsBarFloating] = useState(false);
+  const statsBarSentinelRef = useRef<HTMLDivElement>(null);
 
   const timeline = useMemo(() => getTimelineMetrics(scheduleConfig), [scheduleConfig]);
   const hours = useMemo(() => buildCalendarHourSlots(scheduleConfig), [scheduleConfig]);
@@ -171,6 +185,19 @@ export default function AgendaView({
     };
   }, [selectedDayLabel, appointments, todayAppointments]);
 
+  useEffect(() => {
+    const sentinel = statsBarSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsStatsBarFloating(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
   const getIsToday = (dayFullDate: string) => {
     const normalizedDay = dayFullDate.replace(',', '');
     const normalizedToday = formatSpanishShortDate(new Date()).replace(',', '');
@@ -212,12 +239,8 @@ export default function AgendaView({
       return;
     }
 
-    const confirmed = window.confirm(
-      `¿Eliminar permanentemente la cita de ${appointment.clientName} (${appointment.time})?\n\nSe borrará por completo y NO contará como cancelada.`
-    );
-    if (confirmed) {
-      onDeleteAppointment(appointment.id);
-    }
+    setAuthError(null);
+    setPendingAuthAction({ type: 'delete', appointment });
   };
 
   const handleCancelAppointment = (appointment: Appointment) => {
@@ -226,14 +249,39 @@ export default function AgendaView({
       return;
     }
 
-    const confirmed = window.confirm(
-      `¿Cancelar la cita de ${appointment.clientName} (${appointment.time})?\n\nQuedará registrada en el contador de canceladas.`
-    );
-    if (confirmed) {
-      onCancelAppointment(appointment.id);
-      if (selectedAppointment?.id === appointment.id) {
-        setSelectedAppointment({ ...appointment, status: 'cancelled' });
+    setAuthError(null);
+    setPendingAuthAction({ type: 'cancel', appointment });
+  };
+
+  const handleConfirmAuthAction = async (auth: ReceptionistAuthPayload) => {
+    if (!pendingAuthAction) return;
+
+    setIsAuthSubmitting(true);
+    setAuthError(null);
+
+    try {
+      if (pendingAuthAction.type === 'delete') {
+        await onDeleteAppointment(pendingAuthAction.appointment.id, auth);
+        if (selectedAppointment?.id === pendingAuthAction.appointment.id) {
+          setSelectedAppointment(null);
+        }
+      } else {
+        await onCancelAppointment(pendingAuthAction.appointment.id, auth);
+        if (selectedAppointment?.id === pendingAuthAction.appointment.id) {
+          setSelectedAppointment({
+            ...pendingAuthAction.appointment,
+            status: 'cancelled',
+          });
+        }
       }
+
+      setPendingAuthAction(null);
+    } catch (error) {
+      setAuthError(
+        error instanceof Error ? error.message : 'No se pudo autorizar la acción.'
+      );
+    } finally {
+      setIsAuthSubmitting(false);
     }
   };
 
@@ -345,70 +393,91 @@ export default function AgendaView({
         </div>
       </div>
 
-      <div className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden flex flex-col">
-          <div className="p-4 md:p-6 border-b border-primary/5 bg-surface-container-low/30 space-y-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-3 min-w-0">
-                <Calendar className="w-5 h-5 text-secondary shrink-0" />
-                <div className="min-w-0">
-                  <h3 className="font-display font-bold text-primary text-base">{formatSelectedDayHeading(selectedDate)}</h3>
-                  <p className="text-[10px] text-outline uppercase tracking-widest mt-0.5">Vista operativa · 09:00 – 21:00</p>
-                </div>
-              </div>
+      <div ref={statsBarSentinelRef} className="h-px" aria-hidden="true" />
 
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="px-3 py-2 rounded-xl border border-primary/10 bg-primary/5 text-center min-w-[76px]">
-                    <p className="text-lg font-display font-extrabold text-primary leading-none">
-                      {dailyStats.citas}
+      <div className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow flex flex-col">
+          <div
+            className={`sticky top-3 z-30 px-3 md:px-4 pt-3 pb-2 transition-all duration-300 ${
+              isStatsBarFloating ? 'md:px-6' : ''
+            }`}
+          >
+            <div
+              className={`rounded-2xl border bg-surface/92 backdrop-blur-xl px-4 py-3 md:px-5 md:py-4 transition-all duration-300 ${
+                isStatsBarFloating
+                  ? 'border-primary/15 shadow-[0_12px_40px_rgba(0,38,27,0.14)] ring-1 ring-primary/5'
+                  : 'border-primary/10 shadow-[0_4px_20px_rgba(0,38,27,0.06)]'
+              }`}
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Calendar className="w-5 h-5 text-secondary shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="font-display font-bold text-primary text-base truncate">
+                      {formatSelectedDayHeading(selectedDate)}
+                    </h3>
+                    <p className="text-[10px] text-outline uppercase tracking-widest mt-0.5">
+                      Vista operativa · {String(scheduleConfig.startHour).padStart(2, '0')}:00 –{' '}
+                      {String(scheduleConfig.endHour).padStart(2, '0')}:00
                     </p>
-                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Citas</p>
-                  </div>
-                  <div className="px-3 py-2 rounded-xl border border-sky-200 bg-sky-50 text-center min-w-[76px]">
-                    <p className="text-lg font-display font-extrabold text-sky-700 leading-none">
-                      {dailyStats.sinConfirmar}
-                    </p>
-                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Sin confirmar</p>
-                  </div>
-                  <div className="px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-center min-w-[76px]">
-                    <p className="text-lg font-display font-extrabold text-emerald-700 leading-none">
-                      {dailyStats.pagadas}
-                    </p>
-                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Pagadas</p>
-                  </div>
-                  <div className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-center min-w-[76px]">
-                    <p className="text-lg font-display font-extrabold text-red-700 leading-none">
-                      {dailyStats.canceladas}
-                    </p>
-                    <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Canceladas</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handlePrevWeek}
-                    title="Semana anterior"
-                    className="p-1.5 rounded-lg border border-primary/5 hover:bg-surface-container-low text-primary transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleGoToToday}
-                    className="px-3 py-1 text-xs font-sans font-bold uppercase tracking-wider text-primary hover:bg-surface-container-low rounded-lg transition-colors cursor-pointer"
-                  >
-                    Hoy
-                  </button>
-                  <button
-                    onClick={handleNextWeek}
-                    title="Semana siguiente"
-                    className="p-1.5 rounded-lg border border-primary/5 hover:bg-surface-container-low text-primary transition-colors cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="px-3 py-2 rounded-xl border border-primary/10 bg-primary/5 text-center min-w-[76px]">
+                      <p className="text-lg font-display font-extrabold text-primary leading-none">
+                        {dailyStats.citas}
+                      </p>
+                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Citas</p>
+                    </div>
+                    <div className="px-3 py-2 rounded-xl border border-sky-200 bg-sky-50 text-center min-w-[76px]">
+                      <p className="text-lg font-display font-extrabold text-sky-700 leading-none">
+                        {dailyStats.sinConfirmar}
+                      </p>
+                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Sin confirmar</p>
+                    </div>
+                    <div className="px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-center min-w-[76px]">
+                      <p className="text-lg font-display font-extrabold text-emerald-700 leading-none">
+                        {dailyStats.pagadas}
+                      </p>
+                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Pagadas</p>
+                    </div>
+                    <div className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-center min-w-[76px]">
+                      <p className="text-lg font-display font-extrabold text-red-700 leading-none">
+                        {dailyStats.canceladas}
+                      </p>
+                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Canceladas</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 rounded-xl border border-primary/10 bg-surface px-1 py-1">
+                    <button
+                      onClick={handlePrevWeek}
+                      title="Semana anterior"
+                      className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleGoToToday}
+                      className="px-3 py-1 text-xs font-sans font-bold uppercase tracking-wider text-primary hover:bg-surface-container-low rounded-lg transition-colors cursor-pointer"
+                    >
+                      Hoy
+                    </button>
+                    <button
+                      onClick={handleNextWeek}
+                      title="Semana siguiente"
+                      className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
+          </div>
 
+          <div className="px-4 md:px-6 pb-4 border-b border-primary/5 bg-surface-container-low/30 space-y-3">
             <div className="grid grid-cols-7 gap-2">
               {days.map((day) => {
                 const isToday = getIsToday(day.fullDate);
@@ -651,9 +720,10 @@ export default function AgendaView({
                                 <p className="text-[10px] font-bold uppercase tracking-wider truncate">
                                   {appointment.clientName}
                                 </p>
-                                <p className="text-[9px] opacity-80 mt-0.5 font-sans font-medium line-clamp-1">
-                                  {appointment.serviceName}
-                                </p>
+                                <AppointmentServiceList
+                                  serviceName={appointment.serviceName}
+                                  lineClassName="text-[9px] opacity-80 font-sans font-medium line-clamp-1"
+                                />
                               </div>
                               <div className="mt-1.5 pt-1 border-t border-black/10">
                                 <div className="flex items-center justify-between gap-1">
@@ -828,7 +898,10 @@ export default function AgendaView({
                 <div className="space-y-3">
                   <div className="p-3 rounded-xl bg-surface-container-low/50 border border-primary/5">
                     <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">Servicio</p>
-                    <p className="text-sm font-bold text-primary">{selectedAppointment.serviceName}</p>
+                    <AppointmentServiceList
+                      serviceName={selectedAppointment.serviceName}
+                      lineClassName="text-sm font-bold text-primary"
+                    />
                     {selectedAppointment.serviceSubtitle && (
                       <p className="text-xs text-on-surface-variant mt-0.5">
                         {selectedAppointment.serviceSubtitle}
@@ -892,16 +965,7 @@ export default function AgendaView({
                     {canDeleteAppointment(selectedAppointment.status) && (
                       <button
                         type="button"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `¿Eliminar permanentemente la cita de ${selectedAppointment.clientName}?\n\nSe borrará por completo y NO contará como cancelada.`
-                            )
-                          ) {
-                            onDeleteAppointment(selectedAppointment.id);
-                            setSelectedAppointment(null);
-                          }
-                        }}
+                        onClick={() => handleDeleteAppointment(selectedAppointment)}
                         className="px-3 py-2 text-red-700 hover:bg-red-50 rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -924,6 +988,34 @@ export default function AgendaView({
           </div>
         );
       })()}
+
+      {pendingAuthAction && (
+        <ReceptionistPinModal
+          title={
+            pendingAuthAction.type === 'delete'
+              ? 'Eliminar cita'
+              : 'Cancelar cita'
+          }
+          description={
+            pendingAuthAction.type === 'delete'
+              ? `${pendingAuthAction.appointment.clientName} · ${pendingAuthAction.appointment.time}. Se borrará por completo.`
+              : `${pendingAuthAction.appointment.clientName} · ${pendingAuthAction.appointment.time}. Quedará como cancelada.`
+          }
+          confirmLabel={
+            pendingAuthAction.type === 'delete' ? 'Eliminar' : 'Cancelar cita'
+          }
+          receptionists={receptionists}
+          defaultReceptionistId={defaultReceptionistId}
+          isSubmitting={isAuthSubmitting}
+          error={authError}
+          onConfirm={handleConfirmAuthAction}
+          onClose={() => {
+            if (isAuthSubmitting) return;
+            setPendingAuthAction(null);
+            setAuthError(null);
+          }}
+        />
+      )}
     </div>
   );
 }

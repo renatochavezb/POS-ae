@@ -170,8 +170,15 @@ export interface CashSession {
   closedByReceptionistName: string;
   openingFloat: number;
   closingCountedCash: number;
+  closingCountedCard: number;
+  closingCountedTransfer: number;
   expectedCash: number;
+  expectedCard: number;
+  expectedTransfer: number;
   variance: number;
+  cardVariance: number;
+  transferVariance: number;
+  isPerfectCut: boolean;
   paymentsCount: number;
   totalAmount: number;
   totalEfectivo: number;

@@ -48,6 +48,7 @@ export async function logCashRegisterAudit({
   isMaster = false,
   cashSessionCode = "",
   errorMessage = "",
+  actionDetails = null,
 }) {
   try {
     await PosLoginAudit.create({
@@ -59,8 +60,57 @@ export async function logCashRegisterAudit({
       action,
       cashSessionCode,
       errorMessage,
+      ...(actionDetails ? { actionDetails } : {}),
     });
   } catch (error) {
     console.error("PosLoginAudit caja", error);
+  }
+}
+
+export async function logAppointmentAudit({
+  action,
+  receptionistId,
+  receptionistName,
+  success,
+  isMaster = false,
+  errorMessage = "",
+}) {
+  try {
+    await PosLoginAudit.create({
+      role: isMaster ? "master" : "reception",
+      userId: receptionistId || "",
+      userName: receptionistName || "",
+      success,
+      isMaster,
+      action,
+      errorMessage,
+    });
+  } catch (error) {
+    console.error("PosLoginAudit appointment", error);
+  }
+}
+
+export async function authorizeReceptionistAction(body, action) {
+  const receptionistId = String(body?.receptionistId || "").trim();
+  const pin = String(body?.pin || "").trim();
+
+  try {
+    const verified = await verifyReceptionistPin(receptionistId, pin);
+    await logAppointmentAudit({
+      action,
+      receptionistId: verified.receptionistId,
+      receptionistName: verified.receptionistName,
+      success: true,
+      isMaster: verified.isMaster,
+    });
+    return verified;
+  } catch (error) {
+    await logAppointmentAudit({
+      action,
+      receptionistId,
+      success: false,
+      errorMessage: error.message,
+    });
+    throw error;
   }
 }

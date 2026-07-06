@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
 import { requirePosSession } from "@/libs/posAuth";
-import PosCashSession from "@/models/PosCashSession";
 import { mapCashSessionDoc } from "@/libs/posMappers";
-import { getOpenCashSession } from "@/libs/posCashRegister";
+import {
+  getOpenCashSession,
+  openCashSessionForReceptionist,
+} from "@/libs/posCashRegister";
 import {
   logCashRegisterAudit,
   verifyReceptionistPin,
 } from "@/libs/posReceptionistAuth";
-import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,6 @@ export async function POST(req) {
       body?.receptionistId || body?.openedByReceptionistId || ""
     ).trim();
     const pin = String(body?.pin || "").trim();
-
-    if (openingFloat < 0) {
-      return NextResponse.json(
-        { error: "El fondo de caja no puede ser negativo" },
-        { status: 400 }
-      );
-    }
 
     await connectMongo();
 
@@ -54,27 +48,14 @@ export async function POST(req) {
       );
     }
 
-    const sessionCode = `CS-${Date.now()}`;
-    const created = await PosCashSession.create({
-      sessionCode,
-      status: "open",
-      shiftDate: getTodaySpanishShortDate(),
-      openedByReceptionistId: verified.receptionistId,
-      openedByReceptionistName: verified.receptionistName,
-      openingFloat,
-      openedWithMasterPin: verified.isMaster,
-    });
-
-    await logCashRegisterAudit({
-      action: "caja_open",
+    const { session } = await openCashSessionForReceptionist({
       receptionistId: verified.receptionistId,
       receptionistName: verified.receptionistName,
-      success: true,
       isMaster: verified.isMaster,
-      cashSessionCode: sessionCode,
+      openingFloat,
     });
 
-    return NextResponse.json(mapCashSessionDoc(created), { status: 201 });
+    return NextResponse.json(mapCashSessionDoc(session), { status: 201 });
   } catch (error) {
     console.error("POST /api/pos/cash-sessions/open", error);
     return NextResponse.json(

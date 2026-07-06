@@ -48,13 +48,43 @@ const posCashSessionSchema = mongoose.Schema(
       default: 0,
       min: 0,
     },
+    closingCountedCard: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    closingCountedTransfer: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     expectedCash: {
+      type: Number,
+      default: 0,
+    },
+    expectedCard: {
+      type: Number,
+      default: 0,
+    },
+    expectedTransfer: {
       type: Number,
       default: 0,
     },
     variance: {
       type: Number,
       default: 0,
+    },
+    cardVariance: {
+      type: Number,
+      default: 0,
+    },
+    transferVariance: {
+      type: Number,
+      default: 0,
+    },
+    isPerfectCut: {
+      type: Boolean,
+      default: false,
     },
     paymentsCount: {
       type: Number,

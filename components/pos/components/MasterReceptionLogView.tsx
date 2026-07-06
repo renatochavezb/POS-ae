@@ -13,6 +13,7 @@ import {
 import { Appointment, Receptionist } from '../types';
 import { formatServicePrice } from '../data';
 import { getAppointmentStatusLabel, getAppointmentStatusStyles } from '../appointmentStatus';
+import AppointmentServiceList from '../serviceDisplay';
 import {
   addDays,
   formatAppointmentTimeRange,
@@ -225,9 +226,11 @@ export default function MasterReceptionLogView({
                           <Sparkles className="w-3 h-3" />
                           Servicio
                         </p>
-                        <p className="text-xs font-bold text-primary mt-0.5">
-                          {appointment.serviceName}
-                        </p>
+                        <AppointmentServiceList
+                          serviceName={appointment.serviceName}
+                          lineClassName="text-xs font-bold text-primary"
+                          className="mt-0.5"
+                        />
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">

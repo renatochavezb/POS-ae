@@ -15,6 +15,7 @@ import {
   isAppointmentLockedOnBoard,
   normalizeAppointmentStatus,
 } from "@/components/pos/appointmentStatus";
+import { authorizeReceptionistAction } from "@/libs/posReceptionistAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,12 @@ export async function PATCH(req, { params }) {
             { error: "Solo se pueden cancelar citas agendadas." },
             { status: 403 }
           );
+        }
+
+        try {
+          await authorizeReceptionistAction(body, "appointment_cancel");
+        } catch (authError) {
+          return NextResponse.json({ error: authError.message }, { status: 401 });
         }
       } else {
         const expectedNext = getNextAppointmentStatus(currentStatus);
@@ -173,6 +180,12 @@ export async function DELETE(req, { params }) {
         { error: "No se puede eliminar una cita confirmada o pagada." },
         { status: 403 }
       );
+    }
+
+    try {
+      await authorizeReceptionistAction(body, "appointment_delete");
+    } catch (authError) {
+      return NextResponse.json({ error: authError.message }, { status: 401 });
     }
 
     const deleted = await PosAppointment.findOneAndDelete({

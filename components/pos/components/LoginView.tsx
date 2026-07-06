@@ -1,20 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import {
-  Users,
-  ShieldCheck,
-  ArrowLeft,
-  Check,
-  AlertCircle
-} from 'lucide-react';
-import { Staff, Receptionist } from '../types';
-import { INITIAL_RECEPTIONISTS, INITIAL_STAFF } from '../data';
-import posApi from '@/libs/posApi';
+import React, { useEffect, useRef, useState } from "react";
+import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle } from "lucide-react";
+import { Staff, Receptionist } from "../types";
+import { INITIAL_RECEPTIONISTS, INITIAL_STAFF } from "../data";
+import posApi from "@/libs/posApi";
+import StudioLogo from "./StudioLogo";
 
 interface LoginViewProps {
   onLogin: (
-    role: 'reception' | 'manicurista',
+    role: "reception" | "manicurista",
     staffId?: string,
     receptionistId?: string,
     isMaster?: boolean
@@ -23,13 +18,13 @@ interface LoginViewProps {
 
 export default function LoginView({ onLogin }: LoginViewProps) {
   const [viewState, setViewState] = useState<
-    'select' | 'reception_select' | 'reception_pin' | 'staff_select' | 'staff_pin'
-  >('select');
+    "select" | "reception_select" | "reception_pin" | "staff_select" | "staff_pin"
+  >("select");
   const [receptionists, setReceptionists] = useState<Receptionist[]>(INITIAL_RECEPTIONISTS);
   const [staffList, setStaffList] = useState<Staff[]>(INITIAL_STAFF);
   const [selectedReceptionist, setSelectedReceptionist] = useState<Receptionist | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
-  const [pin, setPin] = useState<string>('');
+  const [pin, setPin] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -45,104 +40,99 @@ export default function LoginView({ onLogin }: LoginViewProps) {
       })
       .catch((bootstrapErr) => {
         console.error(bootstrapErr);
-        setBootstrapError('No se pudo conectar con la base de datos. Usando datos locales.');
+        setBootstrapError("No se pudo conectar con la base de datos. Usando datos locales.");
       });
   }, []);
 
   const handleReceptionClick = () => {
     setSelectedReceptionist(null);
-    setPin('');
+    setPin("");
     setError(null);
-    setViewState('reception_select');
+    setViewState("reception_select");
   };
 
   const handleStaffClick = () => {
     setSelectedStaff(null);
-    setPin('');
+    setPin("");
     setError(null);
-    setViewState('staff_select');
+    setViewState("staff_select");
   };
 
   const handleReceptionistSelect = (receptionist: Receptionist) => {
     setSelectedReceptionist(receptionist);
-    setPin('');
+    setPin("");
     setError(null);
-    setViewState('reception_pin');
+    setViewState("reception_pin");
   };
 
   const handleStaffMemberSelect = (staff: Staff) => {
     setSelectedStaff(staff);
-    setPin('');
+    setPin("");
     setError(null);
-    setViewState('staff_pin');
+    setViewState("staff_pin");
   };
 
-  const handlePinSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePinChange = (value: string) => {
+    setPin(value.replace(/\D/g, "").slice(0, 4));
+    if (error) setError(null);
+  };
+
+  const handlePinSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (pin.length < 4 || isVerifying) return;
     setError(null);
 
-    if (viewState === 'reception_pin' && selectedReceptionist) {
+    if (viewState === "reception_pin" && selectedReceptionist) {
       setIsVerifying(true);
       try {
         const result = await posApi.verifyLogin({
-          role: 'reception',
+          role: "reception",
           userId: selectedReceptionist.id,
           pin,
         });
 
         setSuccess(true);
         setTimeout(
-          () =>
-            onLogin(
-              'reception',
-              undefined,
-              result.userId,
-              result.isMaster
-            ),
+          () => onLogin("reception", undefined, result.userId, result.isMaster),
           800
         );
       } catch (verifyError) {
         setError(
-          verifyError instanceof Error
-            ? verifyError.message
-            : 'PIN incorrecto. Intenta de nuevo.'
+          verifyError instanceof Error ? verifyError.message : "PIN incorrecto. Intenta de nuevo."
         );
-        setPin('');
+        setPin("");
       } finally {
         setIsVerifying(false);
       }
-    } else if (viewState === 'staff_pin' && selectedStaff) {
+    } else if (viewState === "staff_pin" && selectedStaff) {
       setIsVerifying(true);
       try {
         const result = await posApi.verifyLogin({
-          role: 'manicurista',
+          role: "manicurista",
           userId: selectedStaff.id,
           pin,
         });
 
         setSuccess(true);
         setTimeout(
-          () => onLogin('manicurista', result.userId, undefined, result.isMaster),
+          () => onLogin("manicurista", result.userId, undefined, result.isMaster),
           800
         );
       } catch (verifyError) {
         setError(
-          verifyError instanceof Error
-            ? verifyError.message
-            : 'PIN incorrecto. Intenta de nuevo.'
+          verifyError instanceof Error ? verifyError.message : "PIN incorrecto. Intenta de nuevo."
         );
-        setPin('');
+        setPin("");
       } finally {
         setIsVerifying(false);
       }
     }
   };
 
-  const handleKeypadPress = (num: string) => {
-    if (pin.length < 4) {
-      setPin((prev) => prev + num);
-      setError(null);
-    }
+  const handlePinBack = (target: "reception_select" | "staff_select") => {
+    setPin("");
+    setError(null);
+    setViewState(target);
   };
 
   return (
@@ -152,16 +142,7 @@ export default function LoginView({ onLogin }: LoginViewProps) {
 
       <div className="w-full max-w-md bg-[#001f16] border border-[#e5c158]/20 rounded-3xl p-6 md:p-8 luxury-shadow flex flex-col items-center relative overflow-hidden transition-all duration-500 hover:border-[#e5c158]/35">
         <div className="mb-8 relative shrink-0">
-          <div className="w-44 h-44 bg-[#00261b] border border-[#e5c158] flex flex-col items-center justify-center p-6 relative shadow-2xl">
-            <div className="relative text-center select-none leading-none">
-              <span className="font-display font-medium text-7xl text-transparent bg-clip-text bg-gradient-to-b from-[#fff1be] via-[#e5c158] to-[#997c23] tracking-tighter filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">
-                aé
-              </span>
-            </div>
-            <div className="mt-4 font-sans text-xs tracking-[0.45em] font-medium text-transparent bg-clip-text bg-gradient-to-r from-[#fff1be] via-[#e5c158] to-[#bfa13c] mr-[-0.45em] select-none">
-              STUDIO
-            </div>
-          </div>
+          <StudioLogo size="lg" />
         </div>
 
         {success && (
@@ -174,7 +155,7 @@ export default function LoginView({ onLogin }: LoginViewProps) {
           </div>
         )}
 
-        {viewState === 'select' && (
+        {viewState === "select" && (
           <div className="w-full space-y-6">
             <div className="text-center space-y-1">
               <h2 className="font-display text-xl text-[#e5c158] font-bold tracking-wide">Terminal del Salón</h2>
@@ -185,26 +166,36 @@ export default function LoginView({ onLogin }: LoginViewProps) {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-              <button onClick={handleReceptionClick} className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group">
+              <button
+                onClick={handleReceptionClick}
+                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
                     <ShieldCheck className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">Recepción / Admin</h4>
+                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
+                      Recepción / Admin
+                    </h4>
                     <p className="text-white/40 text-[11px]">Gestión total de agenda y caja</p>
                   </div>
                 </div>
                 <div className="text-[#e5c158]">→</div>
               </button>
 
-              <button onClick={handleStaffClick} className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group">
+              <button
+                onClick={handleStaffClick}
+                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+              >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
                     <Users className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">Equipo / Manicuristas</h4>
+                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
+                      Equipo / Manicuristas
+                    </h4>
                     <p className="text-white/40 text-[11px]">Fichajes y comisiones personales</p>
                   </div>
                 </div>
@@ -214,10 +205,15 @@ export default function LoginView({ onLogin }: LoginViewProps) {
           </div>
         )}
 
-        {viewState === 'reception_select' && (
+        {viewState === "reception_select" && (
           <div className="w-full space-y-6">
             <div className="flex items-center gap-2">
-              <button onClick={() => setViewState('select')} className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"><ArrowLeft className="w-4 h-4" /></button>
+              <button
+                onClick={() => setViewState("select")}
+                className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
               <h3 className="font-display text-lg text-[#e5c158] font-bold">Selecciona Recepcionista</h3>
             </div>
             <div className="space-y-2">
@@ -246,32 +242,45 @@ export default function LoginView({ onLogin }: LoginViewProps) {
           </div>
         )}
 
-        {viewState === 'reception_pin' && selectedReceptionist && (
-          <div className="w-full space-y-6">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setViewState('reception_select')} className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"><ArrowLeft className="w-4 h-4" /></button>
-              <h3 className="font-display text-sm text-[#e5c158] font-bold">{selectedReceptionist.name}</h3>
-            </div>
-            <form onSubmit={handlePinSubmit} className="space-y-6">
-              <PinDots pin={pin} />
-              {error && <ErrorMessage error={error} />}
-              <Keypad onPress={handleKeypadPress} onClear={() => setPin('')} onBackspace={() => setPin((prev) => prev.slice(0, -1))} />
-              <button type="submit" disabled={pin.length < 4 || isVerifying} className={`w-full py-3.5 rounded-xl text-xs font-bold uppercase tracking-widest ${pin.length === 4 && !isVerifying ? 'bg-gradient-to-r from-[#fff1be] via-[#e5c158] to-[#bfa13c] text-[#00261b]' : 'bg-[#00261b]/50 text-white/20 border border-[#e5c158]/5'}`}>{isVerifying ? 'Validando...' : 'Validar Credencial'}</button>
-            </form>
-          </div>
+        {viewState === "reception_pin" && selectedReceptionist && (
+          <PinEntryScreen
+            key={`reception-${selectedReceptionist.id}`}
+            personName={selectedReceptionist.name}
+            pin={pin}
+            error={error}
+            isVerifying={isVerifying}
+            submitLabel="Validar"
+            onBack={() => handlePinBack("reception_select")}
+            onPinChange={handlePinChange}
+            onSubmit={handlePinSubmit}
+          />
         )}
 
-        {viewState === 'staff_select' && (
+        {viewState === "staff_select" && (
           <div className="w-full space-y-6">
             <div className="flex items-center gap-2">
-              <button onClick={() => setViewState('select')} className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"><ArrowLeft className="w-4 h-4" /></button>
+              <button
+                onClick={() => setViewState("select")}
+                className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
               <h3 className="font-display text-lg text-[#e5c158] font-bold">Selecciona tu Artista</h3>
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {staffList.map((staff) => (
-                <button key={staff.id} onClick={() => handleStaffMemberSelect(staff)} className="w-full p-3 rounded-xl bg-[#00261b] border border-[#e5c158]/5 hover:border-[#e5c158]/20 flex items-center justify-between text-left">
+                <button
+                  key={staff.id}
+                  onClick={() => handleStaffMemberSelect(staff)}
+                  className="w-full p-3 rounded-xl bg-[#00261b] border border-[#e5c158]/5 hover:border-[#e5c158]/20 flex items-center justify-between text-left"
+                >
                   <div className="flex items-center gap-3">
-                    <img referrerPolicy="no-referrer" src={staff.image} alt={staff.name} className="w-10 h-10 rounded-full object-cover border border-[#e5c158]/10" />
+                    <img
+                      referrerPolicy="no-referrer"
+                      src={staff.image}
+                      alt={staff.name}
+                      className="w-10 h-10 rounded-full object-cover border border-[#e5c158]/10"
+                    />
                     <div>
                       <h4 className="font-sans text-xs font-bold text-[#e5c158]">{staff.name}</h4>
                       <p className="text-white/40 text-[10px] uppercase font-semibold">{staff.role}</p>
@@ -284,63 +293,145 @@ export default function LoginView({ onLogin }: LoginViewProps) {
           </div>
         )}
 
-        {viewState === 'staff_pin' && selectedStaff && (
-          <div className="w-full space-y-6">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setViewState('staff_select')} className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"><ArrowLeft className="w-4 h-4" /></button>
-              <h3 className="font-display text-sm text-[#e5c158] font-bold">{selectedStaff.name}</h3>
-            </div>
-            <form onSubmit={handlePinSubmit} className="space-y-6">
-              <PinDots pin={pin} />
-              {error && <ErrorMessage error={error} />}
-              <Keypad onPress={handleKeypadPress} onClear={() => setPin('')} onBackspace={() => setPin((prev) => prev.slice(0, -1))} />
-              <button type="submit" disabled={pin.length < 4 || isVerifying} className={`w-full py-3.5 rounded-xl text-xs font-bold uppercase tracking-widest ${pin.length === 4 && !isVerifying ? 'bg-gradient-to-r from-[#fff1be] via-[#e5c158] to-[#bfa13c] text-[#00261b]' : 'bg-[#00261b]/50 text-white/20 border border-[#e5c158]/5'}`}>{isVerifying ? 'Verificando...' : 'Verificar PIN'}</button>
-            </form>
-          </div>
+        {viewState === "staff_pin" && selectedStaff && (
+          <PinEntryScreen
+            key={`staff-${selectedStaff.id}`}
+            personName={selectedStaff.name}
+            pin={pin}
+            error={error}
+            isVerifying={isVerifying}
+            submitLabel="Validar"
+            onBack={() => handlePinBack("staff_select")}
+            onPinChange={handlePinChange}
+            onSubmit={handlePinSubmit}
+          />
         )}
       </div>
     </div>
   );
 }
 
+function PinEntryScreen({
+  personName,
+  pin,
+  error,
+  isVerifying,
+  submitLabel,
+  onBack,
+  onPinChange,
+  onSubmit,
+}: {
+  personName: string;
+  pin: string;
+  error: string | null;
+  isVerifying: boolean;
+  submitLabel: string;
+  onBack: () => void;
+  onPinChange: (value: string) => void;
+  onSubmit: (e?: React.FormEvent) => void;
+}) {
+  const pinCaptureRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => pinCaptureRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (/^\d$/.test(event.key) && pin.length < 4) {
+        event.preventDefault();
+        onPinChange(pin + event.key);
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        onPinChange(pin.slice(0, -1));
+        return;
+      }
+
+      if (event.key === "Enter" && pin.length === 4 && !isVerifying) {
+        event.preventDefault();
+        onSubmit();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pin, isVerifying, onPinChange, onSubmit]);
+
+  return (
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-8 p-1.5 rounded-full text-[#e5c158]/70 border border-[#e5c158]/10 hover:text-[#e5c158] transition-colors"
+        aria-label="Volver"
+      >
+        <ArrowLeft className="w-4 h-4" />
+      </button>
+
+      <form
+        onSubmit={onSubmit}
+        autoComplete="off"
+        className="flex flex-col items-center text-center space-y-10"
+      >
+        <h3 className="font-display text-3xl md:text-4xl text-[#e5c158] font-bold tracking-wide">
+          {personName}
+        </h3>
+
+        <div
+          ref={pinCaptureRef}
+          tabIndex={0}
+          role="textbox"
+          aria-label="PIN de acceso, 4 dígitos"
+          onClick={() => pinCaptureRef.current?.focus()}
+          className="w-full flex flex-col items-center outline-none focus:outline-none"
+        >
+          <PinDots pin={pin} />
+        </div>
+
+        {error && <ErrorMessage error={error} />}
+
+        <button
+          type="submit"
+          disabled={pin.length < 4 || isVerifying}
+          className={`w-full max-w-xs py-3.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+            pin.length === 4 && !isVerifying
+              ? "bg-gradient-to-r from-[#fff1be] via-[#e5c158] to-[#bfa13c] text-[#00261b]"
+              : "bg-[#00261b]/50 text-white/20 border border-[#e5c158]/5 cursor-not-allowed"
+          }`}
+        >
+          {isVerifying ? "Validando..." : submitLabel}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function PinDots({ pin }: { pin: string }) {
   return (
-    <div className="flex flex-col items-center justify-center space-y-2">
-      <div className="flex gap-4 py-2">
-        {[0, 1, 2, 3].map((index) => (
-          <div key={index} className={`w-4.5 h-4.5 rounded-full border-2 transition-all ${pin.length > index ? 'bg-[#e5c158] border-[#e5c158]' : 'bg-transparent border-[#e5c158]/20'}`} />
-        ))}
-      </div>
+    <div className="flex gap-5 py-2">
+      {[0, 1, 2, 3].map((index) => (
+        <div
+          key={index}
+          className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+            pin.length > index
+              ? "bg-[#e5c158] border-[#e5c158] scale-110"
+              : "bg-transparent border-[#e5c158]/25"
+          }`}
+        />
+      ))}
     </div>
   );
 }
 
 function ErrorMessage({ error }: { error: string }) {
   return (
-    <div className="p-3 bg-red-950/40 border border-red-500/20 rounded-xl text-center text-red-200 text-xs flex items-center justify-center gap-1.5">
+    <div className="w-full p-3 bg-red-950/40 border border-red-500/20 rounded-xl text-center text-red-200 text-xs flex items-center justify-center gap-1.5">
       <AlertCircle className="w-4 h-4 shrink-0" />
       {error}
-    </div>
-  );
-}
-
-function Keypad({
-  onPress,
-  onClear,
-  onBackspace
-}: {
-  onPress: (num: string) => void;
-  onClear: () => void;
-  onBackspace: () => void;
-}) {
-  return (
-    <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto">
-      {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
-        <button key={num} type="button" onClick={() => onPress(num)} className="w-16 h-16 rounded-full bg-[#00261b] hover:bg-[#003425] border border-[#e5c158]/10 text-[#e5c158] font-sans font-bold text-lg flex items-center justify-center">{num}</button>
-      ))}
-      <button type="button" onClick={onClear} className="w-16 h-16 text-white/40 text-xs">Borrar</button>
-      <button key="0" type="button" onClick={() => onPress('0')} className="w-16 h-16 rounded-full bg-[#00261b] hover:bg-[#003425] border border-[#e5c158]/10 text-[#e5c158] font-sans font-bold text-lg flex items-center justify-center">0</button>
-      <button type="button" onClick={onBackspace} className="w-16 h-16 text-white/40 text-xs">←</button>
     </div>
   );
 }

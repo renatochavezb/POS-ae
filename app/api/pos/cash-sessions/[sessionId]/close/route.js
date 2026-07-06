@@ -14,6 +14,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const amountsMatch = (left, right) => Math.abs(left - right) < 0.01;
+
 export async function POST(req, { params }) {
   try {
     const authResult = await requirePosSession();
@@ -22,14 +24,20 @@ export async function POST(req, { params }) {
     const { sessionId } = await params;
     const body = await req.json();
     const closingCountedCash = Number(body?.closingCountedCash ?? 0);
+    const closingCountedCard = Number(body?.closingCountedCard ?? 0);
+    const closingCountedTransfer = Number(body?.closingCountedTransfer ?? 0);
     const receptionistId = String(
       body?.receptionistId || body?.closedByReceptionistId || ""
     ).trim();
     const pin = String(body?.pin || "").trim();
 
-    if (closingCountedCash < 0) {
+    if (
+      closingCountedCash < 0 ||
+      closingCountedCard < 0 ||
+      closingCountedTransfer < 0
+    ) {
       return NextResponse.json(
-        { error: "El efectivo contado no puede ser negativo" },
+        { error: "Los montos contados no pueden ser negativos" },
         { status: 400 }
       );
     }
@@ -61,8 +69,19 @@ export async function POST(req, { params }) {
     }
 
     await refreshCashSessionTotals(session.sessionCode);
-    const expectedCash = await computeExpectedCashForSession(session);
+    const refreshed = await PosCashSession.findOne({ sessionCode: sessionId });
+
+    const expectedCash = await computeExpectedCashForSession(refreshed);
+    const expectedCard = refreshed.totalTarjeta ?? 0;
+    const expectedTransfer = refreshed.totalTransferencia ?? 0;
+
     const variance = closingCountedCash - expectedCash;
+    const cardVariance = closingCountedCard - expectedCard;
+    const transferVariance = closingCountedTransfer - expectedTransfer;
+    const isPerfectCut =
+      amountsMatch(closingCountedCash, expectedCash) &&
+      amountsMatch(closingCountedCard, expectedCard) &&
+      amountsMatch(closingCountedTransfer, expectedTransfer);
 
     const updated = await PosCashSession.findOneAndUpdate(
       { sessionCode: sessionId },
@@ -70,8 +89,15 @@ export async function POST(req, { params }) {
         $set: {
           status: "closed",
           closingCountedCash,
+          closingCountedCard,
+          closingCountedTransfer,
           expectedCash,
+          expectedCard,
+          expectedTransfer,
           variance,
+          cardVariance,
+          transferVariance,
+          isPerfectCut,
           closedAt: new Date(),
           closedByReceptionistId: verified.receptionistId,
           closedByReceptionistName: verified.receptionistName,
@@ -89,6 +115,23 @@ export async function POST(req, { params }) {
       success: true,
       isMaster: verified.isMaster,
       cashSessionCode: sessionId,
+      actionDetails: {
+        shiftDate: refreshed.shiftDate,
+        openingFloat: refreshed.openingFloat ?? 0,
+        paymentsCount: refreshed.paymentsCount ?? 0,
+        totalAmount: refreshed.totalAmount ?? 0,
+        expectedCash,
+        expectedCard,
+        expectedTransfer,
+        closingCountedCash,
+        closingCountedCard,
+        closingCountedTransfer,
+        variance,
+        cardVariance,
+        transferVariance,
+        isPerfectCut,
+        closingNotes: (body.closingNotes || "").trim(),
+      },
     });
 
     return NextResponse.json(mapCashSessionDoc(updated));

@@ -40,6 +40,10 @@ const posLoginAuditSchema = mongoose.Schema(
       default: "",
       trim: true,
     },
+    actionDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
   },
   {
     timestamps: true,

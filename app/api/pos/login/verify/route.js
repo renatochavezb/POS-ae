@@ -6,6 +6,8 @@ import PosLoginAudit from "@/models/PosLoginAudit";
 import { seedPosReceptionistsIfEmpty, seedPosStaffIfEmpty } from "@/libs/posSeed";
 import { syncStaffLoginCodes } from "@/libs/posStaffServices";
 import { getScheduleConfig } from "@/libs/posScheduleConfig";
+import { openCashSessionForReceptionist } from "@/libs/posCashRegister";
+import { mapCashSessionDoc } from "@/libs/posMappers";
 
 export const dynamic = "force-dynamic";
 
@@ -78,12 +80,31 @@ export async function POST(req) {
         isMaster,
       });
 
+      const openingFloat = Number(body?.openingFloat ?? 0);
+      let cashSession = null;
+      let cashSessionOpened = false;
+
+      try {
+        const result = await openCashSessionForReceptionist({
+          receptionistId: receptionist.receptionistCode,
+          receptionistName: receptionist.name,
+          isMaster,
+          openingFloat,
+        });
+        cashSession = mapCashSessionDoc(result.session);
+        cashSessionOpened = result.created;
+      } catch (cashError) {
+        console.error("Auto-open cash session on reception login", cashError);
+      }
+
       return NextResponse.json({
         success: true,
         role: "reception",
         userId: receptionist.receptionistCode,
         userName: receptionist.name,
         isMaster,
+        cashSession,
+        cashSessionOpened,
       });
     }
 

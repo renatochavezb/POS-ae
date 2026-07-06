@@ -22,6 +22,12 @@ import { formatMXN } from '../data';
 import { formatAppointmentTimeRange } from '../scheduleUtils';
 import { isAppointmentPendingPayment, normalizeAppointmentStatus } from '../appointmentStatus';
 import posApi from '@/libs/posApi';
+import {
+  clearCashCloseDraft,
+  readCashCloseDraft,
+  writeCashCloseDraft,
+} from '@/libs/cashCloseDraft';
+import AppointmentServiceList from '../serviceDisplay';
 
 interface CajaViewProps {
   appointments: Appointment[];
@@ -40,6 +46,8 @@ const EMPTY_SUMMARY = {
   tips: 0,
   services: 0,
 };
+
+const amountsMatch = (left: number, right: number) => Math.abs(left - right) < 0.01;
 
 const METHOD_OPTIONS: { id: PaymentMethod; label: string; icon: typeof Banknote }[] = [
   { id: 'efectivo', label: 'Efectivo', icon: Banknote },
@@ -73,11 +81,19 @@ export default function CajaView({
   const [openingFloat, setOpeningFloat] = useState('0');
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closingCountedCash, setClosingCountedCash] = useState('');
+  const [closingCountedCard, setClosingCountedCard] = useState('');
+  const [closingCountedTransfer, setClosingCountedTransfer] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
+  const [closeTitleClicks, setCloseTitleClicks] = useState(0);
+  const [showCloseAdminDetails, setShowCloseAdminDetails] = useState(false);
+  const [showAdminPinPrompt, setShowAdminPinPrompt] = useState(false);
+  const [adminPin, setAdminPin] = useState('');
+  const [adminPinError, setAdminPinError] = useState<string | null>(null);
   const [openReceptionistId, setOpenReceptionistId] = useState('');
   const [openPin, setOpenPin] = useState('');
   const [closeReceptionistId, setCloseReceptionistId] = useState('');
   const [closePin, setClosePin] = useState('');
+  const [closeDraftActive, setCloseDraftActive] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
   const [historyScope, setHistoryScope] = useState<'today' | 'all'>('today');
@@ -161,6 +177,42 @@ export default function CajaView({
   }, [historyScope]);
 
   useEffect(() => {
+    if (closeTitleClicks === 0) return;
+    const timer = window.setTimeout(() => setCloseTitleClicks(0), 900);
+    return () => window.clearTimeout(timer);
+  }, [closeTitleClicks]);
+
+  useEffect(() => {
+    if (closeTitleClicks < 3) return;
+    setCloseTitleClicks(0);
+    setShowAdminPinPrompt(true);
+    setAdminPinError(null);
+  }, [closeTitleClicks]);
+
+  useEffect(() => {
+    if (!showCloseModal || !registerState?.session?.id) return;
+
+    const timer = window.setTimeout(() => {
+      writeCashCloseDraft(registerState.session!.id, {
+        closingCountedCash,
+        closingCountedCard,
+        closingCountedTransfer,
+        closingNotes,
+      });
+      setCloseDraftActive(true);
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    showCloseModal,
+    registerState?.session?.id,
+    closingCountedCash,
+    closingCountedCard,
+    closingCountedTransfer,
+    closingNotes,
+  ]);
+
+  useEffect(() => {
     if (!selectedAppointment) return;
     setAmount(String(selectedAppointment.cost || 0));
     setTip('0');
@@ -177,6 +229,25 @@ export default function CajaView({
 
   const expectedCash =
     (registerState?.session?.openingFloat ?? 0) + (registerState?.shiftSummary.efectivo ?? 0);
+  const expectedCard = registerState?.shiftSummary.tarjeta ?? 0;
+  const expectedTransfer = registerState?.shiftSummary.transferencia ?? 0;
+
+  const closeCountsReady =
+    closingCountedCash !== '' &&
+    closingCountedCard !== '' &&
+    closingCountedTransfer !== '';
+
+  const cashVariance = closeCountsReady ? Number(closingCountedCash) - expectedCash : 0;
+  const cardVariance = closeCountsReady ? Number(closingCountedCard) - expectedCard : 0;
+  const transferVariance = closeCountsReady
+    ? Number(closingCountedTransfer) - expectedTransfer
+    : 0;
+
+  const isPerfectCut =
+    closeCountsReady &&
+    amountsMatch(Number(closingCountedCash), expectedCash) &&
+    amountsMatch(Number(closingCountedCard), expectedCard) &&
+    amountsMatch(Number(closingCountedTransfer), expectedTransfer);
 
   const defaultReceptionistId =
     loggedInReceptionist?.id || receptionists[0]?.id || '';
@@ -188,12 +259,65 @@ export default function CajaView({
     setModalError(null);
   };
 
-  const resetCloseModal = () => {
-    setClosingCountedCash(String(Math.round(expectedCash)));
+  const resetCloseModalUI = () => {
     setCloseReceptionistId(defaultReceptionistId);
     setClosePin('');
-    setClosingNotes('');
     setModalError(null);
+    setShowCloseAdminDetails(false);
+    setShowAdminPinPrompt(false);
+    setAdminPin('');
+    setAdminPinError(null);
+    setCloseTitleClicks(0);
+  };
+
+  const clearCloseForm = () => {
+    setClosingCountedCash('');
+    setClosingCountedCard('');
+    setClosingCountedTransfer('');
+    setClosingNotes('');
+    setCloseDraftActive(false);
+  };
+
+  const openCloseModal = () => {
+    const sessionId = registerState?.session?.id;
+    resetCloseModalUI();
+
+    if (sessionId) {
+      const draft = readCashCloseDraft(sessionId);
+      if (draft) {
+        setClosingCountedCash(draft.closingCountedCash);
+        setClosingCountedCard(draft.closingCountedCard);
+        setClosingCountedTransfer(draft.closingCountedTransfer);
+        setClosingNotes(draft.closingNotes);
+        setCloseDraftActive(true);
+      } else {
+        clearCloseForm();
+      }
+    } else {
+      clearCloseForm();
+    }
+
+    setShowCloseModal(true);
+  };
+
+  const handleVerifyAdminPin = async () => {
+    if (adminPin.length !== 4) {
+      setAdminPinError('Ingresa la clave de admin de 4 dígitos.');
+      return;
+    }
+
+    setAdminPinError(null);
+    try {
+      await posApi.verifyMasterPin(adminPin);
+      setShowCloseAdminDetails(true);
+      setShowAdminPinPrompt(false);
+      setAdminPin('');
+    } catch (verifyError) {
+      setAdminPinError(
+        verifyError instanceof Error ? verifyError.message : 'Clave de admin incorrecta'
+      );
+      setAdminPin('');
+    }
   };
 
   const handleOpenSession = async () => {
@@ -243,12 +367,16 @@ export default function CajaView({
     try {
       await posApi.closeCashSession(registerState.session.id, {
         closingCountedCash: Number(closingCountedCash) || 0,
+        closingCountedCard: Number(closingCountedCard) || 0,
+        closingCountedTransfer: Number(closingCountedTransfer) || 0,
         closingNotes,
         receptionistId: closeReceptionistId,
         pin: closePin,
       });
+      clearCashCloseDraft(registerState.session.id);
       setShowCloseModal(false);
-      resetCloseModal();
+      clearCloseForm();
+      resetCloseModalUI();
       await loadRegister();
       await loadHistory(historyScope);
     } catch (closeError) {
@@ -327,10 +455,7 @@ export default function CajaView({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  resetCloseModal();
-                  setShowCloseModal(true);
-                }}
+                onClick={openCloseModal}
                 className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-colors flex items-center gap-2"
               >
                 <Lock className="w-4 h-4" />
@@ -401,7 +526,11 @@ export default function CajaView({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-sans text-sm font-bold text-primary">{appointment.clientName}</p>
-                        <p className="text-xs text-outline mt-0.5">{appointment.serviceName}</p>
+                        <AppointmentServiceList
+                          serviceName={appointment.serviceName}
+                          lineClassName="text-xs text-outline"
+                          className="mt-0.5"
+                        />
                         <p className="text-[10px] text-outline mt-1">
                           {appointment.time} · {appointment.staffName}
                         </p>
@@ -443,7 +572,11 @@ export default function CajaView({
               <div className="rounded-xl bg-surface-container-low p-4 border border-primary/5">
                 <p className="text-xs font-bold uppercase tracking-wider text-outline">Cliente</p>
                 <p className="font-sans text-sm font-bold text-primary mt-1">{selectedAppointment.clientName}</p>
-                <p className="text-xs text-outline mt-2">{selectedAppointment.serviceName}</p>
+                <AppointmentServiceList
+                  serviceName={selectedAppointment.serviceName}
+                  lineClassName="text-xs text-outline"
+                  className="mt-2"
+                />
                 <p className="text-[10px] text-outline mt-1">
                   {formatAppointmentTimeRange(selectedAppointment.time, selectedAppointment.duration)} · {selectedAppointment.staffName}
                 </p>
@@ -656,39 +789,93 @@ export default function CajaView({
       )}
 
       {showCloseModal && session && (
-        <Modal title="Corte de caja" onClose={() => setShowCloseModal(false)}>
+        <Modal
+          title="Corte de caja"
+          onClose={() => {
+            setShowCloseModal(false);
+            resetCloseModalUI();
+          }}
+          onTitleClick={() => setCloseTitleClicks((prev) => prev + 1)}
+        >
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl bg-surface-container-low p-3 border border-primary/5">
-                <p className="text-[10px] uppercase tracking-wider text-outline font-bold">Servicios turno</p>
-                <p className="font-bold text-primary mt-1">{shiftSummary.count}</p>
-              </div>
-              <div className="rounded-xl bg-surface-container-low p-3 border border-primary/5">
-                <p className="text-[10px] uppercase tracking-wider text-outline font-bold">Total turno</p>
-                <p className="font-bold text-primary mt-1">{formatMXN(shiftSummary.total)}</p>
-              </div>
-              <div className="rounded-xl bg-surface-container-low p-3 border border-primary/5">
-                <p className="text-[10px] uppercase tracking-wider text-outline font-bold">Efectivo esperado</p>
-                <p className="font-bold text-primary mt-1">{formatMXN(expectedCash)}</p>
-              </div>
-              <div className="rounded-xl bg-surface-container-low p-3 border border-primary/5">
-                <p className="text-[10px] uppercase tracking-wider text-outline font-bold">Tarjeta + transf.</p>
-                <p className="font-bold text-primary mt-1">
-                  {formatMXN(shiftSummary.tarjeta + shiftSummary.transferencia)}
-                </p>
-              </div>
+            {closeDraftActive && (
+              <p className="text-[10px] font-bold uppercase tracking-wider text-secondary">
+                Borrador guardado — puedes cerrar y retomar después
+              </p>
+            )}
+
+            {showCloseAdminDetails && (
+              <CloseCutVariancePanel
+                expectedCash={expectedCash}
+                closingCountedCash={Number(closingCountedCash) || 0}
+                variance={cashVariance}
+                expectedCard={expectedCard}
+                closingCountedCard={Number(closingCountedCard) || 0}
+                cardVariance={cardVariance}
+                expectedTransfer={expectedTransfer}
+                closingCountedTransfer={Number(closingCountedTransfer) || 0}
+                transferVariance={transferVariance}
+              />
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Field label="Efectivo contado">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={closingCountedCash}
+                  onChange={(e) => setClosingCountedCash(e.target.value)}
+                  className={fieldClassName}
+                />
+              </Field>
+              <Field label="Tarjeta contada">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={closingCountedCard}
+                  onChange={(e) => setClosingCountedCard(e.target.value)}
+                  className={fieldClassName}
+                />
+              </Field>
+              <Field label="Transferencia contada">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={closingCountedTransfer}
+                  onChange={(e) => setClosingCountedTransfer(e.target.value)}
+                  className={fieldClassName}
+                />
+              </Field>
             </div>
 
-            <Field label="Efectivo contado en caja">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={closingCountedCash}
-                onChange={(e) => setClosingCountedCash(e.target.value)}
-                className={fieldClassName}
-              />
-            </Field>
+            {closeCountsReady && (
+              <div
+                className={`rounded-xl p-4 text-sm border flex items-start gap-3 ${
+                  isPerfectCut
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
+              >
+                {isPerfectCut ? (
+                  <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-bold">
+                    {isPerfectCut ? 'Corte perfecto' : 'Hay diferencias en el corte'}
+                  </p>
+                  <p className="text-xs mt-1 opacity-90">
+                    {isPerfectCut
+                      ? 'Los tres rubros coinciden con lo registrado en el sistema.'
+                      : 'Los montos contados no coinciden con el sistema. Revisa con admin si necesitas el detalle.'}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <Field label="Notas del corte">
               <textarea
@@ -698,16 +885,6 @@ export default function CajaView({
                 className={`${fieldClassName} resize-none`}
               />
             </Field>
-
-            {closingCountedCash !== '' && (
-              <div className={`rounded-xl p-3 text-sm border ${
-                Math.abs(Number(closingCountedCash) - expectedCash) < 0.01
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
-              }`}>
-                Diferencia: {formatMXN(Number(closingCountedCash) - expectedCash)}
-              </div>
-            )}
 
             <ReceptionistPinFields
               receptionists={receptionists}
@@ -721,13 +898,35 @@ export default function CajaView({
 
             <button
               type="button"
-              disabled={isSubmitting || closePin.length !== 4 || !closeReceptionistId}
+              disabled={
+                isSubmitting ||
+                closePin.length !== 4 ||
+                !closeReceptionistId ||
+                !closeCountsReady
+              }
               onClick={handleCloseSession}
               className="w-full py-3 rounded-xl bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider disabled:opacity-40"
             >
               {isSubmitting ? 'Validando...' : 'Cerrar turno'}
             </button>
           </div>
+
+          {showAdminPinPrompt && (
+            <AdminPinOverlay
+              adminPin={adminPin}
+              adminPinError={adminPinError}
+              onPinChange={(value) => {
+                setAdminPin(value);
+                if (adminPinError) setAdminPinError(null);
+              }}
+              onCancel={() => {
+                setShowAdminPinPrompt(false);
+                setAdminPin('');
+                setAdminPinError(null);
+              }}
+              onConfirm={handleVerifyAdminPin}
+            />
+          )}
         </Modal>
       )}
     </div>
@@ -794,6 +993,48 @@ function CloseHistoryRow({
   payments: PosPayment[];
   onToggle: () => void;
 }) {
+  const [titleClicks, setTitleClicks] = useState(0);
+  const [showAdminPinPrompt, setShowAdminPinPrompt] = useState(false);
+  const [showAdminDetails, setShowAdminDetails] = useState(false);
+  const [adminPin, setAdminPin] = useState('');
+  const [adminPinError, setAdminPinError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (titleClicks === 0) return;
+    const timer = window.setTimeout(() => setTitleClicks(0), 900);
+    return () => window.clearTimeout(timer);
+  }, [titleClicks]);
+
+  useEffect(() => {
+    if (titleClicks < 3) return;
+    setTitleClicks(0);
+    setShowAdminPinPrompt(true);
+    setAdminPinError(null);
+  }, [titleClicks]);
+
+  const handleVerifyAdminPin = async () => {
+    if (adminPin.length !== 4) {
+      setAdminPinError('Ingresa la clave de admin de 4 dígitos.');
+      return;
+    }
+
+    setAdminPinError(null);
+    try {
+      await posApi.verifyMasterPin(adminPin);
+      setShowAdminDetails(true);
+      setShowAdminPinPrompt(false);
+      setAdminPin('');
+      if (!isExpanded) {
+        onToggle();
+      }
+    } catch (verifyError) {
+      setAdminPinError(
+        verifyError instanceof Error ? verifyError.message : 'Clave de admin incorrecta'
+      );
+      setAdminPin('');
+    }
+  };
+
   const closedTime = session.closedAt
     ? new Date(session.closedAt).toLocaleString('es-MX', {
         hour: '2-digit',
@@ -803,10 +1044,13 @@ function CloseHistoryRow({
       })
     : '—';
 
-  const varianceOk = Math.abs(session.variance) < 0.01;
+  const varianceOk =
+    typeof session.isPerfectCut === 'boolean'
+      ? session.isPerfectCut
+      : Math.abs(session.variance) < 0.01;
 
   return (
-    <div>
+    <div className="relative">
       <button
         type="button"
         onClick={onToggle}
@@ -814,7 +1058,13 @@ function CloseHistoryRow({
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="font-sans text-sm font-bold text-primary">
+            <p
+              className="font-sans text-sm font-bold text-primary select-none"
+              onClick={(event) => {
+                event.stopPropagation();
+                setTitleClicks((prev) => prev + 1);
+              }}
+            >
               Corte · {session.shiftDate}
             </p>
             <p className="text-[10px] text-outline mt-1">
@@ -840,7 +1090,7 @@ function CloseHistoryRow({
                     : 'bg-amber-50 border-amber-200 text-amber-900'
                 }`}
               >
-                Dif. {formatMXN(session.variance)}
+                {varianceOk ? 'Corte perfecto' : 'Con diferencias'}
               </span>
             </div>
           </div>
@@ -862,19 +1112,7 @@ function CloseHistoryRow({
 
       {isExpanded && (
         <div className="px-4 pb-4 bg-surface-container-low/30 border-t border-primary/5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 py-3 text-[10px]">
-            <div>
-              <p className="text-outline font-bold uppercase">Esperado</p>
-              <p className="font-bold text-primary mt-1">{formatMXN(session.expectedCash)}</p>
-            </div>
-            <div>
-              <p className="text-outline font-bold uppercase">Contado</p>
-              <p className="font-bold text-primary mt-1">{formatMXN(session.closingCountedCash)}</p>
-            </div>
-            <div>
-              <p className="text-outline font-bold uppercase">Transferencia</p>
-              <p className="font-bold text-primary mt-1">{formatMXN(session.totalTransferencia)}</p>
-            </div>
+          <div className="grid grid-cols-2 gap-3 py-3 text-[10px]">
             <div>
               <p className="text-outline font-bold uppercase">Apertura</p>
               <p className="font-bold text-primary mt-1">
@@ -882,7 +1120,30 @@ function CloseHistoryRow({
                 {session.openedWithMasterPin ? ' (Master)' : ''}
               </p>
             </div>
+            <div>
+              <p className="text-outline font-bold uppercase">Cierre</p>
+              <p className="font-bold text-primary mt-1">
+                {session.closedByReceptionistName || session.closedByReceptionistId || '—'}
+                {session.closedWithMasterPin ? ' (Master)' : ''}
+              </p>
+            </div>
           </div>
+
+          {showAdminDetails && (
+            <div className="mb-3">
+              <CloseCutVariancePanel
+                expectedCash={session.expectedCash ?? 0}
+                closingCountedCash={session.closingCountedCash ?? 0}
+                variance={session.variance ?? 0}
+                expectedCard={session.expectedCard ?? 0}
+                closingCountedCard={session.closingCountedCard ?? 0}
+                cardVariance={session.cardVariance ?? 0}
+                expectedTransfer={session.expectedTransfer ?? 0}
+                closingCountedTransfer={session.closingCountedTransfer ?? 0}
+                transferVariance={session.transferVariance ?? 0}
+              />
+            </div>
+          )}
 
           {session.closingNotes && (
             <p className="text-xs text-outline mb-3 px-1">
@@ -910,6 +1171,23 @@ function CloseHistoryRow({
           )}
         </div>
       )}
+
+      {showAdminPinPrompt && (
+        <AdminPinOverlay
+          adminPin={adminPin}
+          adminPinError={adminPinError}
+          onPinChange={(value) => {
+            setAdminPin(value);
+            if (adminPinError) setAdminPinError(null);
+          }}
+          onCancel={() => {
+            setShowAdminPinPrompt(false);
+            setAdminPin('');
+            setAdminPinError(null);
+          }}
+          onConfirm={handleVerifyAdminPin}
+        />
+      )}
     </div>
   );
 }
@@ -925,7 +1203,11 @@ function PaymentRow({ payment }: { payment: PosPayment }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-sans text-sm font-bold text-primary">{payment.clientName}</p>
-          <p className="text-xs text-outline mt-0.5">{payment.serviceName}</p>
+          <AppointmentServiceList
+            serviceName={payment.serviceName}
+            lineClassName="text-xs text-outline"
+            className="mt-0.5"
+          />
           <p className="text-[10px] text-outline mt-1 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {payment.createdAt
@@ -1010,20 +1292,164 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function CloseCutVariancePanel({
+  expectedCash,
+  closingCountedCash,
+  variance,
+  expectedCard,
+  closingCountedCard,
+  cardVariance,
+  expectedTransfer,
+  closingCountedTransfer,
+  transferVariance,
+}: {
+  expectedCash: number;
+  closingCountedCash: number;
+  variance: number;
+  expectedCard: number;
+  closingCountedCard: number;
+  cardVariance: number;
+  expectedTransfer: number;
+  closingCountedTransfer: number;
+  transferVariance: number;
+}) {
+  return (
+    <div className="rounded-xl border border-primary/10 bg-surface-container-low/50 p-3 space-y-2">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-outline">
+        Detalle admin · restas del corte
+      </p>
+      <div className="grid grid-cols-4 gap-2 text-[9px] uppercase tracking-wider text-outline font-bold pb-1 border-b border-primary/5">
+        <span>Rubro</span>
+        <span>Sistema</span>
+        <span>Contado</span>
+        <span>Diferencia</span>
+      </div>
+      <CloseVarianceRow
+        label="Efectivo"
+        expected={expectedCash}
+        counted={closingCountedCash}
+        variance={variance}
+      />
+      <CloseVarianceRow
+        label="Tarjeta"
+        expected={expectedCard}
+        counted={closingCountedCard}
+        variance={cardVariance}
+      />
+      <CloseVarianceRow
+        label="Transferencia"
+        expected={expectedTransfer}
+        counted={closingCountedTransfer}
+        variance={transferVariance}
+      />
+    </div>
+  );
+}
+
+function CloseVarianceRow({
+  label,
+  expected,
+  counted,
+  variance,
+}: {
+  label: string;
+  expected: number;
+  counted: number;
+  variance: number;
+}) {
+  const ok = amountsMatch(counted, expected);
+
+  return (
+    <div className="grid grid-cols-4 gap-2 text-[10px] items-center">
+      <span className="font-bold uppercase text-outline">{label}</span>
+      <span className="text-primary font-bold">{formatMXN(expected)}</span>
+      <span className="text-primary font-bold">{formatMXN(counted)}</span>
+      <span className={`font-bold ${ok ? 'text-emerald-700' : 'text-amber-800'}`}>
+        {variance >= 0 ? '+' : ''}
+        {formatMXN(variance)}
+      </span>
+    </div>
+  );
+}
+
+function AdminPinOverlay({
+  adminPin,
+  adminPinError,
+  onPinChange,
+  onCancel,
+  onConfirm,
+}: {
+  adminPin: string;
+  adminPinError: string | null;
+  onPinChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4 z-10">
+      <div className="bg-surface w-full max-w-xs rounded-2xl border border-primary/10 p-5 space-y-4 shadow-xl">
+        <div>
+          <h4 className="font-display text-base font-bold text-primary">Clave de admin</h4>
+          <p className="text-xs text-outline mt-1">
+            Ingresa la clave para ver las restas del corte.
+          </p>
+        </div>
+        <input
+          type="password"
+          inputMode="numeric"
+          maxLength={4}
+          value={adminPin}
+          onChange={(e) => onPinChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          className={`${fieldClassName} tracking-[0.45em] text-center`}
+          placeholder="••••"
+          autoFocus
+        />
+        {adminPinError && <ModalError message={adminPinError} />}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-primary/10 text-xs font-bold uppercase tracking-wider text-outline"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={adminPin.length !== 4}
+            className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary text-xs font-bold uppercase tracking-wider disabled:opacity-40"
+          >
+            Ver detalle
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Modal({
   title,
   children,
   onClose,
+  onTitleClick,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  onTitleClick?: () => void;
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-surface max-w-md w-full rounded-2xl border border-primary/10 luxury-shadow overflow-hidden">
+      <div className="bg-surface max-w-lg w-full rounded-2xl border border-primary/10 luxury-shadow overflow-hidden relative">
         <div className="px-5 py-4 border-b border-primary/5 flex items-center justify-between">
-          <h3 className="font-display text-lg font-bold text-primary">{title}</h3>
+          <h3
+            className={`font-display text-lg font-bold text-primary ${
+              onTitleClick ? 'select-none cursor-default' : ''
+            }`}
+            onClick={onTitleClick}
+          >
+            {title}
+          </h3>
           <button type="button" onClick={onClose} className="text-outline hover:text-primary text-sm font-bold">
             Cerrar
           </button>
