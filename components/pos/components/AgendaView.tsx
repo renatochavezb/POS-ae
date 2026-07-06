@@ -17,12 +17,15 @@ import {
   formatDuration,
   getMonday,
   formatSpanishShortDate,
+  formatSpanishShortDateInTimeZone,
+  getTodaySpanishShortDate,
   addDays,
   parseTimeToMinutes,
   isStaffTimeBlocked,
   getDurationOptionsFromConfig,
 } from '../scheduleUtils';
 import posApi from '@/libs/posApi';
+import { getAgendaStaffForDate, isStaffActiveForOperations } from '@/libs/posStaffAgenda';
 import AppointmentServiceList from '../serviceDisplay';
 import { getStaffById } from '../staffColors';
 import { formatServicePrice } from '../data';
@@ -69,17 +72,17 @@ type WeekDay = {
 };
 
 const generateWeekDays = (monday: Date): WeekDay[] => {
-  const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
   return Array.from({ length: 7 }, (_, index) => {
     const tempDate = new Date(monday);
     tempDate.setDate(monday.getDate() + index);
+    const fullDate = formatSpanishShortDateInTimeZone(tempDate);
 
     return {
       name: dayNames[index],
       date: String(tempDate.getDate()),
-      fullDate: `${tempDate.getDate()} ${monthNames[tempDate.getMonth()]}, ${tempDate.getFullYear()}`,
+      fullDate,
       rawDate: tempDate
     };
   });
@@ -144,7 +147,7 @@ export default function AgendaView({
   const hours = useMemo(() => buildCalendarHourSlots(scheduleConfig), [scheduleConfig]);
 
   const days = useMemo(() => generateWeekDays(currentWeekStart), [currentWeekStart]);
-  const selectedDayLabel = formatSpanishShortDate(selectedDate);
+  const selectedDayLabel = formatSpanishShortDateInTimeZone(selectedDate);
 
   const todayAppointments = useMemo(
     () => appointments.filter((app) => app.date === selectedDayLabel),
@@ -154,6 +157,11 @@ export default function AgendaView({
   const todayBlockedSlots = useMemo(
     () => blockedSlots.filter((slot) => slot.date === selectedDayLabel),
     [blockedSlots, selectedDayLabel]
+  );
+
+  const agendaStaffList = useMemo(
+    () => getAgendaStaffForDate(staffList, selectedDayLabel),
+    [staffList, selectedDayLabel]
   );
 
   useEffect(() => {
@@ -198,11 +206,7 @@ export default function AgendaView({
     return () => observer.disconnect();
   }, []);
 
-  const getIsToday = (dayFullDate: string) => {
-    const normalizedDay = dayFullDate.replace(',', '');
-    const normalizedToday = formatSpanishShortDate(new Date()).replace(',', '');
-    return normalizedDay === normalizedToday;
-  };
+  const getIsToday = (dayFullDate: string) => dayFullDate === getTodaySpanishShortDate();
 
   const getIsSelectedDay = (dayFullDate: string) => dayFullDate === selectedDayLabel;
 
@@ -285,7 +289,7 @@ export default function AgendaView({
     }
   };
 
-  const gridTemplateColumns = `48px repeat(${staffList.length}, minmax(0, 1fr))`;
+  const gridTemplateColumns = `48px repeat(${agendaStaffList.length}, minmax(0, 1fr))`;
 
   const getTimelineLayout = (time: string, duration: number) => {
     const startMinutes = parseTimeToMinutes(time);
@@ -313,6 +317,11 @@ export default function AgendaView({
   };
 
   const handleSlotClick = (slotTime: string, staffId: string) => {
+    const staffMember = staffList.find((member) => member.id === staffId);
+    if (!isStaffActiveForOperations(staffMember)) {
+      return;
+    }
+
     if (closeMode) {
       setCloseDraft({
         date: selectedDayLabel,
@@ -525,7 +534,7 @@ export default function AgendaView({
                 <div className="px-1 py-2 border-r border-primary/5 flex items-center justify-center text-[9px] text-outline font-bold uppercase tracking-widest">
                   Hora
                 </div>
-                {staffList.map((staff) => (
+                {agendaStaffList.map((staff) => (
                   <button
                     key={staff.id}
                     type="button"
@@ -568,7 +577,8 @@ export default function AgendaView({
                     ))}
                   </div>
 
-                  {staffList.map((staff) => {
+                  {agendaStaffList.map((staff) => {
+                    const isInactiveColumn = !isStaffActiveForOperations(staff);
                     const staffAppointments = appointments.filter(
                       (appointment) =>
                         appointment.date === selectedDayLabel &&
@@ -584,7 +594,7 @@ export default function AgendaView({
                         key={staff.id}
                         className={`relative border-r border-primary/5 min-w-0 ${
                           isTodaySelected ? 'bg-primary/[0.015]' : ''
-                        }`}
+                        } ${isInactiveColumn ? 'opacity-80' : ''}`}
                       >
                         {Array.from({ length: timeline.halfHourSlots }).map((_, slotIndex) => {
                           const slotTime = formatSlotTime(slotIndex);
@@ -605,7 +615,9 @@ export default function AgendaView({
                               className={`absolute left-0 right-0 border-primary/5 transition-colors group ${
                                 isHourBoundary ? 'border-t' : 'border-t border-dashed opacity-70'
                               } ${
-                                closeMode
+                                isInactiveColumn
+                                  ? 'cursor-default'
+                                  : closeMode
                                   ? 'hover:bg-amber-500/10 cursor-crosshair'
                                   : isBlocked
                                   ? 'cursor-not-allowed'
@@ -616,14 +628,16 @@ export default function AgendaView({
                                 height: HALF_HOUR_HEIGHT
                               }}
                               title={
-                                closeMode
+                                isInactiveColumn
+                                  ? `Historial de ${staff.name} (sin reservas nuevas)`
+                                  : closeMode
                                   ? `Cerrar horario de ${staff.name} a las ${slotTime}`
                                   : isBlocked
                                   ? `Horario cerrado`
                                   : `Reservar ${staff.name} a las ${slotTime}`
                               }
                             >
-                              {!isBlocked && !closeMode && (
+                              {!isBlocked && !closeMode && !isInactiveColumn && (
                                 <span
                                   className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border"
                                   style={{
@@ -635,7 +649,7 @@ export default function AgendaView({
                                   <Plus className="w-3 h-3" /> {slotTime}
                                 </span>
                               )}
-                              {closeMode && (
+                              {closeMode && !isInactiveColumn && (
                                 <span className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border border-amber-300 bg-amber-50 text-amber-900">
                                   <Lock className="w-3 h-3" /> Cerrar {slotTime}
                                 </span>

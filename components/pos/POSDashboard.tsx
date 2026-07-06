@@ -50,6 +50,7 @@ import AgendaView from './components/AgendaView';
 import ClientsView from './components/ClientsView';
 import ClientProfileView from './components/ClientProfileView';
 import StaffView from './components/StaffView';
+import StaffDeactivateModal from './components/StaffDeactivateModal';
 import StaffAnalyticsView from './components/StaffAnalyticsView';
 import ServicesView from './components/ServicesView';
 import SettingsView from './components/SettingsView';
@@ -58,7 +59,8 @@ import StudioLogo from './components/StudioLogo';
 import CajaView from './components/CajaView';
 import MasterReceptionLogView from './components/MasterReceptionLogView';
 import posApi, { ReceptionistAuthPayload } from '@/libs/posApi';
-import { readPosSession, writePosSession, clearPosSession, PosSession, getActiveReceptionistSession } from '@/libs/posSession';
+import { getBookableStaff } from '@/libs/posStaffAgenda';
+import { readPosSession, writePosSession, clearPosSession, PosSession, getActiveReceptionistSession, markAccountantLogoutRecorded, wasAccountantLogoutRecorded } from '@/libs/posSession';
 import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus } from './appointmentStatus';
 
 type BookingServiceLine = {
@@ -153,6 +155,8 @@ export default function POSDashboard() {
   const [staffList, setStaffList] = useState<Staff[]>(INITIAL_STAFF);
   const [receptionists, setReceptionists] = useState<Receptionist[]>(INITIAL_RECEPTIONISTS);
   const [loggedInReceptionistId, setLoggedInReceptionistId] = useState<string | null>(null);
+  const [loggedInAccountantId, setLoggedInAccountantId] = useState<string | null>(null);
+  const [loggedInAccountantName, setLoggedInAccountantName] = useState<string | null>(null);
   const [isMasterSession, setIsMasterSession] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [blockedSlots, setBlockedSlots] = useState<StaffBlockedSlot[]>(INITIAL_BLOCKED_SLOTS);
@@ -163,6 +167,13 @@ export default function POSDashboard() {
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [staffPendingDeactivation, setStaffPendingDeactivation] = useState<Staff | null>(null);
+  const [isDeactivatingStaff, setIsDeactivatingStaff] = useState(false);
+  const [staffDeactivateError, setStaffDeactivateError] = useState<string | null>(null);
+  const [accountantActivityRefresh, setAccountantActivityRefresh] = useState(0);
+
+  const bumpAccountantActivity = () =>
+    setAccountantActivityRefresh((value) => value + 1);
 
   // Appointment creation form fields
   const [bookingClient, setBookingClient] = useState('');
@@ -211,24 +222,42 @@ export default function POSDashboard() {
     setLoggedInReceptionistId(
       session.role === 'reception' ? (session.receptionistId || null) : null
     );
+    setLoggedInAccountantId(
+      session.role === 'accountant' ? (session.accountantId || null) : null
+    );
+    setLoggedInAccountantName(
+      session.role === 'accountant' ? (session.accountantName || null) : null
+    );
     setIsMasterSession(Boolean(session.isMaster));
 
     if (session.role === 'manicurista' && session.staffId) {
       setSelectedStaffId(session.staffId);
       setCurrentTab('staff');
     }
+
+    if (session.role === 'accountant') {
+      setSelectedStaffId(null);
+      setSelectedClientId(null);
+      setCurrentTab('staff');
+    }
   };
 
+  const isAccountantSession = Boolean(loggedInAccountantId);
+
   const handleLocalLogin = (
-    role: 'reception' | 'manicurista',
+    role: 'reception' | 'manicurista' | 'accountant',
     staffId?: string,
     receptionistId?: string,
-    isMaster?: boolean
+    isMaster?: boolean,
+    accountantId?: string,
+    accountantName?: string
   ) => {
     const session: PosSession = {
       role,
       staffId: role === 'manicurista' ? staffId : undefined,
       receptionistId: role === 'reception' ? receptionistId : undefined,
+      accountantId: role === 'accountant' ? accountantId : undefined,
+      accountantName: role === 'accountant' ? accountantName : undefined,
       isMaster: Boolean(isMaster),
     };
 
@@ -237,10 +266,25 @@ export default function POSDashboard() {
     setIsSessionValidated(true);
   };
 
-  const handlePosLogout = () => {
+  const handlePosLogout = async () => {
+    if (loggedInAccountantId) {
+      try {
+        await posApi.recordAccountantActivity({
+          accountantId: loggedInAccountantId,
+          action: 'logout',
+          logoutReason: 'manual',
+        });
+        markAccountantLogoutRecorded();
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
     clearPosSession();
     setIsSessionValidated(false);
     setLoggedInReceptionistId(null);
+    setLoggedInAccountantId(null);
+    setLoggedInAccountantName(null);
     setIsMasterSession(false);
     setSelectedClientId(null);
     setSelectedStaffId(null);
@@ -252,6 +296,18 @@ export default function POSDashboard() {
     setStaffList(INITIAL_STAFF);
     setReceptionists(INITIAL_RECEPTIONISTS);
   };
+
+  useEffect(() => {
+    const onPageHide = () => {
+      if (wasAccountantLogoutRecorded()) return;
+      const session = readPosSession();
+      if (session?.role !== "accountant" || !session.accountantId) return;
+      posApi.recordAccountantLogoutBeacon(session.accountantId);
+    };
+
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, []);
 
   const getBookingReceptionist = () => {
     const receptionistId =
@@ -277,6 +333,17 @@ export default function POSDashboard() {
           ? 'Recepción · Master'
           : 'Recepción · Turno activo',
         initials: loggedInReceptionist.name
+          .split(' ')
+          .map((part) => part[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2),
+      }
+    : loggedInAccountantName
+    ? {
+        name: loggedInAccountantName,
+        subtitle: 'Contabilidad · Liquidaciones',
+        initials: loggedInAccountantName
           .split(' ')
           .map((part) => part[0])
           .join('')
@@ -379,7 +446,15 @@ export default function POSDashboard() {
   }, [isSessionValidated]);
 
   useEffect(() => {
-    if (!isMasterSession || mobileLogoClicks < 3) return;
+    if (!isAccountantSession) return;
+    if (currentTab !== 'staff') {
+      setCurrentTab('staff');
+    }
+    setSelectedClientId(null);
+  }, [isAccountantSession, currentTab]);
+
+  useEffect(() => {
+    if (!isMasterSession || mobileLogoClicks < 3 || isAccountantSession) return;
 
     setCurrentTab('master-log');
     setMobileLogoClicks(0);
@@ -409,6 +484,12 @@ export default function POSDashboard() {
     }
   };
 
+  const handleStaffUpdated = (updated: Staff) => {
+    setStaffList((prev) =>
+      prev.map((member) => (member.id === updated.id ? updated : member))
+    );
+  };
+
   const syncBookingDurationFromServices = (
     lines: BookingServiceLine[],
     mode: 'custom' | 'catalog'
@@ -428,13 +509,15 @@ export default function POSDashboard() {
     });
   };
 
+  const bookableStaff = useMemo(() => getBookableStaff(staffList), [staffList]);
+
   const getEligibleBookingStaff = (
     lines: BookingServiceLine[],
     mode: 'custom' | 'catalog',
     lockedStaffId?: string
   ) => {
     if (lockedStaffId) {
-      return staffList.filter((member) => member.id === lockedStaffId);
+      return bookableStaff.filter((member) => member.id === lockedStaffId);
     }
 
     const catalogServiceIds =
@@ -442,8 +525,8 @@ export default function POSDashboard() {
 
     const base =
       mode === 'custom' || catalogServiceIds.length === 0
-        ? staffList
-        : getStaffForServiceIds(catalogServiceIds, staffList);
+        ? bookableStaff
+        : getStaffForServiceIds(catalogServiceIds, bookableStaff);
 
     return base.filter((member) => member.status !== 'offline' || member.id === bookingStaffId);
   };
@@ -465,7 +548,7 @@ export default function POSDashboard() {
     defaultStaffId?: string
   ) => {
     const lockedStaff = defaultStaffId
-      ? staffList.find((member) => member.id === defaultStaffId)
+      ? bookableStaff.find((member) => member.id === defaultStaffId)
       : undefined;
 
     let defaultServiceId = prefilledServiceId || (services[0] ? services[0].id : '');
@@ -518,6 +601,17 @@ export default function POSDashboard() {
     );
   }, [clients, bookingClientQuery]);
 
+  useEffect(() => {
+    if (!isAppointmentModalOpen) return;
+
+    setBookingClient((current) => {
+      if (current && clients.some((client) => client.name === current)) {
+        return current;
+      }
+      return clients[0]?.name || '';
+    });
+  }, [isAppointmentModalOpen, clients]);
+
   const bookingEligibleStaff = useMemo(
     () =>
       getEligibleBookingStaff(
@@ -525,7 +619,7 @@ export default function POSDashboard() {
         bookingServiceMode,
         bookingStaffLocked ? bookingStaffId : undefined
       ),
-    [bookingServices, bookingServiceMode, bookingStaffLocked, bookingStaffId, staffList]
+    [bookingServices, bookingServiceMode, bookingStaffLocked, bookingStaffId, bookableStaff]
   );
 
   // Submit appointment
@@ -1006,17 +1100,12 @@ export default function POSDashboard() {
         phone: newClientPhone,
         birthday: newClientBirthday || 'No especificado',
         address: newClientAddress || 'No especificada',
-        isPlatinum: true,
-        memberSince: new Date().getFullYear().toString(),
-        bio: newClientBio || 'Nuevo cliente VIP registrado en recepción.',
+        bio: newClientBio || 'Nueva clienta registrada en recepción.',
         styleProfile: {
-          bio: 'Por definir en la primera sesión técnica.',
-          tags: ['New Client'],
+          bio: 'Por definir en la primera visita.',
+          tags: ['Nueva'],
         },
         alerts: newClientAlerts ? [newClientAlerts] : [],
-        totalSpent: 0,
-        visitsCount: 0,
-        averageTicket: 0,
       });
 
       setClients((prev) => [created, ...prev]);
@@ -1032,7 +1121,11 @@ export default function POSDashboard() {
       setIsClientModalOpen(false);
     } catch (error) {
       console.error(error);
-      window.alert('No se pudo registrar el cliente en la base de datos.');
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'No se pudo registrar la clienta en la base de datos.';
+      window.alert(message);
     }
   };
 
@@ -1082,26 +1175,57 @@ export default function POSDashboard() {
     }
   };
 
-  const handleDeleteStaff = async (staffId: string) => {
+  const handleDeleteStaff = (staffId: string) => {
     const staffMember = staffList.find((staff) => staff.id === staffId);
     if (!staffMember) return;
 
-    const confirmed = window.confirm(
-      `¿Dar de baja a ${staffMember.name}? Esta acción eliminará su perfil del equipo.`
-    );
+    setStaffDeactivateError(null);
+    setStaffPendingDeactivation(staffMember);
+  };
 
-    if (!confirmed) return;
+  const confirmDeactivateStaff = async () => {
+    if (!staffPendingDeactivation) return;
+
+    setIsDeactivatingStaff(true);
+    setStaffDeactivateError(null);
 
     try {
-      await posApi.deleteStaff(staffId);
-      setStaffList((prev) => prev.filter((staff) => staff.id !== staffId));
+      const result = await posApi.deleteStaff(staffPendingDeactivation.id);
+      setStaffList((prev) =>
+        prev.map((staff) =>
+          staff.id === staffPendingDeactivation.id
+            ? {
+                ...staff,
+                isActive: false,
+                status: 'offline',
+                deactivatedAt: result.deactivatedAt || new Date().toISOString(),
+                deactivatedAgendaDate:
+                  result.deactivatedAgendaDate || staff.deactivatedAgendaDate || '',
+              }
+            : staff
+        )
+      );
 
-      if (selectedStaffId === staffId) {
+      if (selectedStaffId === staffPendingDeactivation.id) {
         setSelectedStaffId(null);
+      }
+
+      setStaffPendingDeactivation(null);
+
+      if (result.hadAppointments) {
+        window.alert(
+          `${staffPendingDeactivation.name} fue dada de baja. En la agenda seguirá visible el día de la baja y los días anteriores; desde el día siguiente ya no aparecerá.`
+        );
       }
     } catch (error) {
       console.error(error);
-      window.alert('No se pudo dar de baja a la manicurista.');
+      setStaffDeactivateError(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo dar de baja a la manicurista en la base de datos.'
+      );
+    } finally {
+      setIsDeactivatingStaff(false);
     }
   };
 
@@ -1188,6 +1312,15 @@ export default function POSDashboard() {
               staff={staffObj}
               appointments={appointments}
               onBack={() => setSelectedStaffId(null)}
+              onStaffUpdated={handleStaffUpdated}
+              isAccountantSession={isAccountantSession}
+              loggedInAccountant={
+                loggedInAccountantId
+                  ? { id: loggedInAccountantId, name: loggedInAccountantName || 'Contadora' }
+                  : null
+              }
+              onAccountantActivity={bumpAccountantActivity}
+              activityRefreshKey={accountantActivityRefresh}
             />
           );
         }
@@ -1199,6 +1332,10 @@ export default function POSDashboard() {
             onSelectStaff={(id) => setSelectedStaffId(id)}
             onUpdateStaffStatus={handleUpdateStaffStatus}
             onDeleteStaff={handleDeleteStaff}
+            readOnly={isAccountantSession}
+            accountantId={loggedInAccountantId}
+            accountantName={loggedInAccountantName}
+            activityRefreshKey={accountantActivityRefresh}
           />
         );
       case 'services':
@@ -1284,11 +1421,23 @@ export default function POSDashboard() {
           </p>
         </div>
       )}
+      {loggedInAccountantName && (
+        <div className="shrink-0 px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/20 text-center">
+          <p className="text-xs font-sans font-bold text-primary">
+            Sesión de contabilidad ·{' '}
+            <span className="text-emerald-800 uppercase tracking-wider">{loggedInAccountantName}</span>
+            <span className="text-outline font-medium normal-case tracking-normal">
+              {' '}· Acceso limitado a Equipo
+            </span>
+          </p>
+        </div>
+      )}
       <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* 1. Desktop Persistent Left Sidebar Navigation */}
       <Sidebar 
         currentTab={currentTab} 
         setCurrentTab={(tab) => {
+          if (isAccountantSession && tab !== 'staff') return;
           setCurrentTab(tab);
           setSelectedClientId(null);
           setSelectedStaffId(null);
@@ -1299,6 +1448,8 @@ export default function POSDashboard() {
         onLogout={handlePosLogout}
         isMasterSession={isMasterSession}
         onOpenMasterPanel={() => setCurrentTab('master-log')}
+        allowedTabIds={isAccountantSession ? ['staff'] : undefined}
+        hideQuickLinks={isAccountantSession}
       />
 
       {/* 2. Main content scrollable canvas shell */}
@@ -1318,6 +1469,11 @@ export default function POSDashboard() {
             {loggedInReceptionist && (
               <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
                 {loggedInReceptionist.name} · Recepción
+              </p>
+            )}
+            {loggedInAccountantName && (
+              <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
+                {loggedInAccountantName} · Contabilidad
               </p>
             )}
           </div>
@@ -1362,7 +1518,9 @@ export default function POSDashboard() {
                   { id: 'staff', label: 'Equipo' },
                   { id: 'services', label: 'Servicios' },
                   { id: 'settings', label: 'Configuración' }
-                ].map((item) => (
+                ]
+                  .filter((item) => !isAccountantSession || item.id === 'staff')
+                  .map((item) => (
                   <button
                     key={item.id}
                     onClick={() => {
@@ -1391,6 +1549,12 @@ export default function POSDashboard() {
                   <p className="text-[10px] text-outline">Recepción · Turno activo</p>
                 </div>
               )}
+              {loggedInAccountantName && (
+                <div className="px-2">
+                  <p className="text-xs font-bold text-primary uppercase">{loggedInAccountantName}</p>
+                  <p className="text-[10px] text-outline">Contabilidad · Solo equipo</p>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={handlePosLogout}
@@ -1398,6 +1562,8 @@ export default function POSDashboard() {
               >
                 Cerrar sesión
               </button>
+              {!isAccountantSession && (
+              <>
               <p className="text-[9px] text-outline font-bold tracking-widest uppercase">Visuales Rápidas</p>
               <div className="flex flex-col gap-1.5 text-xs text-left">
                 <button 
@@ -1413,6 +1579,8 @@ export default function POSDashboard() {
                   ● Analíticas Carla
                 </button>
               </div>
+              </>
+              )}
             </div>
           </div>
         </div>
@@ -1496,9 +1664,13 @@ export default function POSDashboard() {
                   </button>
                 </div>
 
-                <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Seleccionar Cliente VIP</label>
+                <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Seleccionar clienta</label>
 
-                {bookingClientSearchMode ? (
+                {clients.length === 0 ? (
+                  <p className="text-xs text-outline px-1 py-2">
+                    No hay clientas cargadas. Usa «Nuevo cliente» o recarga la página.
+                  </p>
+                ) : bookingClientSearchMode ? (
                   <div className="space-y-1.5">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-outline pointer-events-none" />
@@ -1532,7 +1704,6 @@ export default function POSDashboard() {
                             <span className="font-bold block">{client.name}</span>
                             <span className="text-[10px] text-outline">
                               {client.phone || client.email || client.id}
-                              {client.isPlatinum ? ' · VIP Platinum' : ''}
                             </span>
                           </button>
                         ))
@@ -1552,8 +1723,11 @@ export default function POSDashboard() {
                     className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
                     required
                   >
+                    <option value="" disabled>
+                      Elige una clienta...
+                    </option>
                     {clients.map(c => (
-                      <option key={c.id} value={c.name}>{c.name} ({c.isPlatinum ? 'VIP Platinum' : 'Regular'})</option>
+                      <option key={c.id} value={c.name}>{c.name} · {c.id}</option>
                     ))}
                   </select>
                 )}
@@ -1660,7 +1834,7 @@ export default function POSDashboard() {
                               );
                               const eligible = getStaffForServiceIds(
                                 nextLines.map((item) => item.serviceId).filter(Boolean),
-                                staffList
+                                bookableStaff
                               ).filter((member) => member.status !== 'offline');
 
                               if (!eligible.some((member) => member.id === bookingStaffId)) {
@@ -1829,6 +2003,20 @@ export default function POSDashboard() {
         </div>
       )}
 
+      {staffPendingDeactivation && (
+        <StaffDeactivateModal
+          staff={staffPendingDeactivation}
+          isSubmitting={isDeactivatingStaff}
+          error={staffDeactivateError}
+          onConfirm={confirmDeactivateStaff}
+          onClose={() => {
+            if (isDeactivatingStaff) return;
+            setStaffPendingDeactivation(null);
+            setStaffDeactivateError(null);
+          }}
+        />
+      )}
+
       {/* ==============================================
           MODAL OVERLAYS: REGISTER NEW CLIENT VIP
           ============================================== */}
@@ -1844,7 +2032,10 @@ export default function POSDashboard() {
             </button>
 
             <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">Registro de Clientes</span>
-            <h3 className="font-display text-xl font-bold text-primary mb-5">Registrar Cliente VIP en studio aé</h3>
+            <h3 className="font-display text-xl font-bold text-primary mb-5">Registrar Cliente en studio aé</h3>
+            <p className="text-xs text-outline mb-4">
+              El ID se genera automáticamente (SA-1001, SA-1002…). El teléfono evita registros duplicados.
+            </p>
 
             <form onSubmit={handleCreateClient} className="space-y-4">
               <div className="space-y-1">
@@ -1864,22 +2055,22 @@ export default function POSDashboard() {
                   <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Correo Electrónico</label>
                   <input 
                     type="email" 
-                    placeholder="e.g. maria@luxury.com"
+                    placeholder="e.g. maria@email.com"
                     value={newClientEmail}
                     onChange={(e) => setNewClientEmail(e.target.value)}
                     className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
-                    required
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Teléfono de Contacto</label>
+                  <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Teléfono (10 dígitos) *</label>
                   <input 
                     type="tel" 
-                    placeholder="e.g. +34 600 000 000"
+                    placeholder="e.g. 5512345678"
                     value={newClientPhone}
                     onChange={(e) => setNewClientPhone(e.target.value)}
                     className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
                     required
+                    minLength={10}
                   />
                 </div>
               </div>

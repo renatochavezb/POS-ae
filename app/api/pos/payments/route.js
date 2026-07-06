@@ -22,6 +22,8 @@ import {
   normalizeAppointmentStatus,
 } from "@/components/pos/appointmentStatus";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
+import { compareSpanishShortDates } from "@/libs/posClientCrmFields";
+import { syncClientCrmSegments } from "@/libs/posClientCrmSegments";
 
 export const dynamic = "force-dynamic";
 
@@ -189,6 +191,12 @@ export async function POST(req) {
     if (client) {
       const nextVisits = (client.visitsCount ?? 0) + 1;
       const nextTotalSpent = (client.totalSpent ?? 0) + breakdown.amount;
+      const nextLastPaid =
+        !client.lastPaidVisitDate ||
+        compareSpanishShortDates(appointment.date, client.lastPaidVisitDate) >= 0
+          ? appointment.date
+          : client.lastPaidVisitDate;
+
       await PosClient.updateOne(
         { clientCode: client.clientCode },
         {
@@ -196,9 +204,12 @@ export async function POST(req) {
             visitsCount: nextVisits,
             totalSpent: nextTotalSpent,
             averageTicket: nextTotalSpent / nextVisits,
+            lastPaidVisitDate: nextLastPaid,
           },
         }
       );
+
+      await syncClientCrmSegments(client.clientCode);
     }
 
     await refreshCashSessionTotals(openSession.sessionCode);

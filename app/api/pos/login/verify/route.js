@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
 import PosReceptionist from "@/models/PosReceptionist";
 import PosStaff from "@/models/PosStaff";
+import PosAccountant from "@/models/PosAccountant";
 import PosLoginAudit from "@/models/PosLoginAudit";
-import { seedPosReceptionistsIfEmpty, seedPosStaffIfEmpty } from "@/libs/posSeed";
+import { recordAccountantActivity } from "@/libs/posAccountantActivity";
+import { seedPosReceptionistsIfEmpty, seedPosStaffIfEmpty, seedPosAccountantIfEmpty } from "@/libs/posSeed";
 import { syncStaffLoginCodes } from "@/libs/posStaffServices";
 import { getScheduleConfig } from "@/libs/posScheduleConfig";
 import { openCashSessionForReceptionist } from "@/libs/posCashRegister";
@@ -13,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 async function logLoginAttempt({ role, userId, userName, success, isMaster }) {
   try {
-    await PosLoginAudit.create({
+    return await PosLoginAudit.create({
       role,
       userId: userId || "",
       userName: userName || "",
@@ -22,6 +24,7 @@ async function logLoginAttempt({ role, userId, userName, success, isMaster }) {
     });
   } catch (error) {
     console.error("PosLoginAudit", error);
+    return null;
   }
 }
 
@@ -42,6 +45,7 @@ export async function POST(req) {
     await connectMongo();
     await seedPosReceptionistsIfEmpty();
     await seedPosStaffIfEmpty();
+    await seedPosAccountantIfEmpty();
     await syncStaffLoginCodes();
 
     const scheduleConfig = await getScheduleConfig();
@@ -118,6 +122,13 @@ export async function POST(req) {
         );
       }
 
+      if (staff.isActive === false) {
+        return NextResponse.json(
+          { error: "Esta manicurista ya no está activa en el equipo" },
+          { status: 403 }
+        );
+      }
+
       if (pin !== staff.loginCode && !isMaster) {
         await logLoginAttempt({
           role: "manicurista",
@@ -143,6 +154,59 @@ export async function POST(req) {
         role: "manicurista",
         userId: staff.staffCode,
         userName: staff.name,
+        isMaster,
+      });
+    }
+
+    if (role === "accountant") {
+      const accountant = await PosAccountant.findOne({
+        accountantCode: userId,
+        isActive: { $ne: false },
+      });
+
+      if (!accountant) {
+        return NextResponse.json(
+          { error: "Contadora no encontrada" },
+          { status: 404 }
+        );
+      }
+
+      if (pin !== accountant.loginCode && !isMaster) {
+        await logLoginAttempt({
+          role: "accountant",
+          userId,
+          userName: accountant.name,
+          success: false,
+          isMaster: false,
+        });
+
+        return NextResponse.json({ error: "PIN incorrecto" }, { status: 401 });
+      }
+
+      const loginAudit = await logLoginAttempt({
+        role: isMaster ? "master" : "accountant",
+        userId,
+        userName: accountant.name,
+        success: true,
+        isMaster,
+      });
+
+      try {
+        await recordAccountantActivity({
+          accountantId: accountant.accountantCode,
+          action: "login",
+          loginAuditId: loginAudit?._id?.toString() || "",
+          isMasterSession: isMaster,
+        });
+      } catch (activityError) {
+        console.error("recordAccountantActivity login", activityError);
+      }
+
+      return NextResponse.json({
+        success: true,
+        role: "accountant",
+        userId: accountant.accountantCode,
+        userName: accountant.name,
         isMaster,
       });
     }

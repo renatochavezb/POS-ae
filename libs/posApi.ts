@@ -12,6 +12,10 @@ import {
   ScheduleConfig,
   Staff,
   StaffBlockedSlot,
+  Accountant,
+  StaffSettlement,
+  StaffSettlementAppointmentSnapshot,
+  AccountantActivity,
 } from "@/components/pos/types";
 import { getActiveReceptionistSession } from "@/libs/posSession";
 import { INITIAL_RECEPTIONISTS } from "@/components/pos/data";
@@ -101,17 +105,18 @@ const posApi = {
   getLoginBootstrap(): Promise<{
     receptionists: Receptionist[];
     staff: Staff[];
+    accountants: Accountant[];
   }> {
     return posClient.get("/pos/login/bootstrap");
   },
   verifyLogin(data: {
-    role: "reception" | "manicurista";
+    role: "reception" | "manicurista" | "accountant";
     userId: string;
     pin: string;
     openingFloat?: number;
   }): Promise<{
     success: boolean;
-    role: "reception" | "manicurista";
+    role: "reception" | "manicurista" | "accountant";
     userId: string;
     userName: string;
     isMaster: boolean;
@@ -141,13 +146,93 @@ const posApi = {
   getReceptionists(): Promise<Receptionist[]> {
     return posClient.get("/pos/receptionists");
   },
+  getAccountants(): Promise<Accountant[]> {
+    return posClient.get("/pos/accountants");
+  },
+  getStaffSettlements(staffId: string): Promise<StaffSettlement[]> {
+    return posClient.get(`/pos/staff/${staffId}/settlements`);
+  },
+  createStaffSettlement(data: {
+    staffId: string;
+    periodMode: "day" | "period";
+    periodStartLabel: string;
+    periodEndLabel: string;
+    periodStartYmd: string;
+    periodEndYmd: string;
+    accountantId: string;
+    pin?: string;
+    accountantSession?: boolean;
+    notes?: string;
+  }): Promise<StaffSettlement> {
+    return posClient.post("/pos/staff-settlements", data);
+  },
+  recordAccountantActivity(data: {
+    accountantId: string;
+    action: "login" | "logout" | "report_download" | "liquidation";
+    staffId?: string;
+    staffName?: string;
+    periodMode?: "day" | "period" | "";
+    periodStartLabel?: string;
+    periodEndLabel?: string;
+    periodStartYmd?: string;
+    periodEndYmd?: string;
+    settlementCode?: string;
+    reportCode?: string;
+    appointmentCount?: number;
+    grossAmount?: number;
+    paidAmount?: number;
+    appointmentCodes?: string[];
+    paymentCodes?: string[];
+    cashSessionCodes?: string[];
+    reportSnapshot?: StaffSettlementAppointmentSnapshot[];
+    loginAuditId?: string;
+    logoutReason?: "manual" | "browser_close" | "";
+    isMasterSession?: boolean;
+    metadata?: Record<string, unknown> | null;
+  }): Promise<AccountantActivity> {
+    return posClient.post("/pos/accountant-activities", data);
+  },
+  getAccountantActivities(params?: {
+    accountantId?: string;
+    staffId?: string;
+    action?: string;
+    limit?: number;
+  }): Promise<AccountantActivity[]> {
+    return posClient.get("/pos/accountant-activities", { params });
+  },
+  recordAccountantLogoutBeacon(accountantId: string): boolean {
+    if (typeof window === "undefined" || typeof navigator.sendBeacon !== "function") {
+      return false;
+    }
+
+    const payload = JSON.stringify({
+      accountantId,
+      action: "logout",
+      logoutReason: "browser_close",
+    });
+    const blob = new Blob([payload], { type: "application/json" });
+    return navigator.sendBeacon("/api/pos/accountant-activities", blob);
+  },
   createStaff(data: Record<string, unknown>): Promise<Staff> {
     return posClient.post("/pos/staff", data);
   },
   updateStaff(staffId: string, data: Record<string, unknown>): Promise<Staff> {
     return posClient.patch(`/pos/staff/${staffId}`, data);
   },
-  deleteStaff(staffId: string): Promise<{ success: boolean }> {
+  uploadStaffPhoto(staffId: string, file: File): Promise<Staff> {
+    const formData = new FormData();
+    formData.append("photo", file);
+    return posClient.post(`/pos/staff/${staffId}/photo`, formData);
+  },
+  deleteStaff(
+    staffId: string
+  ): Promise<{
+    success: boolean;
+    deactivated?: boolean;
+    hadAppointments?: boolean;
+    deactivatedAt?: string;
+    deactivatedAgendaDate?: string;
+  }> {
     return posClient.delete(`/pos/staff/${staffId}`);
   },
   getAppointments(): Promise<Appointment[]> {

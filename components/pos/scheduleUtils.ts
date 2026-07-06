@@ -57,6 +57,16 @@ export const getMexicoDateYMD = (date: Date = new Date()): string =>
     day: '2-digit',
   }).format(date);
 
+/** Convierte YYYY-MM-DD a Date local (medianoche). */
+export const dateFromMexicoYmd = (ymd: string): Date => {
+  const [year, month, day] = ymd.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+/** Etiqueta corta en español a partir de YYYY-MM-DD. */
+export const formatSpanishShortDateFromYmd = (ymd: string): string =>
+  formatSpanishShortDateInTimeZone(dateFromMexicoYmd(ymd));
+
 /** Lunes de la semana que contiene la fecha dada. */
 export const getMonday = (date: Date): Date => {
   const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -70,6 +80,46 @@ export const addDays = (date: Date, days: number): Date => {
   next.setDate(date.getDate() + days);
   return next;
 };
+
+export const WEEK_DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const;
+
+export type WeekDayEntry = {
+  dayLabel: string;
+  dateLabel: string;
+  date: Date;
+};
+
+/** Lunes a domingo de la semana que empieza en weekStartMonday. */
+export function buildWeekDayEntries(weekStartMonday: Date): WeekDayEntry[] {
+  return WEEK_DAY_LABELS.map((dayLabel, index) => {
+    const date = addDays(weekStartMonday, index);
+    return {
+      dayLabel,
+      dateLabel: formatSpanishShortDateInTimeZone(date),
+      date,
+    };
+  });
+}
+
+/** Rango legible: "29 Jun – 5 Jul, 2026" */
+export function formatWeekRangeLabel(weekStartMonday: Date): string {
+  const weekEnd = addDays(weekStartMonday, 6);
+  const startLabel = formatSpanishShortDateInTimeZone(weekStartMonday);
+  const endLabel = formatSpanishShortDateInTimeZone(weekEnd);
+
+  const startMatch = startLabel.match(/^(\d{1,2})\s+([A-Za-záéíóú]+)/i);
+  const endMatch = endLabel.match(/^(\d{1,2})\s+([A-Za-záéíóú]+),?\s*(\d{4})/i);
+
+  if (!startMatch || !endMatch) {
+    return `${startLabel} – ${endLabel}`;
+  }
+
+  return `${startMatch[1]} ${startMatch[2]} – ${endMatch[1]} ${endMatch[2]}, ${endMatch[3]}`;
+}
+
+export function isCurrentWeek(weekStartMonday: Date): boolean {
+  return getMonday(new Date()).getTime() === weekStartMonday.getTime();
+}
 
 /** Hourly rows shown in the agenda grid (9:00 – 21:00). */
 export const CALENDAR_HOUR_SLOTS = Array.from(

@@ -2,14 +2,17 @@ import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
 import PosReceptionist from "@/models/PosReceptionist";
 import PosStaff from "@/models/PosStaff";
+import PosAccountant from "@/models/PosAccountant";
 import {
   seedPosReceptionistsIfEmpty,
   seedPosStaffIfEmpty,
+  seedPosAccountantIfEmpty,
 } from "@/libs/posSeed";
 import {
   syncStaffAllowedServices,
   syncStaffLoginCodes,
 } from "@/libs/posStaffServices";
+import { ACTIVE_STAFF_FILTER } from "@/libs/posStaffQuery";
 
 export const dynamic = "force-dynamic";
 
@@ -42,22 +45,35 @@ function mapPublicStaff(doc) {
   };
 }
 
+function mapPublicAccountant(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.accountantCode,
+    name: raw.name,
+    role: raw.role || "Contabilidad",
+  };
+}
+
 export async function GET() {
   try {
     await connectMongo();
     await seedPosReceptionistsIfEmpty();
     await seedPosStaffIfEmpty();
+    await seedPosAccountantIfEmpty();
     await syncStaffAllowedServices();
     await syncStaffLoginCodes();
 
-    const [receptionists, staff] = await Promise.all([
+    const [receptionists, staff, accountants] = await Promise.all([
       PosReceptionist.find().sort({ name: 1 }),
-      PosStaff.find().sort({ name: 1 }),
+      PosStaff.find(ACTIVE_STAFF_FILTER).sort({ name: 1 }),
+      PosAccountant.find({ isActive: { $ne: false } }).sort({ name: 1 }),
     ]);
 
     return NextResponse.json({
       receptionists: receptionists.map(mapPublicReceptionist),
       staff: staff.map(mapPublicStaff),
+      accountants: accountants.map(mapPublicAccountant),
     });
   } catch (error) {
     console.error("GET /api/pos/login/bootstrap", error);

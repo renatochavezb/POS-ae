@@ -26,6 +26,8 @@ interface SidebarProps {
   onLogout: () => void;
   isMasterSession?: boolean;
   onOpenMasterPanel?: () => void;
+  allowedTabIds?: string[];
+  hideQuickLinks?: boolean;
 }
 
 export default function Sidebar({ 
@@ -36,7 +38,9 @@ export default function Sidebar({
   activeSession,
   onLogout,
   isMasterSession = false,
-  onOpenMasterPanel
+  onOpenMasterPanel,
+  allowedTabIds,
+  hideQuickLinks = false,
 }: SidebarProps) {
   const { data: session } = useSession();
   const [logoClicks, setLogoClicks] = useState(0);
@@ -74,7 +78,7 @@ export default function Sidebar({
     { id: 'staff', label: 'Equipo', icon: Award },
     { id: 'services', label: 'Servicios', icon: Sparkles },
     { id: 'settings', label: 'Configuración', icon: Settings },
-  ];
+  ].filter((item) => !allowedTabIds || allowedTabIds.includes(item.id));
 
   return (
     <aside className="w-64 h-screen sticky top-0 bg-surface border-r border-primary/10 flex flex-col hidden md:flex shrink-0">
@@ -117,6 +121,7 @@ export default function Sidebar({
       </nav>
 
       {/* Accesos rápidos de revisión */}
+      {!hideQuickLinks && (
       <div className="px-6 py-4 border-t border-primary/5 space-y-2">
         <p className="text-[10px] text-outline font-bold tracking-widest uppercase">Visuales Rápidas</p>
         <div className="flex flex-col gap-1.5 text-xs">
@@ -134,6 +139,7 @@ export default function Sidebar({
           </button>
         </div>
       </div>
+      )}
 
       {/* Administrator Footnote */}
       <div className="p-4 border-t border-primary/5 bg-surface-container-low/50">

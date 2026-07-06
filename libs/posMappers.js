@@ -1,4 +1,5 @@
 import { normalizeAppointmentStatus } from "@/components/pos/appointmentStatus";
+import { formatSpanishShortDateInTimeZone } from "@/components/pos/scheduleUtils";
 
 export function mapStaffDoc(doc) {
   const raw = doc.toObject ? doc.toObject() : doc;
@@ -22,6 +23,19 @@ export function mapStaffDoc(doc) {
     color: raw.color,
     colorLight: raw.colorLight,
     allowedServiceIds: raw.allowedServiceIds || [],
+    isActive: raw.isActive !== false,
+    deactivatedAt: raw.deactivatedAt
+      ? new Date(raw.deactivatedAt).toISOString()
+      : raw.isActive === false && raw.updatedAt
+      ? new Date(raw.updatedAt).toISOString()
+      : "",
+    deactivatedAgendaDate:
+      raw.deactivatedAgendaDate ||
+      (raw.deactivatedAt
+        ? formatSpanishShortDateInTimeZone(new Date(raw.deactivatedAt))
+        : raw.isActive === false && raw.updatedAt
+        ? formatSpanishShortDateInTimeZone(new Date(raw.updatedAt))
+        : ""),
   };
 }
 
@@ -90,6 +104,12 @@ export function mapClientDoc(doc) {
     address: raw.address || "No especificada",
     isPlatinum: Boolean(raw.isPlatinum),
     memberSince: raw.memberSince || "",
+    registeredAt: raw.registeredAt
+      ? new Date(raw.registeredAt).toISOString()
+      : raw.createdAt
+      ? new Date(raw.createdAt).toISOString()
+      : "",
+    lastPaidVisitDate: raw.lastPaidVisitDate || "",
     bio: raw.bio || "",
     styleProfile: {
       bio: raw.styleProfile?.bio || "",
@@ -99,6 +119,19 @@ export function mapClientDoc(doc) {
     totalSpent: raw.totalSpent ?? 0,
     visitsCount: raw.visitsCount ?? 0,
     averageTicket: raw.averageTicket ?? 0,
+    crmSegmentFlags: {
+      inactive: Boolean(raw.crmSegmentFlags?.inactive),
+      upcoming: Boolean(raw.crmSegmentFlags?.upcoming),
+      unconfirmed: Boolean(raw.crmSegmentFlags?.unconfirmed),
+      nuevas: Boolean(raw.crmSegmentFlags?.nuevas),
+      birthday: Boolean(raw.crmSegmentFlags?.birthday),
+      alerts: Boolean(raw.crmSegmentFlags?.alerts),
+      reschedule: Boolean(raw.crmSegmentFlags?.reschedule),
+    },
+    crmSegmentDetails: raw.crmSegmentDetails || {},
+    crmSegmentsSyncedAt: raw.crmSegmentsSyncedAt
+      ? new Date(raw.crmSegmentsSyncedAt).toISOString()
+      : "",
   };
 }
 
@@ -161,5 +194,82 @@ export function mapCashSessionDoc(doc) {
     closedAt: raw.closedAt ? new Date(raw.closedAt).toISOString() : "",
     openedWithMasterPin: Boolean(raw.openedWithMasterPin),
     closedWithMasterPin: Boolean(raw.closedWithMasterPin),
+  };
+}
+
+export function mapAccountantDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.accountantCode,
+    name: raw.name,
+    role: raw.role || "Contabilidad",
+    email: raw.email || "",
+    phone: raw.phone || "",
+    isActive: raw.isActive !== false,
+  };
+}
+
+export function mapStaffSettlementDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.settlementCode,
+    staffId: raw.staffId,
+    staffName: raw.staffName,
+    periodMode: raw.periodMode,
+    periodStartLabel: raw.periodStartLabel,
+    periodEndLabel: raw.periodEndLabel,
+    periodStartYmd: raw.periodStartYmd,
+    periodEndYmd: raw.periodEndYmd,
+    settledAt: raw.settledAt ? new Date(raw.settledAt).toISOString() : "",
+    settledDateLabel: raw.settledDateLabel,
+    grossAmount: raw.grossAmount ?? 0,
+    commissionAmount: raw.commissionAmount ?? 0,
+    paidAmount: raw.paidAmount ?? 0,
+    commissionPercent: raw.commissionPercent ?? 40,
+    appointmentCount: raw.appointmentCount ?? 0,
+    accountantId: raw.accountantId,
+    accountantName: raw.accountantName,
+    notes: raw.notes || "",
+    appointmentCodes: raw.appointmentCodes || [],
+    appointmentSnapshots: raw.appointmentSnapshots || [],
+    paymentCodes: raw.paymentCodes || [],
+    cashSessionCodes: raw.cashSessionCodes || [],
+    loginAuditId: raw.loginAuditId || "",
+  };
+}
+
+export function mapAccountantActivityDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.activityCode,
+    accountantId: raw.accountantId,
+    accountantName: raw.accountantName,
+    action: raw.action,
+    staffId: raw.staffId || "",
+    staffName: raw.staffName || "",
+    periodMode: raw.periodMode || "",
+    periodStartLabel: raw.periodStartLabel || "",
+    periodEndLabel: raw.periodEndLabel || "",
+    periodStartYmd: raw.periodStartYmd || "",
+    periodEndYmd: raw.periodEndYmd || "",
+    settlementCode: raw.settlementCode || "",
+    reportCode: raw.reportCode || "",
+    appointmentCodes: raw.appointmentCodes || [],
+    paymentCodes: raw.paymentCodes || [],
+    cashSessionCodes: raw.cashSessionCodes || [],
+    reportSnapshot: raw.reportSnapshot || [],
+    loginAuditId: raw.loginAuditId || "",
+    logoutReason: raw.logoutReason || "",
+    isMasterSession: Boolean(raw.isMasterSession),
+    appointmentCount: raw.appointmentCount ?? 0,
+    grossAmount: raw.grossAmount ?? 0,
+    paidAmount: raw.paidAmount ?? 0,
+    activityAt: raw.activityAt ? new Date(raw.activityAt).toISOString() : "",
+    activityDateLabel: raw.activityDateLabel,
+    activityTimeLabel: raw.activityTimeLabel,
+    metadata: raw.metadata || null,
   };
 }

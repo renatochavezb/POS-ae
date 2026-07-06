@@ -43,6 +43,23 @@ type Flow = {
   steps: string[];
 };
 
+type DerivedFeature = {
+  id: string;
+  name: string;
+  sourceCollections: string[];
+  storage: string;
+  segments: string[];
+  updatesOnMongoChange: string;
+};
+
+type GlobalConvention = {
+  id: string;
+  title: string;
+  summary: string;
+  appliesTo: string;
+  fields: FieldMeta[];
+};
+
 type OverviewData = {
   database: string;
   generatedAt: string;
@@ -50,6 +67,8 @@ type OverviewData = {
   mongoError?: string;
   collections: CollectionMeta[];
   relationships: Relationship[];
+  derivedFeatures?: DerivedFeature[];
+  globalConventions?: GlobalConvention[];
   flows: Flow[];
   counts: Record<string, number>;
   samples: Record<string, Record<string, unknown>[]>;
@@ -298,7 +317,12 @@ export default function InternoExplorer() {
         ) : overview ? (
           <>
             <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatCard label="Colecciones POS" value={String(posCollections.length)} />
+              <StatCard label="Colecciones" value={String(overview.collections.length)} />
+              <StatCard
+                label="Relaciones"
+                value={String(overview.relationships.length)}
+                hint="Enlaces FK entre tablas"
+              />
               <StatCard
                 label="Turno caja"
                 value={overview.live.openCashSession ? "Abierto" : "Cerrado"}
@@ -308,15 +332,64 @@ export default function InternoExplorer() {
                     : undefined
                 }
               />
-              <StatCard label="Citas (día turno)" value={String(overview.live.appointmentsOnOpenShiftDate)} />
               <StatCard
-                label="Actualizado"
-                value={new Date(overview.generatedAt).toLocaleTimeString("es-MX", {
+                label="Documentos"
+                value={String(totalDocs)}
+                hint={new Date(overview.generatedAt).toLocaleTimeString("es-MX", {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
               />
             </section>
+
+            {overview.globalConventions && overview.globalConventions.length > 0 && (
+              <section>
+                <SectionTitle icon={Shield} title="Convenciones globales de MongoDB" />
+                <p className="text-xs text-slate-500 mt-2 mb-4 leading-relaxed">
+                  Reglas que aplican a todas o varias colecciones. Cada tabla lista sus variables
+                  abajo; al final verás <span className="text-slate-400">createdAt</span> y{" "}
+                  <span className="text-slate-400">updatedAt</span> en todas.
+                </p>
+                <div className="grid md:grid-cols-2 gap-4 mt-2">
+                  {overview.globalConventions.map((convention) => (
+                    <div
+                      key={convention.id}
+                      className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3"
+                    >
+                      <div>
+                        <h3 className="text-sm font-bold text-amber-400/90">{convention.title}</h3>
+                        <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                          {convention.summary}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-2">
+                          Aplica a: {convention.appliesTo}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-800 overflow-hidden">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase">
+                              <th className="text-left p-2 font-bold">Variable</th>
+                              <th className="text-left p-2 font-bold">Tipo</th>
+                              <th className="text-left p-2 font-bold">Descripción</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {convention.fields.map((field) => (
+                              <tr key={field.name}>
+                                <td className="p-2 font-mono text-slate-300">{field.name}</td>
+                                <td className="p-2 text-slate-500">{field.type}</td>
+                                <td className="p-2 text-slate-500">{field.key}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section>
               <SectionTitle icon={Workflow} title="Cómo interactúan los datos" />
@@ -337,8 +410,44 @@ export default function InternoExplorer() {
               </div>
             </section>
 
+            {overview.derivedFeatures && overview.derivedFeatures.length > 0 && (
+              <section>
+                <SectionTitle icon={Database} title="Features derivadas (sin colección nueva)" />
+                <p className="text-xs text-slate-500 mt-2 mb-4">
+                  Lógica en la app que depende de Mongo pero no crea tablas. Al cambiar
+                  modelos o campos, actualizar <code className="text-amber-400/90">libs/mongoSchemaCatalog.js</code>.
+                </p>
+                <div className="grid md:grid-cols-2 gap-4 mt-2">
+                  {overview.derivedFeatures.map((feature) => (
+                    <div
+                      key={feature.id}
+                      className="rounded-xl border border-slate-800 bg-slate-900/50 p-4"
+                    >
+                      <h3 className="text-sm font-bold text-amber-400/90">{feature.name}</h3>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        Origen: {feature.sourceCollections.join(" + ")}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{feature.storage}</p>
+                      <ul className="mt-3 space-y-1 text-xs text-slate-400 list-disc list-inside">
+                        {feature.segments.map((segment) => (
+                          <li key={segment}>{segment}</li>
+                        ))}
+                      </ul>
+                      <p className="text-[10px] text-slate-500 mt-3 leading-relaxed border-t border-slate-800 pt-3">
+                        {feature.updatesOnMongoChange}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section>
               <SectionTitle icon={GitBranch} title="Relaciones entre tablas" />
+              <p className="text-xs text-slate-500 mt-2 mb-4">
+                {overview.relationships.length} enlaces documentados. Las FK son códigos en String
+                (no ObjectId de Mongo).
+              </p>
               <div className="mt-4 rounded-xl border border-slate-800 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -367,17 +476,32 @@ export default function InternoExplorer() {
               </div>
 
               <div className="mt-6 p-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/30 font-mono text-[10px] text-slate-500 leading-relaxed overflow-x-auto whitespace-pre">
-{`PosClient ──clientCode──► PosAppointment ◄──staffCode── PosStaff
+{`── AGENDA Y CLIENTES ──
+PosClient ──clientCode──► PosAppointment ◄──staffCode── PosStaff
                                 │
-                                ├──► PosPayment ──► PosCashSession
-                                │
-PosReceptionist ──bookedBy──►   │        ▲
-                                │        └── cashSessionCode
-PosBlockedSlot ◄──staffId── PosStaff
+PosReceptionist ──bookedBy──►   │     PosBlockedSlot ◄──staffId── PosStaff
+         ▲                      │
+         └── bookingsToday ◄── bookedOnDate + bookedByReceptionistId
 
-PosLoginAudit ──cashSessionCode──► PosCashSession
-PosDailySnapshot ◄── date ──► PosAppointment (misma fecha)
-PosScheduleConfig (singleton) ── masterLoginCode ──► auth admin`}
+── CAJA ──
+PosAppointment ──appointmentCode──► PosPayment ──cashSessionCode──► PosCashSession
+                         │                    ▲
+              clientId / staffId               └── openedBy / closedBy ──► PosReceptionist
+              processedByReceptionistId
+
+── LOGIN Y AUDITORÍA ──
+PosReceptionist / PosStaff / PosAccountant ──login──► PosLoginAudit
+PosScheduleConfig.masterLoginCode ──► isMaster en auditoría
+PosCashSession ──cashSessionCode──► PosLoginAudit
+
+── CONTABILIDAD ──
+PosAccountant ──► PosStaffSettlement ──► appointmentCodes / paymentCodes / cashSessionCodes
+              └──► PosAccountantActivity (login | logout | report | liquidation)
+PosStaffSettlement.appointmentSnapshots[] = copia congelada de citas al liquidar
+
+── CRM ──
+PosAppointment + PosPayment ──► PosClient.crmSegmentFlags
+PosDailySnapshot ◄── date ──► PosAppointment`}
               </div>
             </section>
 
@@ -500,7 +624,7 @@ function CollectionSection({
               {isOpen && (
                 <div className="px-4 pb-4 border-t border-slate-800/80">
                   <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mt-4 mb-2">
-                    Campos
+                    Variables ({col.fields.length} campos documentados)
                   </p>
                   <div className="overflow-x-auto rounded-lg border border-slate-800">
                     <table className="w-full text-xs">
@@ -508,20 +632,30 @@ function CollectionSection({
                         <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase">
                           <th className="text-left p-2 font-bold">Variable</th>
                           <th className="text-left p-2 font-bold">Tipo</th>
-                          <th className="text-left p-2 font-bold">Rol</th>
+                          <th className="text-left p-2 font-bold hidden md:table-cell">Ejemplo</th>
+                          <th className="text-left p-2 font-bold">Descripción</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800">
                         {col.fields.map((field) => (
                           <tr key={field.name}>
-                            <td className="p-2 font-mono text-slate-300">
+                            <td className="p-2 font-mono text-slate-300 align-top">
                               {field.name}
                               {field.sensitive && (
-                                <span className="ml-1.5 text-[9px] text-red-400/80">sensible</span>
+                                <span className="ml-1.5 text-[9px] text-red-400/80 block md:inline">
+                                  sensible
+                                </span>
                               )}
                             </td>
-                            <td className="p-2 text-slate-500">{field.type}</td>
-                            <td className="p-2 text-slate-500">{field.key}</td>
+                            <td className="p-2 text-slate-500 align-top whitespace-nowrap">
+                              {field.type}
+                            </td>
+                            <td className="p-2 text-slate-600 font-mono text-[10px] align-top hidden md:table-cell">
+                              {field.example ?? "—"}
+                            </td>
+                            <td className="p-2 text-slate-400 align-top leading-relaxed">
+                              {field.key}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

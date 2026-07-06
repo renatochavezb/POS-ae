@@ -89,11 +89,26 @@ const posStaffSchema = mongoose.Schema(
       default: "1234",
       trim: true,
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    deactivatedAt: {
+      type: Date,
+      default: null,
+    },
+    deactivatedAgendaDate: {
+      type: String,
+      default: "",
+      trim: true,
+    },
   },
   {
     timestamps: true,
   }
 );
 
-export default mongoose.models.PosStaff ||
+posStaffSchema.index({ isActive: 1 });
+
+export default mongoose.models?.PosStaff ||
   mongoose.model("PosStaff", posStaffSchema);

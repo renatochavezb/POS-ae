@@ -1,29 +1,39 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle } from "lucide-react";
-import { Staff, Receptionist } from "../types";
-import { INITIAL_RECEPTIONISTS, INITIAL_STAFF } from "../data";
+import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle, Calculator } from "lucide-react";
+import { Staff, Receptionist, Accountant } from "../types";
+import { INITIAL_RECEPTIONISTS, INITIAL_STAFF, INITIAL_ACCOUNTANTS } from "../data";
 import posApi from "@/libs/posApi";
 import StudioLogo from "./StudioLogo";
 
 interface LoginViewProps {
   onLogin: (
-    role: "reception" | "manicurista",
+    role: "reception" | "manicurista" | "accountant",
     staffId?: string,
     receptionistId?: string,
-    isMaster?: boolean
+    isMaster?: boolean,
+    accountantId?: string,
+    accountantName?: string
   ) => void;
 }
 
 export default function LoginView({ onLogin }: LoginViewProps) {
   const [viewState, setViewState] = useState<
-    "select" | "reception_select" | "reception_pin" | "staff_select" | "staff_pin"
+    | "select"
+    | "reception_select"
+    | "reception_pin"
+    | "staff_select"
+    | "staff_pin"
+    | "accountant_select"
+    | "accountant_pin"
   >("select");
   const [receptionists, setReceptionists] = useState<Receptionist[]>(INITIAL_RECEPTIONISTS);
   const [staffList, setStaffList] = useState<Staff[]>(INITIAL_STAFF);
+  const [accountants, setAccountants] = useState<Accountant[]>(INITIAL_ACCOUNTANTS);
   const [selectedReceptionist, setSelectedReceptionist] = useState<Receptionist | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [selectedAccountant, setSelectedAccountant] = useState<Accountant | null>(null);
   const [pin, setPin] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
@@ -33,9 +43,10 @@ export default function LoginView({ onLogin }: LoginViewProps) {
   useEffect(() => {
     posApi
       .getLoginBootstrap()
-      .then(({ receptionists: nextReceptionists, staff }) => {
+      .then(({ receptionists: nextReceptionists, staff, accountants: nextAccountants }) => {
         if (nextReceptionists.length > 0) setReceptionists(nextReceptionists);
         if (staff.length > 0) setStaffList(staff);
+        if (nextAccountants?.length > 0) setAccountants(nextAccountants);
         setBootstrapError(null);
       })
       .catch((bootstrapErr) => {
@@ -56,6 +67,20 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     setPin("");
     setError(null);
     setViewState("staff_select");
+  };
+
+  const handleAccountantClick = () => {
+    setSelectedAccountant(null);
+    setPin("");
+    setError(null);
+    setViewState("accountant_select");
+  };
+
+  const handleAccountantSelect = (accountant: Accountant) => {
+    setSelectedAccountant(accountant);
+    setPin("");
+    setError(null);
+    setViewState("accountant_pin");
   };
 
   const handleReceptionistSelect = (receptionist: Receptionist) => {
@@ -126,10 +151,40 @@ export default function LoginView({ onLogin }: LoginViewProps) {
       } finally {
         setIsVerifying(false);
       }
+    } else if (viewState === "accountant_pin" && selectedAccountant) {
+      setIsVerifying(true);
+      try {
+        const result = await posApi.verifyLogin({
+          role: "accountant",
+          userId: selectedAccountant.id,
+          pin,
+        });
+
+        setSuccess(true);
+        setTimeout(
+          () =>
+            onLogin(
+              "accountant",
+              undefined,
+              undefined,
+              result.isMaster,
+              result.userId,
+              result.userName
+            ),
+          800
+        );
+      } catch (verifyError) {
+        setError(
+          verifyError instanceof Error ? verifyError.message : "PIN incorrecto. Intenta de nuevo."
+        );
+        setPin("");
+      } finally {
+        setIsVerifying(false);
+      }
     }
   };
 
-  const handlePinBack = (target: "reception_select" | "staff_select") => {
+  const handlePinBack = (target: "reception_select" | "staff_select" | "accountant_select") => {
     setPin("");
     setError(null);
     setViewState(target);
@@ -197,6 +252,24 @@ export default function LoginView({ onLogin }: LoginViewProps) {
                       Equipo / Manicuristas
                     </h4>
                     <p className="text-white/40 text-[11px]">Fichajes y comisiones personales</p>
+                  </div>
+                </div>
+                <div className="text-[#e5c158]">→</div>
+              </button>
+
+              <button
+                onClick={handleAccountantClick}
+                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <Calculator className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
+                      Contabilidad
+                    </h4>
+                    <p className="text-white/40 text-[11px]">Liquidaciones del equipo</p>
                   </div>
                 </div>
                 <div className="text-[#e5c158]">→</div>
@@ -291,6 +364,54 @@ export default function LoginView({ onLogin }: LoginViewProps) {
               ))}
             </div>
           </div>
+        )}
+
+        {viewState === "accountant_select" && (
+          <div className="w-full space-y-6">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewState("select")}
+                className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <h3 className="font-display text-lg text-[#e5c158] font-bold">Selecciona Contadora</h3>
+            </div>
+            <div className="space-y-2">
+              {accountants.map((accountant) => (
+                <button
+                  key={accountant.id}
+                  onClick={() => handleAccountantSelect(accountant)}
+                  className="w-full p-3 rounded-xl bg-[#00261b] border border-[#e5c158]/5 hover:border-[#e5c158]/20 flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-[10px] font-bold border border-[#e5c158]/20 text-[#e5c158] bg-[#e5c158]/5">
+                      {accountant.id}
+                    </div>
+                    <div>
+                      <h4 className="font-sans text-xs font-bold text-[#e5c158]">{accountant.name}</h4>
+                      <p className="text-white/40 text-[10px] uppercase font-semibold">{accountant.role}</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-[#e5c158]/5 text-[#e5c158] text-[9px] font-bold">INGRESAR</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {viewState === "accountant_pin" && selectedAccountant && (
+          <PinEntryScreen
+            key={`accountant-${selectedAccountant.id}`}
+            personName={selectedAccountant.name}
+            pin={pin}
+            error={error}
+            isVerifying={isVerifying}
+            submitLabel="Validar"
+            onBack={() => handlePinBack("accountant_select")}
+            onPinChange={handlePinChange}
+            onSubmit={handlePinSubmit}
+          />
         )}
 
         {viewState === "staff_pin" && selectedStaff && (

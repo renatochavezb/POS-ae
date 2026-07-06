@@ -11,6 +11,7 @@ import { mapReceptionistDoc } from "@/libs/posMappers";
 import { seedPosReceptionistsIfEmpty, refreshReceptionistDailyCounts } from "@/libs/posSeed";
 import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
 import { upsertDailySnapshot } from "@/libs/posDailyStats";
+import { syncClientCrmSegmentsForClients } from "@/libs/posClientCrmSegments";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,14 @@ export async function POST(req) {
 
     await connectMongo();
     await seedPosReceptionistsIfEmpty();
+
+    const client = await PosClient.findOne({ clientCode: body.clientId });
+    if (!client) {
+      return NextResponse.json(
+        { error: "La clienta seleccionada no existe. Regístrala antes de agendar." },
+        { status: 400 }
+      );
+    }
 
     const duration = body.duration ?? 60;
     const conflict = await findConflictingAppointment({
@@ -141,6 +150,8 @@ export async function POST(req) {
     }
 
     await upsertDailySnapshot(body.date);
+
+    await syncClientCrmSegmentsForClients([body.clientId]);
 
     let receptionistsSnapshot = null;
     if (bookedByReceptionistId) {

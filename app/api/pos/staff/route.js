@@ -8,8 +8,28 @@ import {
   resolveAllowedServiceIdsForNewStaff,
 } from "@/libs/posStaffServices";
 import PosStaff from "@/models/PosStaff";
+import { formatSpanishShortDateInTimeZone } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
+
+async function backfillStaffDeactivatedAgendaDates() {
+  const missing = await PosStaff.find({
+    isActive: false,
+    $or: [{ deactivatedAgendaDate: { $exists: false } }, { deactivatedAgendaDate: "" }],
+  }).lean();
+
+  for (const member of missing) {
+    const source = member.deactivatedAt || member.updatedAt || new Date();
+    await PosStaff.updateOne(
+      { staffCode: member.staffCode },
+      {
+        $set: {
+          deactivatedAgendaDate: formatSpanishShortDateInTimeZone(new Date(source)),
+        },
+      }
+    );
+  }
+}
 
 export async function GET() {
   try {
@@ -20,6 +40,7 @@ export async function GET() {
     await seedPosStaffIfEmpty();
     await syncStaffLocalImages();
     await syncStaffAllowedServices();
+    await backfillStaffDeactivatedAgendaDates();
 
     const staff = await PosStaff.find().sort({ name: 1 });
     return NextResponse.json(staff.map(mapStaffDoc));

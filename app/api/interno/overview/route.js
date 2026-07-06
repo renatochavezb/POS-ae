@@ -3,9 +3,12 @@ import { requireInternoSession } from "@/libs/internoAuth";
 import {
   formatMongoErrorForUser,
   tryConnectMongo,
-} from "@/libs/internoMasterPin";import {
+} from "@/libs/internoMasterPin";
+import {
   FLOW_STEPS,
   MONGO_COLLECTIONS,
+  MONGO_DERIVED_FEATURES,
+  MONGO_GLOBAL_CONVENTIONS,
   MONGO_RELATIONSHIPS,
   maskDocument,
 } from "@/libs/mongoSchemaCatalog";
@@ -17,6 +20,9 @@ import PosBlockedSlot from "@/models/PosBlockedSlot";
 import PosPayment from "@/models/PosPayment";
 import PosCashSession from "@/models/PosCashSession";
 import PosLoginAudit from "@/models/PosLoginAudit";
+import PosAccountant from "@/models/PosAccountant";
+import PosAccountantActivity from "@/models/PosAccountantActivity";
+import PosStaffSettlement from "@/models/PosStaffSettlement";
 import PosDailySnapshot from "@/models/PosDailySnapshot";
 import PosScheduleConfig from "@/models/PosScheduleConfig";
 import User from "@/models/User";
@@ -34,6 +40,9 @@ const MODEL_MAP = {
   PosPayment,
   PosCashSession,
   PosLoginAudit,
+  PosAccountant,
+  PosAccountantActivity,
+  PosStaffSettlement,
   PosDailySnapshot,
   PosScheduleConfig,
   User,
@@ -62,6 +71,8 @@ export async function GET() {
       generatedAt: new Date().toISOString(),
       collections: MONGO_COLLECTIONS,
       relationships: MONGO_RELATIONSHIPS,
+      derivedFeatures: MONGO_DERIVED_FEATURES,
+      globalConventions: MONGO_GLOBAL_CONVENTIONS,
       flows: FLOW_STEPS,
     };
 

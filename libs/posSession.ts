@@ -1,13 +1,31 @@
-export type PosSessionRole = "reception" | "manicurista";
+export type PosSessionRole = "reception" | "manicurista" | "accountant";
 
 export type PosSession = {
   role: PosSessionRole;
   staffId?: string;
   receptionistId?: string;
+  accountantId?: string;
+  accountantName?: string;
   isMaster?: boolean;
 };
 
 const POS_SESSION_KEY = "posSession";
+const POS_ACCOUNTANT_LOGOUT_FLAG = "posAccountantLogoutRecorded";
+
+export function markAccountantLogoutRecorded(): void {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(POS_ACCOUNTANT_LOGOUT_FLAG, "1");
+}
+
+export function wasAccountantLogoutRecorded(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(POS_ACCOUNTANT_LOGOUT_FLAG) === "1";
+}
+
+export function clearAccountantLogoutRecorded(): void {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(POS_ACCOUNTANT_LOGOUT_FLAG);
+}
 
 export function readPosSession(): PosSession | null {
   if (typeof window === "undefined") return null;
@@ -16,7 +34,7 @@ export function readPosSession(): PosSession | null {
     const raw = sessionStorage.getItem(POS_SESSION_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as PosSession;
-      if (parsed.role === "reception" || parsed.role === "manicurista") {
+      if (parsed.role === "reception" || parsed.role === "manicurista" || parsed.role === "accountant") {
         return parsed;
       }
     }
@@ -39,6 +57,7 @@ export function readPosSession(): PosSession | null {
 }
 
 export function writePosSession(session: PosSession): void {
+  clearAccountantLogoutRecorded();
   sessionStorage.setItem(POS_SESSION_KEY, JSON.stringify(session));
 
   if (session.isMaster) {
@@ -52,15 +71,34 @@ export function writePosSession(session: PosSession): void {
   } else {
     sessionStorage.removeItem("posReceptionistId");
   }
+
+  if (session.role === "accountant" && session.accountantId) {
+    sessionStorage.setItem("posAccountantId", session.accountantId);
+  } else {
+    sessionStorage.removeItem("posAccountantId");
+  }
 }
 
 export function clearPosSession(): void {
   sessionStorage.removeItem(POS_SESSION_KEY);
   sessionStorage.removeItem("posReceptionistId");
+  sessionStorage.removeItem("posAccountantId");
   sessionStorage.removeItem("posMasterSession");
 }
 
-/** Recepcionista activa para registrar citas (null si entró como manicurista). */
+/** Contadora activa (null si no entró como contabilidad). */
+export function getActiveAccountantSession(): { id: string; name?: string } | null {
+  const session = readPosSession();
+  if (!session || session.role !== "accountant" || !session.accountantId) {
+    return null;
+  }
+
+  return {
+    id: session.accountantId,
+    name: session.accountantName,
+  };
+}
+/** Recepcionista activa para registrar citas (null si entró como manicurista o contadora). */
 export function getActiveReceptionistSession(): {
   id: string;
   isMaster: boolean;

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Staff, StaffStatus, Receptionist } from '../types';
 import { formatServicePrice } from '../data';
+import AccountantActivityPanel from './AccountantActivityPanel';
 
 interface StaffViewProps {
   staffList: Staff[];
@@ -25,6 +26,10 @@ interface StaffViewProps {
   onSelectStaff: (id: string) => void;
   onUpdateStaffStatus: (id: string, status: StaffStatus) => void;
   onDeleteStaff: (id: string) => void;
+  readOnly?: boolean;
+  accountantId?: string | null;
+  accountantName?: string | null;
+  activityRefreshKey?: number;
 }
 
 export default function StaffView({
@@ -33,13 +38,19 @@ export default function StaffView({
   onOpenNewStaff,
   onSelectStaff,
   onUpdateStaffStatus,
-  onDeleteStaff
+  onDeleteStaff,
+  readOnly = false,
+  accountantId = null,
+  accountantName = null,
+  activityRefreshKey = 0,
 }: StaffViewProps) {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const filteredStaff = staffList.filter(staff => {
+    if (staff.isActive === false) return false;
+
     const matchesSearch = 
       staff.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       staff.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -59,8 +70,13 @@ export default function StaffView({
         <div>
           <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Gestión de Personal</span>
           <h2 className="font-display text-3xl font-bold text-primary mt-1">Equipo del Studio</h2>
-          <p className="text-on-surface-variant text-sm mt-1">Administra el staff, sus comisiones y sus turnos estéticos en tiempo real.</p>
+          <p className="text-on-surface-variant text-sm mt-1">
+            {readOnly
+              ? 'Consulta perfiles, comisiones e historial para liquidar pagos.'
+              : 'Administra el staff, sus comisiones y sus turnos estéticos en tiempo real.'}
+          </p>
         </div>
+        {!readOnly && (
         <div className="flex items-center gap-3">
           <button 
             onClick={onOpenNewStaff}
@@ -70,8 +86,10 @@ export default function StaffView({
             <span>Contratar Staff</span>
           </button>
         </div>
+        )}
       </div>
 
+      {!readOnly && (
       <div className="space-y-4">
         <div>
           <span className="text-[10px] text-outline font-bold uppercase tracking-widest">Recepción</span>
@@ -111,6 +129,15 @@ export default function StaffView({
           ))}
         </div>
       </div>
+      )}
+
+      {readOnly && accountantId ? (
+        <AccountantActivityPanel
+          accountantId={accountantId}
+          accountantName={accountantName || undefined}
+          refreshKey={activityRefreshKey}
+        />
+      ) : null}
 
       <div className="space-y-4">
         <div>
@@ -241,6 +268,8 @@ export default function StaffView({
 
               {/* Status Switch Controls */}
               <div className="flex items-center gap-1">
+                {!readOnly && (
+                <>
                 <button 
                   onClick={() => onUpdateStaffStatus(staff.id, 'online')}
                   title="Marcar Activo"
@@ -275,6 +304,8 @@ export default function StaffView({
                   <UserX className="w-4 h-4" />
                 </button>
                 <span className="w-px h-5 bg-primary/10 mx-1" />
+                </>
+                )}
                 <button 
                   onClick={() => onSelectStaff(staff.id)}
                   title="Ver Analíticas"
@@ -282,6 +313,7 @@ export default function StaffView({
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
+                {!readOnly && (
                 <button
                   onClick={() => onDeleteStaff(staff.id)}
                   title="Dar de baja"
@@ -289,6 +321,7 @@ export default function StaffView({
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                )}
               </div>
             </div>
           </div>

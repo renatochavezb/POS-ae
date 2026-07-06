@@ -9,6 +9,7 @@ import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
 import { refreshReceptionistDailyCounts } from "@/libs/posSeed";
 import { refreshDailySnapshotsForDates } from "@/libs/posDailyStats";
+import { syncClientCrmSegmentsForClients } from "@/libs/posClientCrmSegments";
 import {
   canDeleteAppointment,
   getNextAppointmentStatus,
@@ -147,6 +148,11 @@ export async function PATCH(req, { params }) {
       updated.date !== existing.date ? updated.date : null,
     ]);
 
+    await syncClientCrmSegmentsForClients([
+      existing.clientId,
+      updated.clientId !== existing.clientId ? updated.clientId : null,
+    ]);
+
     return NextResponse.json(mapAppointmentDoc(updated));
   } catch (error) {
     console.error("PATCH /api/pos/appointments/[appointmentId]", error);
@@ -236,6 +242,8 @@ export async function DELETE(req, { params }) {
     }
 
     await refreshDailySnapshotsForDates([deleted.date]);
+
+    await syncClientCrmSegmentsForClients([deleted.clientId]);
 
     return NextResponse.json({
       success: true,

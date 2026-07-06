@@ -18,6 +18,21 @@ export interface Client {
   totalSpent: number;
   visitsCount: number;
   averageTicket: number;
+  registeredAt?: string;
+  lastPaidVisitDate?: string;
+  crmSegmentFlags?: ClientCrmSegmentFlags;
+  crmSegmentDetails?: Partial<Record<keyof ClientCrmSegmentFlags, string>>;
+  crmSegmentsSyncedAt?: string;
+}
+
+export interface ClientCrmSegmentFlags {
+  inactive: boolean;
+  upcoming: boolean;
+  unconfirmed: boolean;
+  nuevas: boolean;
+  birthday: boolean;
+  alerts: boolean;
+  reschedule: boolean;
 }
 
 export type StaffStatus = 'online' | 'offline' | 'break';
@@ -41,6 +56,9 @@ export interface Staff {
   color: string;
   colorLight: string;
   allowedServiceIds?: string[];
+  isActive?: boolean;
+  deactivatedAt?: string;
+  deactivatedAgendaDate?: string;
 }
 
 export interface Receptionist {
@@ -53,6 +71,88 @@ export interface Receptionist {
   image: string;
   color: string;
   colorLight: string;
+}
+
+export interface Accountant {
+  id: string;
+  name: string;
+  role: string;
+  email?: string;
+  phone?: string;
+  isActive?: boolean;
+}
+
+export interface StaffSettlementAppointmentSnapshot {
+  appointmentCode: string;
+  date: string;
+  time: string;
+  clientName: string;
+  serviceName: string;
+  cost: number;
+  commissionAmount: number;
+  status: string;
+}
+
+export interface StaffSettlement {
+  id: string;
+  staffId: string;
+  staffName: string;
+  periodMode: 'day' | 'period';
+  periodStartLabel: string;
+  periodEndLabel: string;
+  periodStartYmd: string;
+  periodEndYmd: string;
+  settledAt: string;
+  settledDateLabel: string;
+  grossAmount: number;
+  commissionAmount: number;
+  paidAmount: number;
+  commissionPercent: number;
+  appointmentCount: number;
+  accountantId: string;
+  accountantName: string;
+  notes?: string;
+  appointmentCodes?: string[];
+  appointmentSnapshots?: StaffSettlementAppointmentSnapshot[];
+  paymentCodes?: string[];
+  cashSessionCodes?: string[];
+  loginAuditId?: string;
+}
+
+export type AccountantActivityAction =
+  | 'login'
+  | 'logout'
+  | 'report_download'
+  | 'liquidation';
+
+export interface AccountantActivity {
+  id: string;
+  accountantId: string;
+  accountantName: string;
+  action: AccountantActivityAction;
+  staffId: string;
+  staffName: string;
+  periodMode: '' | 'day' | 'period';
+  periodStartLabel: string;
+  periodEndLabel: string;
+  periodStartYmd: string;
+  periodEndYmd: string;
+  settlementCode: string;
+  reportCode: string;
+  appointmentCodes: string[];
+  paymentCodes: string[];
+  cashSessionCodes: string[];
+  reportSnapshot: StaffSettlementAppointmentSnapshot[];
+  loginAuditId: string;
+  logoutReason: string;
+  isMasterSession: boolean;
+  appointmentCount: number;
+  grossAmount: number;
+  paidAmount: number;
+  activityAt: string;
+  activityDateLabel: string;
+  activityTimeLabel: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export type AppointmentStatus = 'agendado' | 'confirmado' | 'pagado' | 'cancelled';

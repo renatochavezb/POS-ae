@@ -4,7 +4,7 @@ const posLoginAuditSchema = mongoose.Schema(
   {
     role: {
       type: String,
-      enum: ["reception", "manicurista", "master"],
+      enum: ["reception", "manicurista", "accountant", "master"],
       required: true,
     },
     userId: {

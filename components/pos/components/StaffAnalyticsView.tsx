@@ -1,77 +1,249 @@
-import { useState } from 'react';
-import { 
-  ArrowLeft, 
-  Award, 
-  Calendar, 
-  DollarSign, 
-  Download, 
-  Percent, 
-  Star, 
-  TrendingUp, 
-  CheckCircle2, 
-  Coins, 
-  Clock, 
+"use client";
+
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Calendar,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
-  ShieldAlert,
-  Sliders
+  Coins,
+  Download,
+  Sliders,
+  Star,
+  TrendingUp,
 } from 'lucide-react';
-import { Staff, Appointment } from '../types';
+import { Staff, Appointment, StaffSettlement } from '../types';
 import { formatServicePrice, formatMXN } from '../data';
 import { isAppointmentPaid } from '../appointmentStatus';
+import {
+  addDays,
+  buildWeekDayEntries,
+  formatSpanishShortDateInTimeZone,
+  formatWeekRangeLabel,
+  getMexicoDateYMD,
+  getMonday,
+  getTodaySpanishShortDate,
+  isCurrentWeek,
+} from '../scheduleUtils';
+import { compareSpanishShortDates } from '@/libs/spanishDateUtils';
+import posApi from '@/libs/posApi';
+import StaffEditProfileModal from './StaffEditProfileModal';
+import StaffReportModal from './StaffReportModal';
+import StaffLiquidateModal from './StaffLiquidateModal';
+import AccountantActivityPanel from './AccountantActivityPanel';
+
+type WorkHistoryMode = 'day' | 'period';
+
+function dateFromMexicoYmd(ymd: string): Date {
+  const [year, month, day] = ymd.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
 
 interface StaffAnalyticsViewProps {
   staff: Staff;
   appointments: Appointment[];
   onBack: () => void;
+  onStaffUpdated?: (updated: Staff) => void;
+  isAccountantSession?: boolean;
+  loggedInAccountant?: { id: string; name: string } | null;
+  onAccountantActivity?: () => void;
+  activityRefreshKey?: number;
 }
 
 export default function StaffAnalyticsView({
   staff,
   appointments,
-  onBack
+  onBack,
+  onStaffUpdated,
+  isAccountantSession = false,
+  loggedInAccountant = null,
+  onAccountantActivity,
+  activityRefreshKey = 0,
 }: StaffAnalyticsViewProps) {
-  
-  // Simulated chart data for weekly performance
-  const weeklyPerformance = [
-    { day: 'Lun', sales: 420 },
-    { day: 'Mar', sales: 580 },
-    { day: 'Mié', sales: 620 },
-    { day: 'Jue', sales: 390 },
-    { day: 'Vie', sales: 850 },
-    { day: 'Sáb', sales: 980 },
-    { day: 'Dom', sales: 120 }
-  ];
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
+  const [workHistoryMode, setWorkHistoryMode] = useState<WorkHistoryMode>('day');
+  const [workDayDate, setWorkDayDate] = useState<Date>(() => new Date());
+  const [periodStart, setPeriodStart] = useState<Date>(() => getMonday(new Date()));
+  const [periodEnd, setPeriodEnd] = useState<Date>(() => addDays(getMonday(new Date()), 6));
+  const [settlements, setSettlements] = useState<StaffSettlement[]>([]);
+  const [isLiquidateModalOpen, setIsLiquidateModalOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [editProfileError, setEditProfileError] = useState<string | null>(null);
 
-  // Simulated state for payment request
-  const [paymentRequested, setPaymentRequested] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState('Pendiente de liquidación (28 MAY 2024)');
+  const todayLabel = getTodaySpanishShortDate();
+  const workDayLabel = formatSpanishShortDateInTimeZone(workDayDate);
+  const periodStartLabel = formatSpanishShortDateInTimeZone(periodStart);
+  const periodEndLabel = formatSpanishShortDateInTimeZone(periodEnd);
+  const isWorkDayToday = workDayLabel === todayLabel;
+  const weekRangeLabel = formatWeekRangeLabel(weekStart);
+  const viewingCurrentWeek = isCurrentWeek(weekStart);
+  const latestSettlement = settlements[0] ?? null;
 
-  const handleRequestPayment = () => {
-    setPaymentRequested(true);
-    setPaymentStatus('Solicitud de Liquidación Enviada a Tesorería');
+  useEffect(() => {
+    let cancelled = false;
+
+    posApi
+      .getStaffSettlements(staff.id)
+      .then((items) => {
+        if (!cancelled) setSettlements(items);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [staff.id]);
+
+  const weeklyPerformance = useMemo(() => {
+    const days = buildWeekDayEntries(weekStart);
+
+    return days.map((day) => ({
+      ...day,
+      sales: appointments
+        .filter(
+          (appointment) =>
+            appointment.staffId === staff.id &&
+            isAppointmentPaid(appointment.status) &&
+            appointment.date === day.dateLabel
+        )
+        .reduce((sum, appointment) => sum + (appointment.cost || 0), 0),
+    }));
+  }, [appointments, staff.id, weekStart]);
+
+  const weekTotalSales = weeklyPerformance.reduce((sum, day) => sum + day.sales, 0);
+  const weekTotalCommission = weekTotalSales * (staff.commissionPercent / 100);
+  const chartMax = Math.max(500, ...weeklyPerformance.map((day) => day.sales), 1);
+
+  const workHistoryAppointments = useMemo(() => {
+    const base = appointments.filter(
+      (app) => app.staffId === staff.id && isAppointmentPaid(app.status)
+    );
+
+    const filtered =
+      workHistoryMode === 'day'
+        ? base.filter((app) => app.date === workDayLabel)
+        : base.filter((app) => {
+            const afterStart = compareSpanishShortDates(app.date, periodStartLabel) >= 0;
+            const beforeEnd = compareSpanishShortDates(app.date, periodEndLabel) <= 0;
+            return afterStart && beforeEnd;
+          });
+
+    return filtered
+      .sort((a, b) => {
+        const byDate = compareSpanishShortDates(a.date, b.date);
+        if (byDate !== 0) return byDate;
+        return a.time.localeCompare(b.time);
+      })
+      .map((app) => ({
+        id: app.id,
+        date: app.date,
+        time: app.time,
+        clientName: app.clientName,
+        badge: 'Cliente',
+        service: app.serviceName,
+        cost: app.cost,
+        commission: app.cost > 0 ? app.cost * (staff.commissionPercent / 100) : 0,
+      }));
+  }, [
+    appointments,
+    staff.id,
+    staff.commissionPercent,
+    workHistoryMode,
+    workDayLabel,
+    periodStartLabel,
+    periodEndLabel,
+  ]);
+
+  const totalWorkSales = workHistoryAppointments.reduce((sum, item) => sum + item.cost, 0);
+  const totalWorkCommission = workHistoryAppointments.reduce(
+    (sum, item) => sum + item.commission,
+    0
+  );
+
+  const workHistorySubtitle =
+    workHistoryMode === 'day'
+      ? `${workDayLabel} · comisión ${staff.commissionPercent}%`
+      : `${periodStartLabel} – ${periodEndLabel} · comisión ${staff.commissionPercent}%`;
+
+  const handlePrevWeek = () => setWeekStart((prev) => addDays(prev, -7));
+  const handleNextWeek = () => setWeekStart((prev) => addDays(prev, 7));
+  const handleGoToCurrentWeek = () => setWeekStart(getMonday(new Date()));
+
+  const handlePrevWorkDay = () => setWorkDayDate((prev) => addDays(prev, -1));
+  const handleNextWorkDay = () => setWorkDayDate((prev) => addDays(prev, 1));
+  const handleGoToTodayWork = () => setWorkDayDate(new Date());
+
+  const applyChartWeekToPeriod = () => {
+    setPeriodStart(weekStart);
+    setPeriodEnd(addDays(weekStart, 6));
+    setWorkHistoryMode('period');
   };
 
-  // Citas completadas del día para la especialista seleccionada
-  const todayAppointments = appointments
-    .filter((app) => app.staffId === staff.id && isAppointmentPaid(app.status))
-    .map((app) => ({
-      time: app.time,
-      clientName: app.clientName,
-      badge: 'Cliente',
-      service: app.serviceName,
-      cost: app.cost,
-      commission: app.cost > 0 ? app.cost * (staff.commissionPercent / 100) : 0
-    }));
+  const handleRequestPayment = () => {
+    setIsLiquidateModalOpen(true);
+  };
 
-  // Calculate sum of sales and commission
-  const totalTodaySales = todayAppointments.reduce((sum, item) => sum + item.cost, 0);
-  const totalTodayCommission = todayAppointments.reduce((sum, item) => sum + item.commission, 0);
+  const handleSettlementRecorded = (settlement: StaffSettlement) => {
+    setSettlements((prev) => [settlement, ...prev.filter((item) => item.id !== settlement.id)]);
+    onAccountantActivity?.();
+  };
+
+  const settlementStatusLabel = latestSettlement ? 'Liquidado' : 'Por liquidar';
+  const settlementStatusDetail = latestSettlement
+    ? `Última liquidación: ${latestSettlement.settledDateLabel} · ${
+        latestSettlement.periodStartLabel === latestSettlement.periodEndLabel
+          ? latestSettlement.periodStartLabel
+          : `${latestSettlement.periodStartLabel} – ${latestSettlement.periodEndLabel}`
+      } · ${formatMXN(latestSettlement.paidAmount)} pagados`
+    : 'Sin liquidaciones registradas para esta manicurista.';
+
+  const handleOpenEditProfile = () => {
+    setEditProfileError(null);
+    setIsEditProfileOpen(true);
+  };
+
+  const handleCloseEditProfile = () => {
+    if (isSavingProfile) return;
+    setEditProfileError(null);
+    setIsEditProfileOpen(false);
+  };
+
+  const handleSaveProfile = async (data: {
+    name: string;
+    role: string;
+    specialty: string;
+    shift: string;
+    email: string;
+    phone: string;
+    rating: number;
+    commissionPercent: number;
+    bio: string;
+    image: string;
+  }) => {
+    setIsSavingProfile(true);
+    setEditProfileError(null);
+
+    try {
+      const updated = await posApi.updateStaff(staff.id, data);
+      onStaffUpdated?.(updated);
+      setIsEditProfileOpen(false);
+    } catch (error) {
+      console.error(error);
+      setEditProfileError('No se pudo guardar el perfil. Intenta de nuevo.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   return (
     <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-7xl mx-auto">
-      {/* Back button link */}
       <div>
-        <button 
+        <button
           onClick={onBack}
           className="group flex items-center gap-2 text-outline hover:text-primary text-xs font-bold uppercase tracking-widest transition-colors font-sans"
         >
@@ -80,13 +252,12 @@ export default function StaffAnalyticsView({
         </button>
       </div>
 
-      {/* Staff profile header */}
       <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <img 
+          <img
             referrerPolicy="no-referrer"
-            src={staff.image} 
-            alt={staff.name} 
+            src={staff.image}
+            alt={staff.name}
             className="w-16 h-16 rounded-full object-cover border-2 border-primary/10 shadow-sm bg-surface-container-low"
           />
           <div>
@@ -94,229 +265,431 @@ export default function StaffAnalyticsView({
               <h2 className="font-display text-2xl font-bold text-primary">{staff.name}</h2>
               <div className="flex items-center text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                 <Star className="w-3.5 h-3.5 fill-current" />
-                <span className="text-[10px] font-bold ml-0.5 text-amber-800">5.0 Star Artist</span>
+                <span className="text-[10px] font-bold ml-0.5 text-amber-800">
+                  {staff.rating.toFixed(1)} Star Artist
+                </span>
               </div>
             </div>
-            <p className="text-xs text-outline font-bold uppercase tracking-wider mt-0.5">{staff.role} | 8 años de experiencia</p>
-            <p className="text-xs text-on-surface-variant font-medium mt-1">Especialidad: {staff.specialty}</p>
+            <p className="text-xs text-outline font-bold uppercase tracking-wider mt-0.5">
+              {staff.role}
+            </p>
+            <p className="text-xs text-on-surface-variant font-medium mt-1">
+              Especialidad: {staff.specialty}
+            </p>
           </div>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row gap-3">
-          <button className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors">
+          {!isAccountantSession && (
+          <button
+            type="button"
+            onClick={handleOpenEditProfile}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors"
+          >
             <Sliders className="w-4 h-4 text-secondary" />
             <span>Editar Perfil</span>
           </button>
-          <button 
-            onClick={() => window.print()}
+          )}
+          <button
+            type="button"
+            onClick={() => setIsReportModalOpen(true)}
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors"
           >
             <Download className="w-4 h-4 text-secondary" />
-            <span>Descargar Reporte Diario</span>
+            <span>Descargar reporte</span>
           </button>
         </div>
       </div>
 
-      {/* Stats KPI overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Weekly Revenue */}
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
           <div className="space-y-3">
-            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">Total Generado (Semanal)</span>
+            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">
+              Total generado (semana)
+            </span>
             <div className="flex items-baseline gap-1">
-              <span className="font-display text-3xl font-black text-primary">{formatMXN(staff.weeklyRevenue)}</span>
+              <span className="font-display text-3xl font-black text-primary">
+                {formatMXN(weekTotalSales)}
+              </span>
             </div>
-            <p className="text-xs text-on-surface-variant">Ventas brutas de tratamientos de lunes a hoy.</p>
+            <p className="text-xs text-on-surface-variant">{weekRangeLabel}</p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-primary/5 flex items-center justify-center text-primary">
             <TrendingUp className="w-6 h-6 text-secondary" />
           </div>
         </div>
 
-        {/* Commission Rate */}
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
           <div className="space-y-3">
-            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">Comisión Acumulada</span>
+            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">
+              Comisión (semana)
+            </span>
             <div className="flex items-baseline gap-1">
               <span className="font-display text-3xl font-black text-secondary">
-                {formatMXN(staff.weeklyRevenue * (staff.commissionPercent / 100))}
+                {formatMXN(weekTotalCommission)}
               </span>
-              <span className="text-[10px] text-outline font-sans ml-1">({staff.commissionPercent}%)</span>
+              <span className="text-[10px] text-outline font-sans ml-1">
+                ({staff.commissionPercent}%)
+              </span>
             </div>
-            <p className="text-xs text-on-surface-variant">Monto líquido a transferir según contrato senior.</p>
+            <p className="text-xs text-on-surface-variant">Calculada sobre citas pagadas de la semana.</p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
             <Coins className="w-6 h-6" />
           </div>
         </div>
 
-        {/* Payment Liquidation status */}
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex flex-col justify-between">
           <div className="space-y-2">
-            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">Estado Liquidación</span>
+            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">
+              Estado liquidación
+            </span>
             <div className="text-xs font-bold text-primary flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${paymentRequested ? 'bg-amber-500 animate-pulse' : 'bg-primary'}`} />
-              <span className="uppercase tracking-wide">{paymentRequested ? 'PENDIENTE VALIDACIÓN' : 'POR LIQUIDAR'}</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  latestSettlement ? 'bg-emerald-500' : 'bg-primary'
+                }`}
+              />
+              <span className="uppercase tracking-wide">{settlementStatusLabel}</span>
             </div>
-            <p className="text-[11px] text-outline leading-tight">{paymentStatus}</p>
+            <p className="text-[11px] text-outline leading-tight">{settlementStatusDetail}</p>
           </div>
-          <button 
+          <button
+            type="button"
             onClick={handleRequestPayment}
-            disabled={paymentRequested}
-            className={`w-full mt-4 py-2 rounded-lg text-center text-[10px] font-sans font-bold uppercase tracking-widest transition-all ${
-              paymentRequested 
-                ? 'bg-amber-100 text-amber-800 cursor-not-allowed' 
-                : 'bg-primary text-on-primary hover:bg-primary-container'
-            }`}
+            className="w-full mt-4 py-2 rounded-lg text-center text-[10px] font-sans font-bold uppercase tracking-widest transition-all bg-primary text-on-primary hover:bg-primary-container"
           >
-            {paymentRequested ? 'Solicitado Correctamente' : 'Solicitar Pago'}
+            Liquidar
           </button>
         </div>
       </div>
 
-      {/* Graphs & Charts split */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left 2 Columns: Breathtaking visual bar chart for weekly stats */}
         <div className="lg:col-span-2 bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow space-y-4">
-          <div>
-            <h3 className="font-display text-lg font-bold text-primary">Ventas Diarias de la Semana</h3>
-            <p className="text-xs text-outline">Rendimiento volumétrico monetario de lunes a domingo.</p>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h3 className="font-display text-lg font-bold text-primary">
+                Ventas diarias de la semana
+              </h3>
+              <p className="text-xs text-outline mt-1">
+                Citas pagadas en Mongo · {weekRangeLabel}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-xl border border-primary/10 bg-surface px-1 py-1 self-start">
+              <button
+                type="button"
+                onClick={handlePrevWeek}
+                title="Semana anterior"
+                className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleGoToCurrentWeek}
+                disabled={viewingCurrentWeek}
+                className={`px-3 py-1 rounded-lg text-[10px] font-sans font-bold uppercase tracking-wider transition-colors ${
+                  viewingCurrentWeek
+                    ? 'bg-primary text-on-primary cursor-default'
+                    : 'text-primary hover:bg-surface-container-low'
+                }`}
+              >
+                Semana actual
+              </button>
+              <button
+                type="button"
+                onClick={handleNextWeek}
+                title="Semana siguiente"
+                className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          {/* SVG Custom Chart */}
-          <div className="pt-6">
+          <div className="pt-2">
             <div className="h-64 w-full flex items-end justify-between gap-3 px-2 border-b border-primary/10">
-              {weeklyPerformance.map((item, idx) => {
-                const maxVal = 1000;
-                const percentHeight = Math.min((item.sales / maxVal) * 100, 100);
-                
+              {weeklyPerformance.map((item) => {
+                const percentHeight = Math.min((item.sales / chartMax) * 100, 100);
+                const isToday = item.dateLabel === todayLabel;
+
                 return (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
-                    {/* Tooltip value */}
-                    <span className="text-[9px] font-mono font-bold opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary px-1.5 py-0.5 rounded -translate-y-1">
+                  <div
+                    key={item.dateLabel}
+                    className="flex-1 flex flex-col items-center gap-2 group h-full justify-end min-w-0"
+                  >
+                    <span className="text-[9px] font-mono font-bold opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-on-primary px-1.5 py-0.5 rounded -translate-y-1 whitespace-nowrap">
                       {formatMXN(item.sales)}
                     </span>
-                    {/* Bar graphic */}
-                    <div 
-                      style={{ height: `${percentHeight}%` }} 
-                      className={`w-full rounded-t-lg transition-all duration-500 relative group-hover:bg-secondary ${
-                        item.day === 'Sáb' 
-                          ? 'bg-secondary' 
-                          : 'bg-primary/20'
+                    <div
+                      style={{ height: `${Math.max(percentHeight, item.sales > 0 ? 4 : 0)}%` }}
+                      className={`w-full rounded-t-lg transition-all duration-500 relative group-hover:bg-secondary min-h-[2px] ${
+                        isToday ? 'bg-secondary' : 'bg-primary/20'
                       }`}
                     >
                       <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 rounded-t-lg transition-opacity" />
                     </div>
-                    {/* Label */}
-                    <span className="text-[10px] text-outline font-bold mt-1">{item.day}</span>
+                    <div className="text-center min-w-0">
+                      <span className="text-[10px] text-outline font-bold block">{item.dayLabel}</span>
+                      <span className="text-[8px] text-outline/80 font-mono truncate block max-w-full">
+                        {item.dateLabel.replace(/, \d{4}$/, '')}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
             </div>
             <div className="flex items-center justify-between text-[10px] text-outline font-mono mt-3 px-2">
               <span>Cero ventas</span>
-              <span>Meta diaria: {formatMXN(500)}</span>
-              <span>Max: {formatMXN(1000)}</span>
+              <span>Total semana: {formatMXN(weekTotalSales)}</span>
+              <span>Máx: {formatMXN(chartMax)}</span>
             </div>
           </div>
         </div>
 
-        {/* Right 1 Column: Biography profile metadata & Specialty focus */}
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex flex-col justify-between">
           <div className="space-y-4">
-            <span className="text-[10px] text-outline uppercase font-bold tracking-widest block border-b border-primary/5 pb-2">Biografía & Filosofía</span>
+            <span className="text-[10px] text-outline uppercase font-bold tracking-widest block border-b border-primary/5 pb-2">
+              Biografía
+            </span>
             <p className="text-xs text-on-surface-variant leading-relaxed font-sans font-medium">
-              &ldquo;{staff.bio}&rdquo;
+              &ldquo;{staff.bio || 'Sin biografía registrada.'}&rdquo;
             </p>
-            
+
             <div className="pt-4 space-y-3.5">
-              <p className="text-[10px] text-outline uppercase font-bold tracking-widest">Atributos Clave</p>
-              <div className="flex flex-col gap-2.5">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-outline">Puntualidad</span>
-                  <span className="font-bold text-primary">100% Impecable</span>
+              <p className="text-[10px] text-outline uppercase font-bold tracking-widest">
+                Turno y contacto
+              </p>
+              <div className="flex flex-col gap-2.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-outline">Turno</span>
+                  <span className="font-bold text-primary">{staff.shift}</span>
                 </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-outline">Satisfacción de Cliente</span>
-                  <span className="font-bold text-primary">5.0 / 5.0 Estrellas</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-outline">Porcentaje Retención</span>
-                  <span className="font-bold text-primary">92% Recurrentes</span>
-                </div>
+                {staff.email ? (
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-outline shrink-0">Correo</span>
+                    <span className="font-bold text-primary truncate">{staff.email}</span>
+                  </div>
+                ) : null}
+                {staff.phone ? (
+                  <div className="flex justify-between items-center">
+                    <span className="text-outline">Teléfono</span>
+                    <span className="font-bold text-primary">{staff.phone}</span>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
 
           <div className="p-4 bg-emerald-500/[0.03] rounded-xl border border-emerald-500/10 text-xs text-emerald-900 font-medium flex items-start gap-2.5 mt-6">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <p>Certificaciones al día para tratamientos de salud orgánica ungueal de alta gama.</p>
+            <p>
+              Las ventas del gráfico provienen de citas con estatus pagado en la base de datos.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Detalle de trabajos de hoy table */}
       <div className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden">
-        <div className="p-6 border-b border-primary/5">
-          <h3 className="font-display text-lg font-bold text-primary">Detalle de Trabajos de Hoy</h3>
-          <p className="text-xs text-outline">Liquidación detallada de servicios efectuados con comisión del 40% desglosada.</p>
+        <div className="p-6 border-b border-primary/5 space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div>
+              <h3 className="font-display text-lg font-bold text-primary">
+                Historial de trabajos
+              </h3>
+              <p className="text-xs text-outline mt-1">{workHistorySubtitle}</p>
+            </div>
+
+            <div className="flex items-center gap-1 rounded-xl border border-primary/10 bg-surface p-1 self-start">
+              <button
+                type="button"
+                onClick={() => setWorkHistoryMode('day')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-sans font-bold uppercase tracking-wider transition-colors ${
+                  workHistoryMode === 'day'
+                    ? 'bg-primary text-on-primary'
+                    : 'text-primary hover:bg-surface-container-low'
+                }`}
+              >
+                Un día
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkHistoryMode('period')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-sans font-bold uppercase tracking-wider transition-colors ${
+                  workHistoryMode === 'period'
+                    ? 'bg-primary text-on-primary'
+                    : 'text-primary hover:bg-surface-container-low'
+                }`}
+              >
+                Periodo
+              </button>
+            </div>
+          </div>
+
+          {workHistoryMode === 'day' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-xl border border-primary/10 bg-surface px-1 py-1">
+                <button
+                  type="button"
+                  onClick={handlePrevWorkDay}
+                  title="Día anterior"
+                  className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoToTodayWork}
+                  disabled={isWorkDayToday}
+                  className={`px-3 py-1 rounded-lg text-[10px] font-sans font-bold uppercase tracking-wider transition-colors ${
+                    isWorkDayToday
+                      ? 'bg-primary text-on-primary cursor-default'
+                      : 'text-primary hover:bg-surface-container-low'
+                  }`}
+                >
+                  Hoy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextWorkDay}
+                  title="Día siguiente"
+                  className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-primary">
+                <Calendar className="w-3.5 h-3.5 text-secondary" />
+                {workDayLabel}
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3">
+              <label className="space-y-1">
+                <span className="text-[10px] text-outline font-bold uppercase tracking-wider block">
+                  Desde
+                </span>
+                <input
+                  type="date"
+                  value={getMexicoDateYMD(periodStart)}
+                  onChange={(event) => {
+                    const next = dateFromMexicoYmd(event.target.value);
+                    setPeriodStart(next);
+                    if (compareSpanishShortDates(formatSpanishShortDateInTimeZone(next), periodEndLabel) > 0) {
+                      setPeriodEnd(next);
+                    }
+                  }}
+                  className="px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[10px] text-outline font-bold uppercase tracking-wider block">
+                  Hasta
+                </span>
+                <input
+                  type="date"
+                  value={getMexicoDateYMD(periodEnd)}
+                  onChange={(event) => {
+                    const next = dateFromMexicoYmd(event.target.value);
+                    setPeriodEnd(next);
+                    if (compareSpanishShortDates(formatSpanishShortDateInTimeZone(next), periodStartLabel) < 0) {
+                      setPeriodStart(next);
+                    }
+                  }}
+                  className="px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={applyChartWeekToPeriod}
+                className="px-3 py-2 rounded-lg border border-primary/10 text-[10px] font-sans font-bold uppercase tracking-wider text-primary hover:bg-surface-container-low transition-colors"
+              >
+                Usar semana del gráfico
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low/50 text-[10px] text-outline font-bold uppercase tracking-widest border-b border-primary/5">
+                {workHistoryMode === 'period' ? (
+                  <th className="py-4 px-6">Fecha</th>
+                ) : null}
                 <th className="py-4 px-6">Hora</th>
                 <th className="py-4 px-6">Cliente</th>
                 <th className="py-4 px-6">Tratamiento / Servicio</th>
-                <th className="py-4 px-6 text-right">Monto Bruto</th>
-                <th className="py-4 px-6 text-right">Comisión Senior (40%)</th>
+                <th className="py-4 px-6 text-right">Monto bruto</th>
+                <th className="py-4 px-6 text-right">Comisión ({staff.commissionPercent}%)</th>
                 <th className="py-4 px-6 text-center">Estado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-primary/5">
-              {todayAppointments.length === 0 ? (
+              {workHistoryAppointments.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 px-6 text-center text-xs text-outline">
-                    Sin trabajos completados registrados para {staff.name} hoy.
+                  <td
+                    colSpan={workHistoryMode === 'period' ? 7 : 6}
+                    className="py-8 px-6 text-center text-xs text-outline"
+                  >
+                    Sin trabajos pagados para {staff.name} en{' '}
+                    {workHistoryMode === 'day' ? workDayLabel : 'el periodo seleccionado'}.
                   </td>
                 </tr>
               ) : (
-                todayAppointments.map((item, idx) => (
-                <tr key={idx} className="hover:bg-surface-container-low/30 transition-colors">
-                  <td className="py-4 px-6 font-mono font-bold text-xs text-primary">
-                    {item.time}
-                  </td>
-                  <td className="py-4 px-6">
-                    <p className="font-sans font-bold text-xs text-primary">{item.clientName}</p>
-                    <span className="text-[9px] bg-primary/5 text-primary px-1.5 py-0.2 rounded font-semibold uppercase">{item.badge}</span>
-                  </td>
-                  <td className="py-4 px-6 text-xs text-on-surface-variant font-medium">
-                    {item.service}
-                  </td>
-                  <td className="py-4 px-6 text-right font-display font-black text-xs text-primary">
-                    {formatServicePrice(item.cost)}
-                  </td>
-                  <td className="py-4 px-6 text-right font-display font-black text-xs text-secondary">
-                    {item.cost > 0 ? formatServicePrice(item.commission) : 'Por definir'}
-                  </td>
-                  <td className="py-4 px-6 text-center">
-                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-800 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      COMPLETADO
-                    </span>
-                  </td>
-                </tr>
-              )))}
+                workHistoryAppointments.map((item) => (
+                  <tr key={item.id} className="hover:bg-surface-container-low/30 transition-colors">
+                    {workHistoryMode === 'period' ? (
+                      <td className="py-4 px-6 font-mono text-[10px] text-outline font-bold">
+                        {item.date}
+                      </td>
+                    ) : null}
+                    <td className="py-4 px-6 font-mono font-bold text-xs text-primary">
+                      {item.time}
+                    </td>
+                    <td className="py-4 px-6">
+                      <p className="font-sans font-bold text-xs text-primary">{item.clientName}</p>
+                      <span className="text-[9px] bg-primary/5 text-primary px-1.5 py-0.2 rounded font-semibold uppercase">
+                        {item.badge}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-xs text-on-surface-variant font-medium">
+                      {item.service}
+                    </td>
+                    <td className="py-4 px-6 text-right font-display font-black text-xs text-primary">
+                      {item.cost > 0 ? formatServicePrice(item.cost) : 'Por definir'}
+                    </td>
+                    <td className="py-4 px-6 text-right font-display font-black text-xs text-secondary">
+                      {item.cost > 0 ? formatServicePrice(item.commission) : 'Por definir'}
+                    </td>
+                    <td className="py-4 px-6 text-center">
+                      <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-800 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        Completado
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
             <tfoot>
               <tr className="bg-surface-container-low/30 font-bold border-t border-primary/10">
-                <td colSpan={3} className="py-4 px-6 text-xs text-primary uppercase">Total Acumulado del Día</td>
+                <td
+                  colSpan={workHistoryMode === 'period' ? 4 : 3}
+                  className="py-4 px-6 text-xs text-primary uppercase"
+                >
+                  {workHistoryMode === 'day'
+                    ? 'Total acumulado del día'
+                    : 'Total acumulado del periodo'}
+                </td>
                 <td className="py-4 px-6 text-right font-display font-extrabold text-sm text-primary">
-                  {totalTodaySales > 0 ? formatServicePrice(totalTodaySales) : 'Por definir'}
+                  {totalWorkSales > 0 ? formatServicePrice(totalWorkSales) : 'Por definir'}
                 </td>
                 <td className="py-4 px-6 text-right font-display font-extrabold text-sm text-secondary">
-                  {totalTodayCommission > 0 ? formatServicePrice(totalTodayCommission) : 'Por definir'}
+                  {totalWorkCommission > 0
+                    ? formatServicePrice(totalWorkCommission)
+                    : 'Por definir'}
                 </td>
                 <td className="py-4 px-6"></td>
               </tr>
@@ -324,6 +697,45 @@ export default function StaffAnalyticsView({
           </table>
         </div>
       </div>
+
+      <StaffEditProfileModal
+        staff={staff}
+        isOpen={isEditProfileOpen}
+        isSubmitting={isSavingProfile}
+        error={editProfileError}
+        onClose={handleCloseEditProfile}
+        onSave={handleSaveProfile}
+        onPhotoUpdated={onStaffUpdated}
+      />
+
+      <StaffReportModal
+        staff={staff}
+        appointments={appointments}
+        weekStart={weekStart}
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        loggedInAccountant={loggedInAccountant}
+        onActivityRecorded={onAccountantActivity}
+      />
+
+      <StaffLiquidateModal
+        staff={staff}
+        appointments={appointments}
+        weekStart={weekStart}
+        isOpen={isLiquidateModalOpen}
+        onClose={() => setIsLiquidateModalOpen(false)}
+        onSettled={handleSettlementRecorded}
+        loggedInAccountant={loggedInAccountant}
+      />
+
+      {isAccountantSession && loggedInAccountant ? (
+        <AccountantActivityPanel
+          accountantId={loggedInAccountant.id}
+          accountantName={loggedInAccountant.name}
+          staffId={staff.id}
+          refreshKey={activityRefreshKey}
+        />
+      ) : null}
     </div>
   );
 }

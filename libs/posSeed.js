@@ -1,8 +1,14 @@
 import PosStaff from "@/models/PosStaff";
 import PosClient from "@/models/PosClient";
 import PosReceptionist from "@/models/PosReceptionist";
+import PosAccountant from "@/models/PosAccountant";
 import PosAppointment from "@/models/PosAppointment";
-import { INITIAL_STAFF, INITIAL_CLIENTS, INITIAL_RECEPTIONISTS } from "@/components/pos/data";
+import {
+  INITIAL_STAFF,
+  INITIAL_CLIENTS,
+  INITIAL_RECEPTIONISTS,
+  INITIAL_ACCOUNTANTS,
+} from "@/components/pos/data";
 import { getTodaySpanishShortDate, getMexicoDateYMD } from "@/components/pos/scheduleUtils";
 import {
   getAllowedServiceIdsForStaffCode,
@@ -88,6 +94,25 @@ export async function syncStaffLocalImages() {
     await PosStaff.updateOne(
       { staffCode: member.id },
       { $set: { image: member.image } }
+    );
+  }
+}
+
+export async function seedPosAccountantIfEmpty() {
+  for (const member of INITIAL_ACCOUNTANTS) {
+    await PosAccountant.updateOne(
+      { accountantCode: member.id },
+      {
+        $set: {
+          name: member.name,
+          role: member.role,
+          loginCode: member.loginCode,
+          email: member.email || "",
+          phone: member.phone || "",
+          isActive: true,
+        },
+      },
+      { upsert: true }
     );
   }
 }

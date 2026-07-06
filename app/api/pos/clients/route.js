@@ -4,7 +4,16 @@ import { requirePosSession } from "@/libs/posAuth";
 import { mapClientDoc } from "@/libs/posMappers";
 import { seedPosClientsIfEmpty } from "@/libs/posSeed";
 import PosClient from "@/models/PosClient";
-import PosAppointment from "@/models/PosAppointment";
+import {
+  duplicateClientMessage,
+  findDuplicateClient,
+  generateNextClientCode,
+  normalizeEmail,
+  normalizePhone,
+} from "@/libs/posClientIdentity";
+import { backfillClientsCrmFields } from "@/libs/posClientCrmFields";
+import { syncAllClientCrmSegments, syncClientCrmSegments } from "@/libs/posClientCrmSegments";
+import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +24,18 @@ export async function GET() {
 
     await connectMongo();
     await seedPosClientsIfEmpty();
+
+    try {
+      await backfillClientsCrmFields();
+    } catch (error) {
+      console.error("backfillClientsCrmFields", error);
+    }
+
+    try {
+      await syncAllClientCrmSegments();
+    } catch (error) {
+      console.error("syncAllClientCrmSegments", error);
+    }
 
     const clients = await PosClient.find().sort({ name: 1 });
     return NextResponse.json(clients.map(mapClientDoc));
@@ -33,52 +54,88 @@ export async function POST(req) {
     if (authResult.error) return authResult.error;
 
     const body = await req.json();
+    const name = String(body?.name || "").trim();
+    const phone = String(body?.phone || "").trim();
+    const email = String(body?.email || "").trim();
 
-    if (!body?.name) {
+    if (!name) {
       return NextResponse.json(
-        { error: "El nombre del cliente es obligatorio" },
+        { error: "El nombre de la clienta es obligatorio" },
+        { status: 400 }
+      );
+    }
+
+    if (normalizePhone(phone).length < 10) {
+      return NextResponse.json(
+        { error: "Ingresa un teléfono válido de 10 dígitos para evitar registros duplicados." },
         { status: 400 }
       );
     }
 
     await connectMongo();
 
-    const clientCode =
-      body.clientCode || `SA-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const existing = await PosClient.findOne({ clientCode });
-    if (existing) {
+    const duplicate = await findDuplicateClient({ phone, email });
+    if (duplicate) {
       return NextResponse.json(
-        { error: "Ya existe un cliente con ese ID" },
+        {
+          error: duplicateClientMessage(duplicate),
+          duplicateClientId: duplicate.client.clientCode,
+          duplicateClientName: duplicate.client.name,
+        },
         { status: 409 }
       );
     }
 
-    const created = await PosClient.create({
+    const clientCode = await generateNextClientCode();
+    const registeredAt = new Date();
+    const memberSince = getTodaySpanishShortDate();
+    const phoneNormalized = normalizePhone(phone);
+    const emailNormalized = normalizeEmail(email);
+
+    const payload = {
       clientCode,
-      name: body.name,
-      email: body.email || "",
-      phone: body.phone || "",
+      name,
+      email,
+      phone,
       birthday: body.birthday || "No especificado",
       address: body.address || "No especificada",
-      isPlatinum: body.isPlatinum ?? true,
-      memberSince: body.memberSince || new Date().getFullYear().toString(),
-      bio: body.bio || "Nuevo cliente VIP registrado en recepción.",
+      isPlatinum: false,
+      memberSince,
+      registeredAt,
+      lastPaidVisitDate: "",
+      bio: body.bio || "Nueva clienta registrada en recepción.",
       styleProfile: body.styleProfile || {
-        bio: "Por definir en la primera sesión técnica.",
-        tags: ["New Client"],
+        bio: "Por definir en la primera visita.",
+        tags: ["Nueva"],
       },
       alerts: body.alerts || [],
-      totalSpent: body.totalSpent ?? 0,
-      visitsCount: body.visitsCount ?? 0,
-      averageTicket: body.averageTicket ?? 0,
-    });
+      totalSpent: 0,
+      visitsCount: 0,
+      averageTicket: 0,
+      phoneNormalized,
+    };
 
-    return NextResponse.json(mapClientDoc(created), { status: 201 });
+    if (emailNormalized) {
+      payload.emailNormalized = emailNormalized;
+    }
+
+    const created = await PosClient.create(payload);
+    await syncClientCrmSegments(clientCode);
+    const fresh = await PosClient.findOne({ clientCode });
+
+    return NextResponse.json(mapClientDoc(fresh), { status: 201 });
   } catch (error) {
     console.error("POST /api/pos/clients", error);
+
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        { error: "Ya existe una clienta con ese teléfono o correo." },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
-      { error: error.message || "No se pudo registrar el cliente" },
+      { error: error.message || "No se pudo registrar la clienta" },
       { status: 500 }
     );
   }

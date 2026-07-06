@@ -1,4 +1,4 @@
-import { Client, Staff, Appointment, Service, ServiceCategory, StaffBlockedSlot, Receptionist } from './types';
+import { Client, Staff, Appointment, Service, ServiceCategory, StaffBlockedSlot, Receptionist, Accountant } from './types';
 import { STAFF_COLOR_PALETTE, STAFF_CATALOG_TEMPLATE_BY_ROLE } from './staffColors';
 
 const SERVICE_IMAGE =
@@ -408,6 +408,17 @@ export const INITIAL_STAFF: Staff[] = [
     image: STAFF_IMAGE,
     ...STAFF_COLOR_PALETTE[6]
   }
+];
+
+export const INITIAL_ACCOUNTANTS: Accountant[] = [
+  {
+    id: 'CO',
+    name: 'Contadora',
+    role: 'Contabilidad',
+    loginCode: '4001',
+    email: 'contabilidad@ae.studioo',
+    phone: '',
+  },
 ];
 
 export const INITIAL_RECEPTIONISTS: Receptionist[] = [
