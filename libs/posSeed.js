@@ -142,10 +142,20 @@ export async function seedPosReceptionistsIfEmpty() {
 
 export async function syncReceptionistLoginCodes() {
   for (const member of INITIAL_RECEPTIONISTS) {
-    await PosReceptionist.updateOne(
+    const loginCode = String(member.loginCode || "").trim();
+    if (!loginCode) continue;
+
+    const byCode = await PosReceptionist.updateOne(
       { receptionistCode: member.id },
-      { $set: { loginCode: member.loginCode } }
+      { $set: { loginCode } }
     );
+
+    if (byCode.matchedCount === 0) {
+      await PosReceptionist.updateOne(
+        { name: member.name },
+        { $set: { loginCode } }
+      );
+    }
   }
 }
 

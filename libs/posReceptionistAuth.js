@@ -1,6 +1,6 @@
 import PosReceptionist from "@/models/PosReceptionist";
 import PosLoginAudit from "@/models/PosLoginAudit";
-import { seedPosReceptionistsIfEmpty } from "@/libs/posSeed";
+import { seedPosReceptionistsIfEmpty, syncReceptionistLoginCodes } from "@/libs/posSeed";
 import { getScheduleConfig } from "@/libs/posScheduleConfig";
 
 export async function verifyReceptionistPin(receptionistId, pin) {
@@ -16,6 +16,7 @@ export async function verifyReceptionistPin(receptionistId, pin) {
   }
 
   await seedPosReceptionistsIfEmpty();
+  await syncReceptionistLoginCodes();
 
   const receptionist = await PosReceptionist.findOne({
     receptionistCode: userId,

@@ -5,7 +5,7 @@ import PosStaff from "@/models/PosStaff";
 import PosAccountant from "@/models/PosAccountant";
 import PosLoginAudit from "@/models/PosLoginAudit";
 import { recordAccountantActivity } from "@/libs/posAccountantActivity";
-import { seedPosReceptionistsIfEmpty, seedPosStaffIfEmpty, seedPosAccountantIfEmpty } from "@/libs/posSeed";
+import { seedPosReceptionistsIfEmpty, seedPosStaffIfEmpty, seedPosAccountantIfEmpty, syncReceptionistLoginCodes } from "@/libs/posSeed";
 import { syncStaffLoginCodes } from "@/libs/posStaffServices";
 import { getScheduleConfig } from "@/libs/posScheduleConfig";
 import { openCashSessionForReceptionist } from "@/libs/posCashRegister";
@@ -47,6 +47,7 @@ export async function POST(req) {
     await seedPosStaffIfEmpty();
     await seedPosAccountantIfEmpty();
     await syncStaffLoginCodes();
+    await syncReceptionistLoginCodes();
 
     const scheduleConfig = await getScheduleConfig();
     const masterLoginCode = scheduleConfig.masterLoginCode || "0000";

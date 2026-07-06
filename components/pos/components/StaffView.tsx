@@ -12,7 +12,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { Staff, StaffStatus, Receptionist } from '../types';
-import { formatServicePrice } from '../data';
+import { formatServicePrice, INITIAL_RECEPTIONISTS } from '../data';
 import AccountantActivityPanel from './AccountantActivityPanel';
 
 interface StaffViewProps {
@@ -43,6 +43,10 @@ export default function StaffView({
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  const canonicalReceptionistCodeById = new Map(
+    INITIAL_RECEPTIONISTS.map((member) => [member.id, member.loginCode])
+  );
 
   const filteredStaff = staffList.filter(staff => {
     if (staff.isActive === false) return false;
@@ -96,7 +100,12 @@ export default function StaffView({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {receptionists.map((receptionist) => (
+          {receptionists.map((receptionist) => {
+            const displayLoginCode = showReceptionistCodes
+              ? canonicalReceptionistCodeById.get(receptionist.id) || receptionist.loginCode
+              : null;
+
+            return (
             <div
               key={receptionist.id}
               className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow p-5 flex items-center gap-4"
@@ -115,9 +124,9 @@ export default function StaffView({
               <div className="min-w-0 flex-1">
                 <h4 className="font-display font-extrabold text-sm text-primary">{receptionist.name}</h4>
                 <p className="text-[10px] text-outline font-bold uppercase tracking-wider">{receptionist.role}</p>
-                {showReceptionistCodes && receptionist.loginCode ? (
+                {displayLoginCode ? (
                   <p className="text-[10px] text-on-surface-variant mt-1">
-                    Código: {receptionist.loginCode}
+                    Código: {displayLoginCode}
                   </p>
                 ) : null}
               </div>
@@ -126,7 +135,8 @@ export default function StaffView({
                 <p className="text-[9px] text-outline font-bold uppercase tracking-wider">Hoy</p>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       )}

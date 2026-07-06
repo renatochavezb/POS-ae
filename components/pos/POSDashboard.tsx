@@ -264,6 +264,7 @@ export default function POSDashboard() {
     writePosSession(session);
     applyStoredSession(session);
     setIsSessionValidated(true);
+    void loadPosData({ silent: true });
   };
 
   const handlePosLogout = async () => {
@@ -444,6 +445,15 @@ export default function POSDashboard() {
     }
     loadPosData();
   }, [isSessionValidated]);
+
+  useEffect(() => {
+    if (!isSessionValidated || !isMasterSession) return;
+
+    posApi
+      .getReceptionists()
+      .then(setReceptionists)
+      .catch((error) => console.error(error));
+  }, [isSessionValidated, isMasterSession]);
 
   useEffect(() => {
     if (!isAccountantSession) return;
