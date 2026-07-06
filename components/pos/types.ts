@@ -77,6 +77,7 @@ export interface Accountant {
   id: string;
   name: string;
   role: string;
+  loginCode?: string;
   email?: string;
   phone?: string;
   isActive?: boolean;

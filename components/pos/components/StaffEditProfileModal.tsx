@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { AlertCircle, Camera, Save, X } from "lucide-react";
 import posApi from "@/libs/posApi";
 import { Staff } from "../types";
@@ -92,7 +92,7 @@ export default function StaffEditProfileModal({
 
   const isLocalPhoto = image.startsWith("/staff/");
 
-  const handlePhotoSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
 
@@ -113,7 +113,7 @@ export default function StaffEditProfileModal({
     }
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
 
     const parsedRating = Number.parseFloat(rating);

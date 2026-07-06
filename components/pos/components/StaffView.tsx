@@ -1,18 +1,14 @@
 import { useState } from 'react';
+import Image from 'next/image';
 import { 
   Search, 
   UserPlus, 
   Star, 
   Clock, 
-  Award, 
-  Check, 
-  X,
   UserCheck,
   UserX,
   ChevronRight,
   TrendingUp,
-  Mail,
-  Phone,
   Trash2
 } from 'lucide-react';
 import { Staff, StaffStatus, Receptionist } from '../types';
@@ -23,9 +19,9 @@ interface StaffViewProps {
   staffList: Staff[];
   receptionists: Receptionist[];
   onOpenNewStaff: () => void;
-  onSelectStaff: (id: string) => void;
-  onUpdateStaffStatus: (id: string, status: StaffStatus) => void;
-  onDeleteStaff: (id: string) => void;
+  onSelectStaff: (_staffId: string) => void;
+  onUpdateStaffStatus: (_staffId: string, _nextStatus: StaffStatus) => void;
+  onDeleteStaff: (_staffId: string) => void;
   readOnly?: boolean;
   showAccountantBitacora?: boolean;
   activityRefreshKey?: number;
@@ -184,10 +180,11 @@ export default function StaffView({
           >
             {/* Top Banner section */}
             <div className="p-6 flex items-start gap-4 border-b border-primary/5">
-              <img 
-                referrerPolicy="no-referrer"
-                src={staff.image} 
-                alt={staff.name} 
+              <Image
+                src={staff.image}
+                alt={staff.name}
+                width={64}
+                height={64}
                 className="w-16 h-16 rounded-full object-cover border-2 shrink-0 bg-surface-container-low"
                 style={{ borderColor: staff.color }}
               />

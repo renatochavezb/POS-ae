@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { AlertCircle, Download, FileText, X } from "lucide-react";
 import { Appointment, Staff } from "../types";
 import {
@@ -23,7 +23,7 @@ type ReportMode = "day" | "period";
 const DATE_INPUT_CLASS =
   "w-full min-w-0 min-h-[44px] px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary cursor-pointer relative z-10 [color-scheme:light]";
 
-function openNativeDatePicker(event: React.MouseEvent<HTMLInputElement>) {
+function openNativeDatePicker(event: MouseEvent<HTMLInputElement>) {
   const input = event.currentTarget;
   try {
     if ("showPicker" in input && typeof input.showPicker === "function") {
