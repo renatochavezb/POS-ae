@@ -140,6 +140,15 @@ export async function seedPosReceptionistsIfEmpty() {
   }
 }
 
+export async function syncReceptionistLoginCodes() {
+  for (const member of INITIAL_RECEPTIONISTS) {
+    await PosReceptionist.updateOne(
+      { receptionistCode: member.id },
+      { $set: { loginCode: member.loginCode } }
+    );
+  }
+}
+
 export async function refreshReceptionistDailyCounts(todayLabel = getTodaySpanishShortDate()) {
   const mexicoYMD = getMexicoDateYMD();
   const receptionists = await PosReceptionist.find();

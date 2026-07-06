@@ -1335,6 +1335,7 @@ export default function POSDashboard() {
             onDeleteStaff={handleDeleteStaff}
             readOnly={isAccountantSession}
             showAccountantBitacora={isMasterSession && !isAccountantSession}
+            showReceptionistCodes={isMasterSession && !isAccountantSession}
             activityRefreshKey={accountantActivityRefresh}
           />
         );

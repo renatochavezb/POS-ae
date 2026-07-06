@@ -7,10 +7,13 @@ export async function requirePosSession() {
 }
 
 /** Solo sesión con PIN master (administrador). */
-export function requireMasterSession(req) {
-  const isMaster = req.headers.get("x-pos-master-session") === "true";
+export function isMasterSessionRequest(req) {
+  return req.headers.get("x-pos-master-session") === "true";
+}
 
-  if (!isMaster) {
+/** Solo sesión con PIN master (administrador). */
+export function requireMasterSession(req) {
+  if (!isMasterSessionRequest(req)) {
     return {
       error: NextResponse.json(
         { error: "Solo el administrador puede consultar la bitácora de contabilidad" },

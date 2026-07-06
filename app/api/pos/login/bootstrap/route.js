@@ -7,6 +7,7 @@ import {
   seedPosReceptionistsIfEmpty,
   seedPosStaffIfEmpty,
   seedPosAccountantIfEmpty,
+  syncReceptionistLoginCodes,
 } from "@/libs/posSeed";
 import {
   syncStaffAllowedServices,
@@ -63,6 +64,7 @@ export async function GET() {
     await seedPosAccountantIfEmpty();
     await syncStaffAllowedServices();
     await syncStaffLoginCodes();
+    await syncReceptionistLoginCodes();
 
     const [receptionists, staff, accountants] = await Promise.all([
       PosReceptionist.find().sort({ name: 1 }),

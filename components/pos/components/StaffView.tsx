@@ -24,6 +24,7 @@ interface StaffViewProps {
   onDeleteStaff: (_staffId: string) => void;
   readOnly?: boolean;
   showAccountantBitacora?: boolean;
+  showReceptionistCodes?: boolean;
   activityRefreshKey?: number;
 }
 
@@ -36,6 +37,7 @@ export default function StaffView({
   onDeleteStaff,
   readOnly = false,
   showAccountantBitacora = false,
+  showReceptionistCodes = false,
   activityRefreshKey = 0,
 }: StaffViewProps) {
   
@@ -113,7 +115,11 @@ export default function StaffView({
               <div className="min-w-0 flex-1">
                 <h4 className="font-display font-extrabold text-sm text-primary">{receptionist.name}</h4>
                 <p className="text-[10px] text-outline font-bold uppercase tracking-wider">{receptionist.role}</p>
-                <p className="text-[10px] text-on-surface-variant mt-1">Código: {receptionist.loginCode}</p>
+                {showReceptionistCodes && receptionist.loginCode ? (
+                  <p className="text-[10px] text-on-surface-variant mt-1">
+                    Código: {receptionist.loginCode}
+                  </p>
+                ) : null}
               </div>
               <div className="text-right shrink-0">
                 <span className="font-display text-3xl font-black text-primary">{receptionist.bookingsToday}</span>

@@ -65,7 +65,7 @@ export interface Receptionist {
   id: string;
   name: string;
   role: string;
-  loginCode: string;
+  loginCode?: string;
   bookingsToday: number;
   bookingsTodayDate?: string;
   image: string;
