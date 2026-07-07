@@ -1,3 +1,5 @@
+import { parseSpanishShortDateLabel } from '@/libs/spanishDateUtils';
+
 export const SCHEDULE_START_HOUR = 9;
 export const SCHEDULE_END_HOUR = 21;
 
@@ -151,7 +153,18 @@ export interface ScheduleConfig {
   closeReasons: string[];
   timeZone: string;
   masterLoginCode?: string;
+  weeklyHours?: {
+    weekday: { startHour: number; endHour: number; closed: boolean };
+    saturday: { startHour: number; endHour: number; closed: boolean };
+    sundayHoliday: { startHour: number; endHour: number; closed: boolean };
+  };
 }
+
+export const DEFAULT_WEEKLY_HOURS = {
+  weekday: { startHour: 9, endHour: 21, closed: false },
+  saturday: { startHour: 9, endHour: 18, closed: false },
+  sundayHoliday: { startHour: 9, endHour: 21, closed: true },
+};
 
 export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
   startHour: SCHEDULE_START_HOUR,
@@ -161,7 +174,99 @@ export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
   closeDurationOptions: BOOKING_DURATION_OPTIONS,
   closeReasons: ['Descanso', 'Comida', 'Capacitación', 'Personal', 'Otro'],
   timeZone: POS_TIME_ZONE,
+  weeklyHours: DEFAULT_WEEKLY_HOURS,
 };
+
+export type WeeklyHoursKey = 'weekday' | 'saturday' | 'sundayHoliday';
+
+export type ResolvedDaySchedule = {
+  key: WeeklyHoursKey;
+  startHour: number;
+  endHour: number;
+  closed: boolean;
+  hoursLabel: string;
+};
+
+export function resolveWeeklyHoursKey(date: Date): WeeklyHoursKey {
+  const day = date.getDay();
+  if (day === 0) return 'sundayHoliday';
+  if (day === 6) return 'saturday';
+  return 'weekday';
+}
+
+export function resolveScheduleForDate(
+  date: Date,
+  config: ScheduleConfig = DEFAULT_SCHEDULE_CONFIG
+): ResolvedDaySchedule {
+  const weeklyHours = config.weeklyHours || DEFAULT_WEEKLY_HOURS;
+  const key = resolveWeeklyHoursKey(date);
+  const slot = weeklyHours[key];
+
+  return {
+    key,
+    startHour: slot.startHour,
+    endHour: slot.endHour,
+    closed: slot.closed,
+    hoursLabel: slot.closed
+      ? 'Cerrado'
+      : `${String(slot.startHour).padStart(2, '0')}:00 – ${String(slot.endHour).padStart(2, '0')}:00`,
+  };
+}
+
+export function resolveScheduleForDateLabel(
+  dateLabel: string,
+  config: ScheduleConfig = DEFAULT_SCHEDULE_CONFIG
+): ResolvedDaySchedule {
+  const parsed = parseSpanishShortDateLabel(dateLabel);
+  if (!parsed) {
+    return resolveScheduleForDate(new Date(), config);
+  }
+  return resolveScheduleForDate(parsed, config);
+}
+
+export function buildDayScheduleConfig(
+  date: Date,
+  config: ScheduleConfig = DEFAULT_SCHEDULE_CONFIG
+): ScheduleConfig {
+  const resolved = resolveScheduleForDate(date, config);
+
+  if (resolved.closed) {
+    return {
+      ...config,
+      startHour: DEFAULT_WEEKLY_HOURS.weekday.startHour,
+      endHour: DEFAULT_WEEKLY_HOURS.weekday.endHour,
+    };
+  }
+
+  return {
+    ...config,
+    startHour: resolved.startHour,
+    endHour: resolved.endHour,
+  };
+}
+
+export function buildDayScheduleConfigForLabel(
+  dateLabel: string,
+  config: ScheduleConfig = DEFAULT_SCHEDULE_CONFIG
+): ScheduleConfig {
+  const parsed = parseSpanishShortDateLabel(dateLabel);
+  if (!parsed) return config;
+  return buildDayScheduleConfig(parsed, config);
+}
+
+export function isTimeWithinDaySchedule(
+  time: string,
+  date: Date,
+  config: ScheduleConfig = DEFAULT_SCHEDULE_CONFIG
+): boolean {
+  const resolved = resolveScheduleForDate(date, config);
+  if (resolved.closed) return false;
+
+  const minutes = parseTimeToMinutes(time);
+  if (minutes < 0) return false;
+
+  return minutes >= resolved.startHour * 60 && minutes < resolved.endHour * 60;
+}
 
 export const buildCalendarHourSlots = (
   config: ScheduleConfig = DEFAULT_SCHEDULE_CONFIG

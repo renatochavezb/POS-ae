@@ -55,7 +55,7 @@ export async function PATCH(req, { params }) {
       ...(body.memberSince !== undefined ? { memberSince: body.memberSince } : {}),
       ...(body.bio !== undefined ? { bio: body.bio } : {}),
       ...(body.styleProfile ? { styleProfile: body.styleProfile } : {}),
-      ...(body.alerts ? { alerts: body.alerts } : {}),
+      ...(body.alerts !== undefined ? { alerts: body.alerts } : {}),
       ...(body.totalSpent !== undefined ? { totalSpent: body.totalSpent } : {}),
       ...(body.visitsCount !== undefined ? { visitsCount: body.visitsCount } : {}),
       ...(body.averageTicket !== undefined
@@ -80,6 +80,13 @@ export async function PATCH(req, { params }) {
 
     if (!updated) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
+    }
+
+    if (body.name && body.name !== existing.name) {
+      await PosAppointment.updateMany(
+        { clientId },
+        { $set: { clientName: body.name } }
+      );
     }
 
     await syncClientCrmSegments(clientId);

@@ -141,6 +141,13 @@ const posApi = {
   getScheduleConfig(): Promise<ScheduleConfig> {
     return posClient.get("/pos/schedule-config");
   },
+
+  updateScheduleConfig(payload: {
+    pin: string;
+    weeklyHours: ScheduleConfig["weeklyHours"];
+  }): Promise<ScheduleConfig> {
+    return posClient.patch("/pos/schedule-config", payload);
+  },
   getClients(): Promise<Client[]> {
     return posClient.get("/pos/clients");
   },
@@ -318,6 +325,16 @@ const posApi = {
     }
   ): Promise<CashSession> {
     return posClient.post(`/pos/cash-sessions/${sessionId}/close`, data);
+  },
+  updateCashSessionShiftDate(
+    sessionId: string,
+    data: {
+      shiftDate: string;
+      receptionistId: string;
+      pin: string;
+    }
+  ): Promise<CashSession> {
+    return posClient.patch(`/pos/cash-sessions/${sessionId}/shift-date`, data);
   },
   getCashSessionHistory(params?: {
     scope?: "today" | "all";

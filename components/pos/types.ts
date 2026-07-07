@@ -207,6 +207,18 @@ export interface Service {
   exclusive?: boolean;
 }
 
+export interface WeeklyHoursSlot {
+  startHour: number;
+  endHour: number;
+  closed: boolean;
+}
+
+export interface WeeklyHoursConfig {
+  weekday: WeeklyHoursSlot;
+  saturday: WeeklyHoursSlot;
+  sundayHoliday: WeeklyHoursSlot;
+}
+
 export interface ScheduleConfig {
   startHour: number;
   endHour: number;
@@ -216,6 +228,7 @@ export interface ScheduleConfig {
   closeReasons: string[];
   timeZone: string;
   masterLoginCode?: string;
+  weeklyHours?: WeeklyHoursConfig;
 }
 
 export interface DailyStats {
@@ -299,4 +312,5 @@ export interface CashRegisterState {
   shiftPayments: PosPayment[];
   dayPayments: PosPayment[];
   today: string;
+  cashDay: string;
 }

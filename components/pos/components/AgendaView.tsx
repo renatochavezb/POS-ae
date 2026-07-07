@@ -7,22 +7,25 @@ import {
   Trash2,
   Lock,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Pencil
 } from 'lucide-react';
 import { Appointment, DailyStats, Receptionist, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
 import {
   buildCalendarHourSlots,
+  buildDayScheduleConfig,
   DEFAULT_SCHEDULE_CONFIG,
   formatAppointmentTimeRange,
   formatDuration,
   getMonday,
-  formatSpanishShortDate,
   formatSpanishShortDateInTimeZone,
   getTodaySpanishShortDate,
   addDays,
   parseTimeToMinutes,
   isStaffTimeBlocked,
   getDurationOptionsFromConfig,
+  resolveScheduleForDate,
+  resolveScheduleForDateLabel,
 } from '../scheduleUtils';
 import posApi from '@/libs/posApi';
 import { getAgendaStaffForDate, isStaffActiveForOperations } from '@/libs/posStaffAgenda';
@@ -34,10 +37,12 @@ import ReceptionistPinModal, { ReceptionistAuthPayload } from './ReceptionistPin
 import {
   canCancelAppointment,
   canDeleteAppointment,
+  canEditAppointment,
   isAppointmentPaid,
   isAppointmentUnconfirmed,
   normalizeAppointmentStatus,
 } from '../appointmentStatus';
+import AppointmentEditModal, { AppointmentEditPayload } from './AppointmentEditModal';
 import { AppointmentStatus } from '../types';
 
 interface AgendaViewProps {
@@ -51,6 +56,7 @@ interface AgendaViewProps {
   onSelectStaff: (id: string) => void;
   onDeleteAppointment: (appointmentId: string, auth: ReceptionistAuthPayload) => Promise<void>;
   onCancelAppointment: (appointmentId: string, auth: ReceptionistAuthPayload) => Promise<void>;
+  onEditAppointment: (appointmentId: string, payload: AppointmentEditPayload) => Promise<void>;
   onUpdateAppointmentStatus: (appointmentId: string, status: AppointmentStatus) => void;
   onCloseStaffSlot: (slot: Omit<StaffBlockedSlot, 'id'>) => void;
   onRemoveBlockedSlot: (blockedSlotId: string) => void;
@@ -124,6 +130,7 @@ export default function AgendaView({
   onSelectStaff,
   onDeleteAppointment,
   onCancelAppointment,
+  onEditAppointment,
   onUpdateAppointmentStatus,
   onCloseStaffSlot,
   onRemoveBlockedSlot
@@ -140,11 +147,32 @@ export default function AgendaView({
   } | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const [isStatsBarFloating, setIsStatsBarFloating] = useState(false);
   const statsBarSentinelRef = useRef<HTMLDivElement>(null);
 
-  const timeline = useMemo(() => getTimelineMetrics(scheduleConfig), [scheduleConfig]);
-  const hours = useMemo(() => buildCalendarHourSlots(scheduleConfig), [scheduleConfig]);
+  const selectedDaySchedule = useMemo(
+    () => resolveScheduleForDate(selectedDate, scheduleConfig),
+    [selectedDate, scheduleConfig]
+  );
+
+  const dayScheduleConfig = useMemo(
+    () => buildDayScheduleConfig(selectedDate, scheduleConfig),
+    [selectedDate, scheduleConfig]
+  );
+
+  const isSalonClosed = selectedDaySchedule.closed;
+
+  const timeline = useMemo(
+    () => getTimelineMetrics(dayScheduleConfig),
+    [dayScheduleConfig]
+  );
+  const hours = useMemo(
+    () => buildCalendarHourSlots(dayScheduleConfig),
+    [dayScheduleConfig]
+  );
 
   const days = useMemo(() => generateWeekDays(currentWeekStart), [currentWeekStart]);
   const selectedDayLabel = formatSpanishShortDateInTimeZone(selectedDate);
@@ -257,6 +285,37 @@ export default function AgendaView({
     setPendingAuthAction({ type: 'cancel', appointment });
   };
 
+  const handleConfirmEdit = async (payload: AppointmentEditPayload) => {
+    if (!editingAppointment) return;
+
+    setIsEditSubmitting(true);
+    setEditError(null);
+
+    try {
+      await onEditAppointment(editingAppointment.id, payload);
+      setSelectedAppointment((prev) =>
+        prev?.id === editingAppointment.id
+          ? {
+              ...prev,
+              serviceName: payload.serviceName,
+              serviceSubtitle: payload.serviceSubtitle,
+              date: payload.date,
+              time: payload.time,
+              duration: payload.duration,
+              cost: payload.cost,
+            }
+          : prev
+      );
+      setEditingAppointment(null);
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : 'No se pudo guardar los cambios.'
+      );
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
   const handleConfirmAuthAction = async (auth: ReceptionistAuthPayload) => {
     if (!pendingAuthAction) return;
 
@@ -317,6 +376,10 @@ export default function AgendaView({
   };
 
   const handleSlotClick = (slotTime: string, staffId: string) => {
+    if (isSalonClosed) {
+      return;
+    }
+
     const staffMember = staffList.find((member) => member.id === staffId);
     if (!isStaffActiveForOperations(staffMember)) {
       return;
@@ -379,12 +442,16 @@ export default function AgendaView({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            disabled={isSalonClosed}
             onClick={() => {
+              if (isSalonClosed) return;
               setCloseMode((prev) => !prev);
               setCloseDraft(null);
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all border ${
-              closeMode
+              isSalonClosed
+                ? 'border-primary/10 text-outline opacity-50 cursor-not-allowed'
+                : closeMode
                 ? 'bg-primary text-on-primary border-primary shadow-sm'
                 : 'border-primary/10 text-primary hover:bg-surface-container-low'
             }`}
@@ -393,8 +460,19 @@ export default function AgendaView({
             <span>{closeMode ? 'Cerrar: activo' : 'Cerrar horario'}</span>
           </button>
           <button
-            onClick={() => onOpenNewAppointment(selectedDayLabel)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-all shadow-sm"
+            onClick={() => {
+              if (isSalonClosed) {
+                window.alert('El salón está cerrado este día. No se pueden agendar citas.');
+                return;
+              }
+              onOpenNewAppointment(selectedDayLabel);
+            }}
+            disabled={isSalonClosed}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all shadow-sm ${
+              isSalonClosed
+                ? 'bg-surface-container-low text-outline cursor-not-allowed opacity-60'
+                : 'bg-primary text-on-primary hover:bg-primary-container'
+            }`}
           >
             <Plus className="w-4 h-4 text-secondary" />
             <span>Reservar Cita</span>
@@ -424,9 +502,10 @@ export default function AgendaView({
                     <h3 className="font-display font-bold text-primary text-base truncate">
                       {formatSelectedDayHeading(selectedDate)}
                     </h3>
-                    <p className="text-[10px] text-outline uppercase tracking-widest mt-0.5">
-                      Vista operativa · {String(scheduleConfig.startHour).padStart(2, '0')}:00 –{' '}
-                      {String(scheduleConfig.endHour).padStart(2, '0')}:00
+                    <p className={`text-[10px] uppercase tracking-widest mt-0.5 ${
+                      isSalonClosed ? 'text-red-600 font-bold' : 'text-outline'
+                    }`}>
+                      Vista operativa · {selectedDaySchedule.hoursLabel}
                     </p>
                   </div>
                 </div>
@@ -492,6 +571,7 @@ export default function AgendaView({
                 const isToday = getIsToday(day.fullDate);
                 const isSelected = getIsSelectedDay(day.fullDate);
                 const dayCount = appointments.filter((app) => app.date === day.fullDate).length;
+                const daySchedule = resolveScheduleForDateLabel(day.fullDate, scheduleConfig);
 
                 return (
                   <button
@@ -503,26 +583,39 @@ export default function AgendaView({
                         ? 'border-primary bg-primary text-on-primary shadow-sm'
                         : isToday
                         ? 'border-secondary/40 bg-secondary/10 text-primary'
+                        : daySchedule.closed
+                        ? 'border-red-200 bg-red-50/80 text-primary'
                         : 'border-primary/10 hover:bg-surface-container-low text-primary'
                     }`}
                   >
                     <span className="text-[10px] font-bold uppercase block opacity-80">{day.name}</span>
                     <span className="text-sm font-display font-extrabold block">{day.date}</span>
-                    {dayCount > 0 && (
+                    {daySchedule.closed ? (
+                      <span className={`text-[9px] font-bold mt-1 block ${
+                        isSelected ? 'text-on-primary/80' : 'text-red-600'
+                      }`}>
+                        Cerrado
+                      </span>
+                    ) : dayCount > 0 ? (
                       <span className={`text-[9px] font-bold mt-1 block ${isSelected ? 'text-on-primary/80' : 'text-secondary'}`}>
                         {dayCount} cita{dayCount !== 1 ? 's' : ''}
                       </span>
-                    )}
+                    ) : null}
                   </button>
                 );
               })}
             </div>
 
-            {todayAppointments.length === 0 && (
+            {isSalonClosed ? (
+              <p className="text-[11px] text-red-700 font-medium leading-relaxed px-1">
+                Salón cerrado este día. Las citas existentes se muestran en modo consulta; no se pueden
+                agendar ni bloquear horarios nuevos.
+              </p>
+            ) : todayAppointments.length === 0 ? (
               <p className="text-[11px] text-outline leading-relaxed px-1">
                 No hay citas para este día. Haz clic en cualquier celda del calendario para agendar.
               </p>
-            )}
+            ) : null}
           </div>
 
           <div className="overflow-x-auto">
@@ -554,7 +647,26 @@ export default function AgendaView({
                 ))}
               </div>
 
-              <div className="max-h-[calc(100vh-280px)] min-h-[520px] overflow-y-auto">
+              <div className="max-h-[calc(100vh-280px)] min-h-[520px] overflow-y-auto relative">
+                {isSalonClosed ? (
+                  <div
+                    className="absolute inset-0 z-30 pointer-events-none"
+                    style={{
+                      background:
+                        'repeating-linear-gradient(135deg, rgba(239,68,68,0.04) 0, rgba(239,68,68,0.04) 12px, rgba(254,242,242,0.5) 12px, rgba(254,242,242,0.5) 24px)',
+                    }}
+                  />
+                ) : null}
+                {isSalonClosed ? (
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+                    <div className="px-4 py-2 rounded-xl border border-red-200 bg-red-50/95 shadow-sm flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-red-700" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-red-800">
+                        Salón cerrado
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
                 <div
                   className="relative"
                   style={{
@@ -615,8 +727,8 @@ export default function AgendaView({
                               className={`absolute left-0 right-0 border-primary/5 transition-colors group ${
                                 isHourBoundary ? 'border-t' : 'border-t border-dashed opacity-70'
                               } ${
-                                isInactiveColumn
-                                  ? 'cursor-default'
+                                isSalonClosed || isInactiveColumn
+                                  ? 'cursor-not-allowed opacity-40'
                                   : closeMode
                                   ? 'hover:bg-amber-500/10 cursor-crosshair'
                                   : isBlocked
@@ -628,7 +740,9 @@ export default function AgendaView({
                                 height: HALF_HOUR_HEIGHT
                               }}
                               title={
-                                isInactiveColumn
+                                isSalonClosed
+                                  ? 'Salón cerrado este día'
+                                  : isInactiveColumn
                                   ? `Historial de ${staff.name} (sin reservas nuevas)`
                                   : closeMode
                                   ? `Cerrar horario de ${staff.name} a las ${slotTime}`
@@ -637,7 +751,7 @@ export default function AgendaView({
                                   : `Reservar ${staff.name} a las ${slotTime}`
                               }
                             >
-                              {!isBlocked && !closeMode && !isInactiveColumn && (
+                              {!isBlocked && !closeMode && !isInactiveColumn && !isSalonClosed && (
                                 <span
                                   className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border"
                                   style={{
@@ -649,7 +763,7 @@ export default function AgendaView({
                                   <Plus className="w-3 h-3" /> {slotTime}
                                 </span>
                               )}
-                              {closeMode && !isInactiveColumn && (
+                              {closeMode && !isInactiveColumn && !isSalonClosed && (
                                 <span className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border border-amber-300 bg-amber-50 text-amber-900">
                                   <Lock className="w-3 h-3" /> Cerrar {slotTime}
                                 </span>
@@ -988,6 +1102,19 @@ export default function AgendaView({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {canEditAppointment(selectedAppointment.status) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditError(null);
+                          setEditingAppointment(selectedAppointment);
+                        }}
+                        className="px-4 py-2 bg-primary text-on-primary hover:bg-primary-container rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Editar
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setSelectedAppointment(null)}
@@ -1002,6 +1129,22 @@ export default function AgendaView({
           </div>
         );
       })()}
+
+      {editingAppointment && (
+        <AppointmentEditModal
+          appointment={editingAppointment}
+          scheduleConfig={scheduleConfig}
+          isSubmitting={isEditSubmitting}
+          error={editError}
+          onConfirm={handleConfirmEdit}
+          onClose={() => {
+            if (!isEditSubmitting) {
+              setEditingAppointment(null);
+              setEditError(null);
+            }
+          }}
+        />
+      )}
 
       {pendingAuthAction && (
         <ReceptionistPinModal

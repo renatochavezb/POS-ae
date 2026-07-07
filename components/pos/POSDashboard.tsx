@@ -32,6 +32,7 @@ import { Client, Staff, Appointment, Service, StaffStatus, StaffBlockedSlot, Rec
 import {
   DEFAULT_SCHEDULE_CONFIG,
   buildBookingTimeOptions,
+  buildDayScheduleConfigForLabel,
   formatSpanishShortDate,
   getTodaySpanishShortDate,
   getDurationOptionsFromConfig,
@@ -41,14 +42,17 @@ import {
   parseTimeToMinutes,
   getConflictingAppointment,
   formatAppointmentTimeRange,
+  resolveScheduleForDateLabel,
 } from './scheduleUtils';
 
 // Visual Components
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import AgendaView from './components/AgendaView';
+import { AppointmentEditPayload } from './components/AppointmentEditModal';
 import ClientsView from './components/ClientsView';
 import ClientProfileView from './components/ClientProfileView';
+import { ClientEditPayload } from './components/ClientEditModal';
 import StaffView from './components/StaffView';
 import StaffDeactivateModal from './components/StaffDeactivateModal';
 import StaffAnalyticsView from './components/StaffAnalyticsView';
@@ -188,6 +192,21 @@ export default function POSDashboard() {
   const [bookingDate, setBookingDate] = useState(getTodaySpanishShortDate());
   const [bookingTime, setBookingTime] = useState('10:00');
   const [bookingDuration, setBookingDuration] = useState(60);
+
+  const bookingDaySchedule = useMemo(
+    () => resolveScheduleForDateLabel(bookingDate, scheduleConfig),
+    [bookingDate, scheduleConfig]
+  );
+
+  const bookingDayConfig = useMemo(
+    () => buildDayScheduleConfigForLabel(bookingDate, scheduleConfig),
+    [bookingDate, scheduleConfig]
+  );
+
+  const bookingTimeOptions = useMemo(
+    () => buildBookingTimeOptions(bookingDayConfig),
+    [bookingDayConfig]
+  );
 
   // Client creation form fields
   const [newClientName, setNewClientName] = useState('');
@@ -662,6 +681,12 @@ export default function POSDashboard() {
       return;
     }
 
+    const daySchedule = resolveScheduleForDateLabel(bookingDate, scheduleConfig);
+    if (daySchedule.closed) {
+      window.alert('El salón está cerrado en la fecha seleccionada.');
+      return;
+    }
+
     const staffObj = staffList.find(s => s.id === bookingStaffId);
     if (!staffObj?.id) {
       window.alert('Selecciona una manicurista para la cita.');
@@ -987,6 +1012,38 @@ export default function POSDashboard() {
     }
   };
 
+  const handleEditAppointment = async (
+    appointmentId: string,
+    payload: AppointmentEditPayload
+  ) => {
+    const appointment = appointments.find((item) => item.id === appointmentId);
+    if (!appointment) return;
+
+    try {
+      const updated = await posApi.updateAppointment(appointmentId, {
+        serviceName: payload.serviceName,
+        serviceSubtitle: payload.serviceSubtitle,
+        date: payload.date,
+        time: payload.time,
+        duration: payload.duration,
+        cost: payload.cost,
+      });
+
+      setAppointments((prev) =>
+        prev.map((item) =>
+          item.id === appointmentId ? { ...item, ...updated } : item
+        )
+      );
+
+      await loadPosData({ silent: true });
+    } catch (error) {
+      console.error(error);
+      throw error instanceof Error
+        ? error
+        : new Error('No se pudo actualizar la cita en la base de datos.');
+    }
+  };
+
   const handleUpdateAppointmentStatus = async (
     appointmentId: string,
     nextStatus: AppointmentStatus
@@ -1099,7 +1156,6 @@ export default function POSDashboard() {
     }
   };
 
-  // Submit client registration
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1136,6 +1192,31 @@ export default function POSDashboard() {
           ? error.message
           : 'No se pudo registrar la clienta en la base de datos.';
       window.alert(message);
+    }
+  };
+
+  const handleEditClient = async (clientId: string, payload: ClientEditPayload) => {
+    try {
+      const updated = await posApi.updateClient(clientId, payload);
+
+      setClients((prev) =>
+        prev.map((item) => (item.id === clientId ? { ...item, ...updated } : item))
+      );
+
+      if (payload.name) {
+        setAppointments((prev) =>
+          prev.map((item) =>
+            item.clientId === clientId ? { ...item, clientName: updated.name } : item
+          )
+        );
+      }
+
+      await loadPosData({ silent: true });
+    } catch (error) {
+      console.error(error);
+      throw error instanceof Error
+        ? error
+        : new Error('No se pudo actualizar la clienta en la base de datos.');
     }
   };
 
@@ -1278,6 +1359,7 @@ export default function POSDashboard() {
             }}
             onDeleteAppointment={handleDeleteAppointment}
             onCancelAppointment={handleCancelAppointment}
+            onEditAppointment={handleEditAppointment}
             onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
             onCloseStaffSlot={handleCloseStaffSlot}
             onRemoveBlockedSlot={handleRemoveBlockedSlot}
@@ -1304,6 +1386,7 @@ export default function POSDashboard() {
               appointments={appointments}
               onBack={() => setSelectedClientId(null)}
               onOpenNewAppointment={(name) => handleOpenAppointmentModal(name)}
+              onEditClient={handleEditClient}
             />
           );
         }
@@ -1359,7 +1442,12 @@ export default function POSDashboard() {
           />
         );
       case 'settings':
-        return <SettingsView />;
+        return (
+          <SettingsView
+            scheduleConfig={scheduleConfig}
+            onScheduleConfigUpdated={setScheduleConfig}
+          />
+        );
       case 'master-log':
         return (
           <MasterReceptionLogView
@@ -1962,10 +2050,11 @@ export default function POSDashboard() {
                   <select
                     value={bookingTime}
                     onChange={(e) => setBookingTime(e.target.value)}
-                    className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary"
+                    disabled={bookingDaySchedule.closed}
+                    className="w-full px-3 py-2 border border-primary/10 rounded-lg text-xs font-sans font-bold text-primary bg-surface outline-none focus:border-secondary disabled:opacity-50"
                     required
                   >
-                    {buildBookingTimeOptions(scheduleConfig).map((time) => (
+                    {bookingTimeOptions.map((time) => (
                       <option key={time} value={time}>{time}</option>
                     ))}
                   </select>
@@ -1979,7 +2068,7 @@ export default function POSDashboard() {
                     required
                   >
                     {getDurationOptionsFromConfig(
-                      scheduleConfig,
+                      bookingDayConfig,
                       resolveBookingServices(bookingServices, bookingServiceMode, services).duration
                     ).map((minutes) => (
                       <option key={minutes} value={minutes}>
@@ -1989,8 +2078,12 @@ export default function POSDashboard() {
                   </select>
                 </div>
               </div>
-              <p className="text-[9px] text-outline -mt-2">
-                Horario del salón: {String(scheduleConfig.startHour).padStart(2, '0')}:00 – {String(scheduleConfig.endHour).padStart(2, '0')}:00. La duración se ajusta según el servicio; puedes modificarla si hace falta.
+              <p className={`text-[9px] -mt-2 ${
+                bookingDaySchedule.closed ? 'text-red-600 font-bold' : 'text-outline'
+              }`}>
+                {bookingDaySchedule.closed
+                  ? 'El salón está cerrado en esta fecha. Elige otro día para agendar.'
+                  : `Horario del día: ${bookingDaySchedule.hoursLabel}. La duración se ajusta según el servicio; puedes modificarla si hace falta.`}
               </p>
 
               {/* Confirm Actions */}

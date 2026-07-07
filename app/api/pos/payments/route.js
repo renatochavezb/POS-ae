@@ -94,18 +94,27 @@ export async function POST(req) {
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
     }
 
-    const currentStatus = normalizeAppointmentStatus(appointment.status);
-    if (isAppointmentPaid(currentStatus)) {
-      return NextResponse.json({ error: "Esta cita ya fue pagada" }, { status: 409 });
+    const existingPayment = await PosPayment.findOne({ appointmentCode });
+    if (existingPayment) {
+      return NextResponse.json({ error: "Esta cita ya tiene un pago registrado" }, { status: 409 });
     }
+
+    const currentStatus = normalizeAppointmentStatus(appointment.status);
 
     if (currentStatus === "cancelled") {
       return NextResponse.json({ error: "No se puede cobrar una cita cancelada" }, { status: 409 });
     }
 
-    const existingPayment = await PosPayment.findOne({ appointmentCode });
-    if (existingPayment) {
-      return NextResponse.json({ error: "Esta cita ya tiene un pago registrado" }, { status: 409 });
+    const canCollectInRegister =
+      isAppointmentPaid(currentStatus) ||
+      currentStatus === "confirmado" ||
+      currentStatus === "agendado";
+
+    if (!canCollectInRegister) {
+      return NextResponse.json(
+        { error: "Solo se pueden cobrar citas agendadas, confirmadas o pendientes de registro en caja" },
+        { status: 409 }
+      );
     }
 
     const amount = body.amount !== undefined ? Number(body.amount) : Number(appointment.cost ?? 0);
@@ -167,6 +176,7 @@ export async function POST(req) {
     });
 
     const targetStatus = "pagado";
+    const wasAlreadyPaid = isAppointmentPaid(currentStatus);
 
     const updatedAppointment = await PosAppointment.findOneAndUpdate(
       { appointmentCode },
@@ -180,7 +190,7 @@ export async function POST(req) {
         { staffCode: staff.staffCode },
         {
           $inc: {
-            completedToday: 1,
+            ...(wasAlreadyPaid ? {} : { completedToday: 1 }),
             weeklyRevenue: breakdown.amount,
           },
         }

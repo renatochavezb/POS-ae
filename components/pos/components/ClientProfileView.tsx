@@ -11,24 +11,28 @@ import {
   Plus, 
   Sparkles,
   Info,
-  Calendar
+  Calendar,
+  Pencil
 } from 'lucide-react';
 import { Client, Appointment } from '../types';
 import AppointmentServiceList from '../serviceDisplay';
 import { formatMXN, formatServicePrice } from '../data';
+import ClientEditModal, { ClientEditPayload } from './ClientEditModal';
 
 interface ClientProfileViewProps {
   client: Client;
   appointments: Appointment[];
   onBack: () => void;
   onOpenNewAppointment: (clientName?: string) => void;
+  onEditClient: (clientId: string, payload: ClientEditPayload) => Promise<void>;
 }
 
 export default function ClientProfileView({
   client,
   appointments,
   onBack,
-  onOpenNewAppointment
+  onOpenNewAppointment,
+  onEditClient,
 }: ClientProfileViewProps) {
   
   // Filter appointments for this client
@@ -37,6 +41,9 @@ export default function ClientProfileView({
   // Status simulation for Loading more history
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   const handleLoadHistory = () => {
     setLoadingHistory(true);
@@ -44,6 +51,22 @@ export default function ClientProfileView({
       setLoadingHistory(false);
       setShowAllHistory(true);
     }, 800);
+  };
+
+  const handleConfirmEdit = async (payload: ClientEditPayload) => {
+    setIsEditSubmitting(true);
+    setEditError(null);
+
+    try {
+      await onEditClient(client.id, payload);
+      setIsEditOpen(false);
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : 'No se pudo guardar los cambios.'
+      );
+    } finally {
+      setIsEditSubmitting(false);
+    }
   };
 
   const portraitUrl = client.id === 'SA-2022' 
@@ -112,14 +135,27 @@ export default function ClientProfileView({
               </div>
             </div>
 
-            {/* Nueva Cita CTA */}
-            <button 
-              onClick={() => onOpenNewAppointment(client.name)}
-              className="w-full mt-6 flex items-center justify-center gap-2 py-3 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-sans text-xs font-bold uppercase tracking-widest transition-all shadow-sm shadow-primary/10"
-            >
-              <Plus className="w-4 h-4 text-secondary" />
-              <span>Nueva Reserva</span>
-            </button>
+            {/* Acciones del perfil */}
+            <div className="w-full mt-6 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditError(null);
+                  setIsEditOpen(true);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-primary/10 text-primary hover:bg-surface-container-low font-sans text-xs font-bold uppercase tracking-widest transition-all"
+              >
+                <Pencil className="w-4 h-4 text-secondary" />
+                <span>Editar datos</span>
+              </button>
+              <button 
+                onClick={() => onOpenNewAppointment(client.name)}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-sans text-xs font-bold uppercase tracking-widest transition-all shadow-sm shadow-primary/10"
+              >
+                <Plus className="w-4 h-4 text-secondary" />
+                <span>Nueva Reserva</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -331,6 +367,21 @@ export default function ClientProfileView({
           </div>
         </div>
       </div>
+
+      {isEditOpen && (
+        <ClientEditModal
+          client={client}
+          isSubmitting={isEditSubmitting}
+          error={editError}
+          onConfirm={handleConfirmEdit}
+          onClose={() => {
+            if (!isEditSubmitting) {
+              setIsEditOpen(false);
+              setEditError(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

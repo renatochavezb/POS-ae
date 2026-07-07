@@ -43,6 +43,23 @@ const posScheduleConfigSchema = mongoose.Schema(
       default: "0000",
       trim: true,
     },
+    weeklyHours: {
+      weekday: {
+        startHour: { type: Number, default: 9 },
+        endHour: { type: Number, default: 21 },
+        closed: { type: Boolean, default: false },
+      },
+      saturday: {
+        startHour: { type: Number, default: 9 },
+        endHour: { type: Number, default: 18 },
+        closed: { type: Boolean, default: false },
+      },
+      sundayHoliday: {
+        startHour: { type: Number, default: 9 },
+        endHour: { type: Number, default: 21 },
+        closed: { type: Boolean, default: true },
+      },
+    },
   },
   {
     timestamps: true,

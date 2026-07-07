@@ -21,10 +21,11 @@ export async function GET() {
 
     const today = getTodaySpanishShortDate();
     const openSession = await getOpenCashSession();
+    const cashDay = openSession?.shiftDate || today;
 
     const [shiftPayments, dayPayments] = await Promise.all([
       openSession ? getPaymentsForSession(openSession.sessionCode) : Promise.resolve([]),
-      getPaymentsForDate(today),
+      getPaymentsForDate(cashDay),
     ]);
 
     return NextResponse.json({
@@ -34,6 +35,7 @@ export async function GET() {
       shiftPayments: shiftPayments.map(mapPaymentDoc),
       dayPayments: dayPayments.map(mapPaymentDoc),
       today,
+      cashDay,
     });
   } catch (error) {
     console.error("GET /api/pos/cash-sessions/current", error);

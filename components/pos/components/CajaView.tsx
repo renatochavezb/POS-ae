@@ -16,11 +16,12 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  CalendarDays,
 } from 'lucide-react';
 import { Appointment, CashRegisterState, CashSession, PaymentMethod, PosPayment, Receptionist } from '../types';
 import { formatMXN } from '../data';
 import { formatAppointmentTimeRange } from '../scheduleUtils';
-import { isAppointmentPendingPayment, normalizeAppointmentStatus } from '../appointmentStatus';
+import { isAppointmentPaid, isAppointmentPendingPayment, normalizeAppointmentStatus } from '../appointmentStatus';
 import posApi from '@/libs/posApi';
 import {
   clearCashCloseDraft,
@@ -96,6 +97,11 @@ export default function CajaView({
   const [closeDraftActive, setCloseDraftActive] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
+  const [showShiftDateModal, setShowShiftDateModal] = useState(false);
+  const [shiftDateValue, setShiftDateValue] = useState('');
+  const [shiftDateReceptionistId, setShiftDateReceptionistId] = useState('');
+  const [shiftDatePin, setShiftDatePin] = useState('');
+
   const [historyScope, setHistoryScope] = useState<'today' | 'all'>('today');
   const [closedSessions, setClosedSessions] = useState<CashSession[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
@@ -103,16 +109,62 @@ export default function CajaView({
   const [expandedPayments, setExpandedPayments] = useState<PosPayment[]>([]);
   const [expandedPaymentsLoading, setExpandedPaymentsLoading] = useState(false);
 
+  const cashDayLabel =
+    registerState?.cashDay ||
+    registerState?.session?.shiftDate ||
+    registerState?.today ||
+    todayLabel;
+
+  const operationalDay = registerState?.session ? cashDayLabel : todayLabel;
+
+  const collectedInCajaIds = useMemo(() => {
+    const ids = new Set<string>();
+    (registerState?.shiftPayments ?? []).forEach((payment) => ids.add(payment.appointmentId));
+    (registerState?.dayPayments ?? []).forEach((payment) => ids.add(payment.appointmentId));
+    return ids;
+  }, [registerState?.shiftPayments, registerState?.dayPayments]);
+
+  const pendingByDate = useMemo(() => {
+    const counts = new Map<string, number>();
+    appointments.forEach((appointment) => {
+      if (
+        !isAppointmentPendingPayment(appointment.status) &&
+        !isAppointmentPaid(appointment.status)
+      ) {
+        return;
+      }
+      counts.set(appointment.date, (counts.get(appointment.date) ?? 0) + 1);
+    });
+    return counts;
+  }, [appointments]);
+
+  const shiftDateOptions = useMemo(() => {
+    const dates = new Set<string>([todayLabel, cashDayLabel]);
+    appointments.forEach((appointment) => {
+      if (
+        isAppointmentPendingPayment(appointment.status) ||
+        isAppointmentPaid(appointment.status)
+      ) {
+        dates.add(appointment.date);
+      }
+    });
+    pendingByDate.forEach((_count, date) => dates.add(date));
+    return Array.from(dates).sort((a, b) => parseSpanishDateSortKey(b) - parseSpanishDateSortKey(a));
+  }, [todayLabel, cashDayLabel, pendingByDate, appointments]);
+
   const pendingAppointments = useMemo(
     () =>
       appointments
-        .filter(
-          (appointment) =>
-            appointment.date === todayLabel &&
-            isAppointmentPendingPayment(appointment.status)
-        )
+        .filter((appointment) => {
+          if (appointment.date !== operationalDay) return false;
+          if (collectedInCajaIds.has(appointment.id)) return false;
+          return (
+            isAppointmentPendingPayment(appointment.status) ||
+            isAppointmentPaid(appointment.status)
+          );
+        })
         .sort((a, b) => a.time.localeCompare(b.time)),
-    [appointments, todayLabel]
+    [appointments, operationalDay, collectedInCajaIds]
   );
 
   const selectedAppointment = pendingAppointments.find(
@@ -137,7 +189,7 @@ export default function CajaView({
     try {
       const result = await posApi.getCashSessionHistory({
         scope,
-        date: todayLabel,
+        date: scope === 'today' ? cashDayLabel : todayLabel,
         limit: scope === 'today' ? 20 : 50,
       });
       setClosedSessions(result.sessions);
@@ -173,8 +225,9 @@ export default function CajaView({
   }, []);
 
   useEffect(() => {
+    if (!registerState) return;
     loadHistory(historyScope);
-  }, [historyScope]);
+  }, [historyScope, registerState?.cashDay]);
 
   useEffect(() => {
     if (closeTitleClicks === 0) return;
@@ -320,6 +373,59 @@ export default function CajaView({
     }
   };
 
+  const resetShiftDateModal = () => {
+    setShiftDateValue(cashDayLabel);
+    setShiftDateReceptionistId(defaultReceptionistId);
+    setShiftDatePin('');
+    setModalError(null);
+  };
+
+  const openShiftDateModal = () => {
+    resetShiftDateModal();
+    setShowShiftDateModal(true);
+  };
+
+  const handleChangeShiftDate = async () => {
+    if (!registerState?.session) return;
+
+    if (!shiftDateReceptionistId) {
+      setModalError('Selecciona una recepcionista.');
+      return;
+    }
+    if (shiftDatePin.length !== 4) {
+      setModalError('Ingresa la clave de 4 dígitos.');
+      return;
+    }
+    if (!shiftDateValue.trim()) {
+      setModalError('Selecciona el día operativo.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setModalError(null);
+    setError(null);
+
+    try {
+      await posApi.updateCashSessionShiftDate(registerState.session.id, {
+        shiftDate: shiftDateValue.trim(),
+        receptionistId: shiftDateReceptionistId,
+        pin: shiftDatePin,
+      });
+      setShowShiftDateModal(false);
+      resetShiftDateModal();
+      await loadRegister();
+      await loadHistory(historyScope);
+    } catch (shiftDateError) {
+      setModalError(
+        shiftDateError instanceof Error
+          ? shiftDateError.message
+          : 'No se pudo cambiar el día de caja'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleOpenSession = async () => {
     if (!openReceptionistId) {
       setModalError('Selecciona una recepcionista.');
@@ -351,6 +457,13 @@ export default function CajaView({
 
   const handleCloseSession = async () => {
     if (!registerState?.session) return;
+
+    if (pendingAppointments.length > 0) {
+      setModalError(
+        `Quedan ${pendingAppointments.length} cita(s) sin cobrar en Por cobrar. Regístralas antes del corte.`
+      );
+      return;
+    }
 
     if (!closeReceptionistId) {
       setModalError('Selecciona una recepcionista.');
@@ -441,7 +554,10 @@ export default function CajaView({
           <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Punto de venta</span>
           <h2 className="font-display text-3xl font-bold text-primary mt-1">Caja del Salón</h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            Cobros del día {todayLabel} · turno {session ? 'abierto' : 'cerrado'}
+            Día operativo {operationalDay}
+            {operationalDay !== todayLabel ? ` · hoy es ${todayLabel}` : ''}
+            {' · '}
+            turno {session ? 'abierto' : 'cerrado'}
           </p>
         </div>
 
@@ -453,6 +569,14 @@ export default function CajaView({
                 Turno abierto
                 {session.openedByReceptionistName ? ` · ${session.openedByReceptionistName}` : ''}
               </div>
+              <button
+                type="button"
+                onClick={openShiftDateModal}
+                className="px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors flex items-center gap-2"
+              >
+                <CalendarDays className="w-4 h-4 text-secondary" />
+                Cambiar día
+              </button>
               <button
                 type="button"
                 onClick={openCloseModal}
@@ -478,6 +602,19 @@ export default function CajaView({
         </div>
       </div>
 
+      {cashDayLabel !== todayLabel && registerState?.session && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">Caja operando en otro día</p>
+            <p className="text-xs mt-1 opacity-90">
+              Estás cobrando servicios del {cashDayLabel}. Útil si quedaron pagos pendientes de días
+              anteriores.
+            </p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -487,7 +624,7 @@ export default function CajaView({
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <SummaryCard title="Turno actual" summary={shiftSummary} accent="secondary" />
-        <SummaryCard title="Total del día" summary={daySummary} accent="primary" />
+        <SummaryCard title={`Total del día (${operationalDay})`} summary={daySummary} accent="primary" />
         <MetricCard
           label="Fondo de caja"
           value={formatMXN(session?.openingFloat ?? 0)}
@@ -503,16 +640,27 @@ export default function CajaView({
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <section className="xl:col-span-1 bg-surface border border-primary/10 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-primary/5 bg-surface-container-low/40">
-            <h3 className="font-display text-lg font-bold text-primary">Por cobrar hoy</h3>
-            <p className="text-xs text-outline mt-1">{pendingAppointments.length} citas pendientes de pago</p>
+            <h3 className="font-display text-lg font-bold text-primary">Por cobrar</h3>
+            <p className="text-xs text-outline mt-1">
+              {pendingAppointments.length} sin cobrar · {operationalDay}
+            </p>
+            <p className="text-[10px] text-outline mt-1">
+              Cobra cada servicio aquí antes del corte de caja.
+            </p>
           </div>
           <div className="max-h-[520px] overflow-y-auto divide-y divide-primary/5">
             {pendingAppointments.length === 0 ? (
-              <p className="p-6 text-sm text-outline text-center">No hay citas pendientes de cobro.</p>
+              <p className="p-6 text-sm text-outline text-center">
+                {session
+                  ? `No hay citas por cobrar para ${operationalDay}. Ya puedes hacer el corte.`
+                  : 'Abre turno para ver y cobrar servicios pendientes.'}
+              </p>
             ) : (
               pendingAppointments.map((appointment) => {
                 const isSelected = appointment.id === selectedAppointmentId;
                 const status = normalizeAppointmentStatus(appointment.status);
+                const paidInAgendaOnly =
+                  isAppointmentPaid(status) && !collectedInCajaIds.has(appointment.id);
 
                 return (
                   <button
@@ -539,8 +687,14 @@ export default function CajaView({
                         <p className="font-display text-sm font-bold text-primary">
                           {formatMXN(appointment.cost || 0)}
                         </p>
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900">
-                          {status}
+                        <span
+                          className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                            paidInAgendaOnly
+                              ? 'bg-sky-100 text-sky-900'
+                              : 'bg-amber-100 text-amber-900'
+                          }`}
+                        >
+                          {paidInAgendaOnly ? 'Sin cobrar en caja' : status}
                         </span>
                       </div>
                     </div>
@@ -675,7 +829,9 @@ export default function CajaView({
         <section className="xl:col-span-1 bg-surface border border-primary/10 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-primary/5 bg-surface-container-low/40">
             <h3 className="font-display text-lg font-bold text-primary">Movimientos del turno</h3>
-            <p className="text-xs text-outline mt-1">{shiftPayments.length} pagos registrados</p>
+            <p className="text-xs text-outline mt-1">
+              {shiftPayments.length} cobros registrados · entran al corte
+            </p>
           </div>
           <div className="max-h-[520px] overflow-y-auto divide-y divide-primary/5">
             {shiftPayments.length === 0 ? (
@@ -752,6 +908,76 @@ export default function CajaView({
         </div>
       </section>
 
+      {showShiftDateModal && session && (
+        <Modal
+          title="Cambiar día de caja"
+          onClose={() => {
+            setShowShiftDateModal(false);
+            setModalError(null);
+          }}
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-outline">
+              Elige el día cuyos servicios pendientes quieres cobrar. El turno actual seguirá abierto;
+              solo cambia el día operativo contable.
+            </p>
+
+            <Field label="Día operativo">
+              <select
+                value={shiftDateValue}
+                onChange={(e) => setShiftDateValue(e.target.value)}
+                className={fieldClassName}
+              >
+                {shiftDateOptions.map((date) => {
+                  const pendingCount = pendingByDate.get(date) ?? 0;
+                  return (
+                    <option key={date} value={date}>
+                      {date}
+                      {date === todayLabel ? ' (hoy)' : ''}
+                      {pendingCount > 0 ? ` · ${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </Field>
+
+            <Field label="O escribe la fecha">
+              <input
+                type="text"
+                value={shiftDateValue}
+                onChange={(e) => setShiftDateValue(e.target.value)}
+                placeholder="4 Jul, 2026"
+                className={fieldClassName}
+              />
+            </Field>
+
+            <ReceptionistPinFields
+              receptionists={receptionists}
+              receptionistId={shiftDateReceptionistId}
+              pin={shiftDatePin}
+              onReceptionistChange={setShiftDateReceptionistId}
+              onPinChange={setShiftDatePin}
+            />
+
+            {modalError && <ModalError message={modalError} />}
+
+            <button
+              type="button"
+              disabled={
+                isSubmitting ||
+                shiftDatePin.length !== 4 ||
+                !shiftDateReceptionistId ||
+                !shiftDateValue.trim()
+              }
+              onClick={handleChangeShiftDate}
+              className="w-full py-3 rounded-xl bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider disabled:opacity-40"
+            >
+              {isSubmitting ? 'Validando...' : 'Confirmar cambio de día'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {showOpenModal && (
         <Modal title="Abrir turno de caja" onClose={() => setShowOpenModal(false)}>
           <div className="space-y-4">
@@ -798,6 +1024,13 @@ export default function CajaView({
           onTitleClick={() => setCloseTitleClicks((prev) => prev + 1)}
         >
           <div className="space-y-4">
+            {pendingAppointments.length > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                Quedan <strong>{pendingAppointments.length}</strong> cita(s) en Por cobrar. Debes
+                registrar cada cobro antes de cerrar el turno.
+              </div>
+            )}
+
             {closeDraftActive && (
               <p className="text-[10px] font-bold uppercase tracking-wider text-secondary">
                 Borrador guardado — puedes cerrar y retomar después
@@ -931,6 +1164,32 @@ export default function CajaView({
       )}
     </div>
   );
+}
+
+function parseSpanishDateSortKey(label: string): number {
+  const match = label.match(/^(\d{1,2})\s+([A-Za-záéíóúÁÉÍÓÚ]{3,9}),?\s*(\d{4})?$/i);
+  if (!match) return 0;
+
+  const monthMap: Record<string, number> = {
+    ene: 0,
+    feb: 1,
+    mar: 2,
+    abr: 3,
+    may: 4,
+    jun: 5,
+    jul: 6,
+    ago: 7,
+    sep: 8,
+    oct: 9,
+    nov: 10,
+    dic: 11,
+  };
+
+  const day = Number(match[1]);
+  const month = monthMap[match[2].slice(0, 3).toLowerCase()] ?? 0;
+  const year = Number(match[3] || new Date().getFullYear());
+
+  return new Date(year, month, day).getTime();
 }
 
 const fieldClassName =

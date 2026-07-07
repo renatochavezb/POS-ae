@@ -6,6 +6,12 @@ import {
   SCHEDULE_START_HOUR,
 } from "@/components/pos/scheduleUtils";
 
+export const DEFAULT_WEEKLY_HOURS = {
+  weekday: { startHour: 9, endHour: 21, closed: false },
+  saturday: { startHour: 9, endHour: 18, closed: false },
+  sundayHoliday: { startHour: 9, endHour: 21, closed: true },
+};
+
 export const DEFAULT_SCHEDULE_CONFIG = {
   startHour: SCHEDULE_START_HOUR,
   endHour: SCHEDULE_END_HOUR,
@@ -15,14 +21,35 @@ export const DEFAULT_SCHEDULE_CONFIG = {
   closeReasons: ["Descanso", "Comida", "Capacitación", "Personal", "Otro"],
   timeZone: POS_TIME_ZONE,
   masterLoginCode: "0000",
+  weeklyHours: DEFAULT_WEEKLY_HOURS,
 };
+
+function normalizeWeeklyHoursSlot(raw, fallback) {
+  return {
+    startHour: raw?.startHour ?? fallback.startHour,
+    endHour: raw?.endHour ?? fallback.endHour,
+    closed: Boolean(raw?.closed ?? fallback.closed),
+  };
+}
+
+export function normalizeWeeklyHours(raw) {
+  return {
+    weekday: normalizeWeeklyHoursSlot(raw?.weekday, DEFAULT_WEEKLY_HOURS.weekday),
+    saturday: normalizeWeeklyHoursSlot(raw?.saturday, DEFAULT_WEEKLY_HOURS.saturday),
+    sundayHoliday: normalizeWeeklyHoursSlot(
+      raw?.sundayHoliday,
+      DEFAULT_WEEKLY_HOURS.sundayHoliday
+    ),
+  };
+}
 
 export function mapScheduleConfigDoc(doc) {
   const raw = doc?.toObject ? doc.toObject() : doc || {};
+  const weeklyHours = normalizeWeeklyHours(raw.weeklyHours);
 
   return {
-    startHour: raw.startHour ?? DEFAULT_SCHEDULE_CONFIG.startHour,
-    endHour: raw.endHour ?? DEFAULT_SCHEDULE_CONFIG.endHour,
+    startHour: raw.startHour ?? weeklyHours.weekday.startHour ?? DEFAULT_SCHEDULE_CONFIG.startHour,
+    endHour: raw.endHour ?? weeklyHours.weekday.endHour ?? DEFAULT_SCHEDULE_CONFIG.endHour,
     slotIntervalMinutes:
       raw.slotIntervalMinutes ?? DEFAULT_SCHEDULE_CONFIG.slotIntervalMinutes,
     bookingDurationOptions:
@@ -40,6 +67,7 @@ export function mapScheduleConfigDoc(doc) {
     timeZone: raw.timeZone || DEFAULT_SCHEDULE_CONFIG.timeZone,
     masterLoginCode:
       raw.masterLoginCode || DEFAULT_SCHEDULE_CONFIG.masterLoginCode,
+    weeklyHours,
   };
 }
 
@@ -59,4 +87,72 @@ export async function getScheduleConfig() {
   await seedScheduleConfigIfEmpty();
   const doc = await PosScheduleConfig.findOne({ configCode: "default" });
   return mapScheduleConfigDoc(doc);
+}
+
+function validateWeeklyHoursSlot(slot, label) {
+  if (slot.closed) return null;
+
+  const startHour = Number(slot.startHour);
+  const endHour = Number(slot.endHour);
+
+  if (!Number.isFinite(startHour) || !Number.isFinite(endHour)) {
+    return `${label}: horario inválido`;
+  }
+
+  if (startHour < 0 || startHour > 23 || endHour < 1 || endHour > 24) {
+    return `${label}: usa horas entre 0 y 24`;
+  }
+
+  if (startHour >= endHour) {
+    return `${label}: la hora de cierre debe ser posterior a la de apertura`;
+  }
+
+  return null;
+}
+
+export function validateWeeklyHours(weeklyHours) {
+  const normalized = normalizeWeeklyHours(weeklyHours);
+
+  for (const [key, label] of [
+    ["weekday", "Lunes a Viernes"],
+    ["saturday", "Sábados"],
+    ["sundayHoliday", "Domingos y Festivos"],
+  ]) {
+    const error = validateWeeklyHoursSlot(normalized[key], label);
+    if (error) return error;
+  }
+
+  return null;
+}
+
+export async function updateScheduleConfig({ pin, weeklyHours }) {
+  const validationError = validateWeeklyHours(weeklyHours);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  await seedScheduleConfigIfEmpty();
+  const doc = await PosScheduleConfig.findOne({ configCode: "default" });
+  const current = mapScheduleConfigDoc(doc);
+  const masterLoginCode = current.masterLoginCode || "0000";
+
+  if (String(pin || "").trim() !== masterLoginCode) {
+    throw new Error("Clave de administrador incorrecta");
+  }
+
+  const normalizedWeeklyHours = normalizeWeeklyHours(weeklyHours);
+
+  const updated = await PosScheduleConfig.findOneAndUpdate(
+    { configCode: "default" },
+    {
+      $set: {
+        weeklyHours: normalizedWeeklyHours,
+        startHour: normalizedWeeklyHours.weekday.startHour,
+        endHour: normalizedWeeklyHours.weekday.endHour,
+      },
+    },
+    { new: true }
+  );
+
+  return mapScheduleConfigDoc(updated);
 }

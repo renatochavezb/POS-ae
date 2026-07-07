@@ -41,7 +41,23 @@ export async function PATCH(req, { params }) {
     const currentStatus = normalizeAppointmentStatus(existing.status);
 
     const isFieldUpdate =
-      body.date || body.time || body.duration !== undefined || body.staffId;
+      body.date ||
+      body.time ||
+      body.duration !== undefined ||
+      body.serviceName ||
+      body.serviceSubtitle !== undefined ||
+      body.cost !== undefined ||
+      body.staffId;
+
+    if (body.staffId && body.staffId !== existing.staffId) {
+      return NextResponse.json(
+        {
+          error:
+            "No se puede cambiar la manicurista. Cancela la cita y crea una nueva con la especialista deseada.",
+        },
+        { status: 403 }
+      );
+    }
 
     if (isFieldUpdate && isAppointmentLockedOnBoard(currentStatus)) {
       return NextResponse.json(
@@ -89,9 +105,9 @@ export async function PATCH(req, { params }) {
     const nextTime = body.time ?? existing.time;
     const nextDuration =
       body.duration !== undefined ? body.duration : (existing.duration ?? 60);
-    const nextStaffId = body.staffId ?? existing.staffId;
+    const nextStaffId = existing.staffId;
 
-    if (body.date || body.time || body.duration !== undefined || body.staffId) {
+    if (body.date || body.time || body.duration !== undefined) {
       const conflict = await findConflictingAppointment({
         date: nextDate,
         staffId: nextStaffId,
@@ -117,7 +133,11 @@ export async function PATCH(req, { params }) {
         ...(body.date ? { date: body.date } : {}),
         ...(body.time ? { time: body.time } : {}),
         ...(body.duration !== undefined ? { duration: body.duration } : {}),
-        ...(body.staffId ? { staffId: body.staffId } : {}),
+        ...(body.serviceName ? { serviceName: body.serviceName } : {}),
+        ...(body.serviceSubtitle !== undefined
+          ? { serviceSubtitle: body.serviceSubtitle }
+          : {}),
+        ...(body.cost !== undefined ? { cost: body.cost } : {}),
       },
       { new: true }
     );

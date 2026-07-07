@@ -57,6 +57,10 @@ export const canDeleteAppointment = (status: AppointmentStatus) => {
 export const canCancelAppointment = (status: AppointmentStatus) =>
   normalizeAppointmentStatus(status) === 'agendado';
 
+/** Solo citas agendadas pueden editarse (sin cambiar manicurista). */
+export const canEditAppointment = (status: AppointmentStatus) =>
+  normalizeAppointmentStatus(status) === 'agendado';
+
 /** Confirmada o pagada: bloqueada para borrar y cancelar. */
 export const isAppointmentLockedOnBoard = (status: AppointmentStatus) => {
   const normalized = normalizeAppointmentStatus(status);
