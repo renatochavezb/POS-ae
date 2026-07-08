@@ -1488,7 +1488,7 @@ export default function POSDashboard() {
   }
 
   return (
-    <div className="pos-theme flex flex-col bg-background h-screen overflow-hidden text-on-surface">
+    <div className="pos-theme flex flex-col bg-background min-h-[100dvh] h-[100dvh] overflow-hidden text-on-surface">
       {(isDataLoading || dbWarning) && (
         <div
           className={`shrink-0 px-4 py-2 text-center text-xs font-sans font-bold ${
@@ -1586,7 +1586,7 @@ export default function POSDashboard() {
         </header>
 
         {/* Dynamic Inner Panel Renders */}
-        <main className="flex-grow overflow-y-auto px-4 md:px-8 py-8">
+        <main className="flex-grow overflow-y-auto px-3 sm:px-4 md:px-8 py-4 md:py-8">
           {renderTabContent()}
         </main>
       </div>

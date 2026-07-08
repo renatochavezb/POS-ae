@@ -428,15 +428,15 @@ export default function AgendaView({
   };
 
   return (
-    <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-full mx-auto">
+    <div className="space-y-5 md:space-y-8 animate-fade-in p-1 md:p-6 max-w-full mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Agenda por especialista</span>
-          <h2 className="font-display text-3xl font-bold text-primary mt-1">Calendario del Día</h2>
+          <h2 className="font-display text-2xl md:text-3xl font-bold text-primary mt-1">Calendario del Día</h2>
           <p className="text-on-surface-variant text-sm mt-1">
             {closeMode
               ? 'Haz clic en un horario para cerrarlo. No se podrán agendar citas en ese bloque.'
-              : 'Cada columna es una manicurista. Usa "Cerrar horario" para bloquear tiempos no disponibles.'}
+              : 'Cada columna es una manicurista. En móvil verás la lista del día; en pantalla grande, el calendario por columnas.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -448,7 +448,7 @@ export default function AgendaView({
               setCloseMode((prev) => !prev);
               setCloseDraft(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all border ${
+            className={`hidden lg:flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all border ${
               isSalonClosed
                 ? 'border-primary/10 text-outline opacity-50 cursor-not-allowed'
                 : closeMode
@@ -613,12 +613,76 @@ export default function AgendaView({
               </p>
             ) : todayAppointments.length === 0 ? (
               <p className="text-[11px] text-outline leading-relaxed px-1">
-                No hay citas para este día. Haz clic en cualquier celda del calendario para agendar.
+                No hay citas para este día. Usa &quot;Reservar Cita&quot; para agendar.
               </p>
             ) : null}
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="lg:hidden px-4 md:px-6 pb-4 space-y-3">
+            <p className="text-[10px] text-outline font-bold uppercase tracking-wider">
+              Citas del día · vista móvil
+            </p>
+            {todayAppointments.length === 0 ? (
+              <p className="text-xs text-outline rounded-xl border border-primary/10 bg-surface px-4 py-6 text-center">
+                No hay citas para este día.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {[...todayAppointments]
+                  .sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time))
+                  .map((appointment) => {
+                    const appointmentStaff =
+                      getStaffById(staffList, appointment.staffId) ?? agendaStaffList[0];
+                    const duration = appointment.duration;
+
+                    return (
+                      <button
+                        key={appointment.id}
+                        type="button"
+                        onClick={() => setSelectedAppointment(appointment)}
+                        className="w-full text-left rounded-xl border p-3 shadow-sm transition-transform active:scale-[0.99]"
+                        style={{
+                          backgroundColor: appointmentStaff?.colorLight ?? '#f6f3f2',
+                          borderColor: appointmentStaff?.color ?? '#00261b',
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-primary truncate">
+                              {appointment.clientName}
+                            </p>
+                            <p className="text-[11px] text-outline mt-0.5">
+                              {appointment.staffName}
+                            </p>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-primary shrink-0">
+                            {formatAppointmentTimeRange(appointment.time, duration)}
+                          </span>
+                        </div>
+                        <div className="mt-2">
+                          <AppointmentServiceList
+                            serviceName={appointment.serviceName}
+                            lineClassName="text-[11px] text-outline line-clamp-2"
+                          />
+                        </div>
+                        <div className="mt-2 pt-2 border-t border-black/10">
+                          <AppointmentStatusControls
+                            compact
+                            status={appointment.status}
+                            accentColor={appointmentStaff?.color}
+                            onChange={(nextStatus) =>
+                              onUpdateAppointmentStatus(appointment.id, nextStatus)
+                            }
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          <div className="hidden lg:block overflow-x-auto">
             <div className="w-full min-w-[860px]">
               <div
                 className="border-b border-primary/5 bg-surface-container-low/20"
@@ -647,7 +711,7 @@ export default function AgendaView({
                 ))}
               </div>
 
-              <div className="max-h-[calc(100vh-280px)] min-h-[520px] overflow-y-auto relative">
+              <div className="max-h-[calc(100dvh-280px)] min-h-[420px] lg:min-h-[520px] overflow-y-auto relative">
                 {isSalonClosed ? (
                   <div
                     className="absolute inset-0 z-30 pointer-events-none"

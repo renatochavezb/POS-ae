@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle, Calculator } from "lucide-react";
 import { Staff, Receptionist, Accountant } from "../types";
 import { INITIAL_RECEPTIONISTS, INITIAL_STAFF, INITIAL_ACCOUNTANTS } from "../data";
 import posApi from "@/libs/posApi";
 import StudioLogo from "./StudioLogo";
+import NumericKeypad from "./NumericKeypad";
 
 interface LoginViewProps {
   onLogin: (
@@ -190,15 +191,28 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     setViewState(target);
   };
 
+  const isPinView =
+    viewState === "reception_pin" ||
+    viewState === "staff_pin" ||
+    viewState === "accountant_pin";
+
   return (
-    <div className="pos-theme fixed inset-0 bg-[#00261b] z-[9999] flex flex-col items-center justify-center overflow-y-auto p-4 md:p-8 font-sans">
+    <div className="pos-theme fixed inset-0 min-h-[100dvh] bg-[#00261b] z-[9999] flex flex-col items-center justify-start sm:justify-center overflow-y-auto overscroll-contain p-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-4 md:p-8 font-sans">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(254,214,91,0.06),transparent_60%)] pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(254,214,91,0.04),transparent_60%)] pointer-events-none" />
 
-      <div className="w-full max-w-md bg-[#001f16] border border-[#e5c158]/20 rounded-3xl p-6 md:p-8 luxury-shadow flex flex-col items-center relative overflow-hidden transition-all duration-500 hover:border-[#e5c158]/35">
-        <div className="mb-8 relative shrink-0">
-          <StudioLogo size="lg" />
-        </div>
+      <div
+        className={`w-full max-w-md bg-[#001f16] border border-[#e5c158]/20 rounded-3xl luxury-shadow flex flex-col items-center relative transition-all duration-500 hover:border-[#e5c158]/35 ${
+          isPinView
+            ? "my-auto max-h-none overflow-visible p-4 sm:p-5"
+            : "overflow-hidden p-5 sm:p-6 md:p-8"
+        }`}
+      >
+        {!isPinView && (
+          <div className="mb-5 sm:mb-8 relative shrink-0">
+            <StudioLogo size="lg" />
+          </div>
+        )}
 
         {success && (
           <div className="absolute inset-0 bg-[#00261b]/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 z-50 text-center">
@@ -451,43 +465,12 @@ function PinEntryScreen({
   onPinChange: (value: string) => void;
   onSubmit: (e?: React.FormEvent) => void;
 }) {
-  const pinCaptureRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => pinCaptureRef.current?.focus(), 50);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (/^\d$/.test(event.key) && pin.length < 4) {
-        event.preventDefault();
-        onPinChange(pin + event.key);
-        return;
-      }
-
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        onPinChange(pin.slice(0, -1));
-        return;
-      }
-
-      if (event.key === "Enter" && pin.length === 4 && !isVerifying) {
-        event.preventDefault();
-        onSubmit();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [pin, isVerifying, onPinChange, onSubmit]);
-
   return (
     <div className="w-full">
       <button
         type="button"
         onClick={onBack}
-        className="mb-8 p-1.5 rounded-full text-[#e5c158]/70 border border-[#e5c158]/10 hover:text-[#e5c158] transition-colors"
+        className="mb-4 p-1.5 rounded-full text-[#e5c158]/70 border border-[#e5c158]/10 hover:text-[#e5c158] transition-colors"
         aria-label="Volver"
       >
         <ArrowLeft className="w-4 h-4" />
@@ -496,29 +479,38 @@ function PinEntryScreen({
       <form
         onSubmit={onSubmit}
         autoComplete="off"
-        className="flex flex-col items-center text-center space-y-10"
+        className="flex flex-col items-center text-center space-y-3 sm:space-y-4"
       >
-        <h3 className="font-display text-3xl md:text-4xl text-[#e5c158] font-bold tracking-wide">
-          {personName}
-        </h3>
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-[0.25em] text-[#e5c158]/60 font-bold">
+            Clave de acceso
+          </p>
+          <h3 className="font-display text-2xl sm:text-3xl text-[#e5c158] font-bold tracking-wide">
+            {personName}
+          </h3>
+        </div>
 
-        <div
-          ref={pinCaptureRef}
-          tabIndex={0}
-          role="textbox"
-          aria-label="PIN de acceso, 4 dígitos"
-          onClick={() => pinCaptureRef.current?.focus()}
-          className="w-full flex flex-col items-center outline-none focus:outline-none"
-        >
+        <div className="w-full max-w-xs space-y-2">
+          <p className="text-xs text-[#e5c158]/80 font-semibold uppercase tracking-wider">
+            Toca los números en pantalla
+          </p>
           <PinDots pin={pin} />
         </div>
+
+        <NumericKeypad
+          value={pin}
+          onChange={onPinChange}
+          maxLength={4}
+          disabled={isVerifying}
+          variant="login"
+        />
 
         {error && <ErrorMessage error={error} />}
 
         <button
           type="submit"
           disabled={pin.length < 4 || isVerifying}
-          className={`w-full max-w-xs py-3.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+          className={`w-full max-w-xs min-h-[3rem] py-3.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
             pin.length === 4 && !isVerifying
               ? "bg-gradient-to-r from-[#fff1be] via-[#e5c158] to-[#bfa13c] text-[#00261b]"
               : "bg-[#00261b]/50 text-white/20 border border-[#e5c158]/5 cursor-not-allowed"
@@ -533,14 +525,14 @@ function PinEntryScreen({
 
 function PinDots({ pin }: { pin: string }) {
   return (
-    <div className="flex gap-5 py-2">
+    <div className="flex justify-center gap-4 sm:gap-5 py-1">
       {[0, 1, 2, 3].map((index) => (
         <div
           key={index}
-          className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+          className={`w-6 h-6 sm:w-5 sm:h-5 rounded-full border-2 transition-all duration-200 ${
             pin.length > index
               ? "bg-[#e5c158] border-[#e5c158] scale-110"
-              : "bg-transparent border-[#e5c158]/25"
+              : "bg-transparent border-[#e5c158]/35"
           }`}
         />
       ))}

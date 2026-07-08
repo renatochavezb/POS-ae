@@ -233,3 +233,10 @@ progress::-webkit-progress-value {
 .pos-theme :where(.hover\:bg-primary:hover, .hover\:bg-primary-container:hover) .text-secondary {
   color: var(--color-secondary-fixed);
 }
+
+.pin-entry-input {
+  -webkit-text-security: disc;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  touch-action: manipulation;
+}

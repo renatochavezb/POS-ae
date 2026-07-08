@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
 import { Receptionist } from "../types";
+import NumericKeypad from "./NumericKeypad";
 
 export type ReceptionistAuthPayload = {
   receptionistId: string;
@@ -37,12 +38,6 @@ export default function ReceptionistPinModal({
   );
   const [pin, setPin] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-  const pinRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => pinRef.current?.focus(), 50);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   const handleSubmit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -65,7 +60,7 @@ export default function ReceptionistPinModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-surface max-w-sm w-full rounded-2xl border border-primary/10 luxury-shadow overflow-hidden">
+      <div className="bg-surface max-w-sm w-full max-h-[95vh] overflow-y-auto rounded-2xl border border-primary/10 luxury-shadow">
         <div className="px-5 py-4 border-b border-primary/5 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-display text-lg font-bold text-primary">{title}</h3>
@@ -102,26 +97,23 @@ export default function ReceptionistPinModal({
             </select>
           </label>
 
-          <label className="block space-y-1">
-            <span className="text-[10px] text-outline font-bold uppercase tracking-wider">
+          <div className="space-y-2">
+            <span className="text-[10px] text-outline font-bold uppercase tracking-wider block">
               Clave de recepción
             </span>
-            <input
-              ref={pinRef}
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
+            <p className="text-[10px] text-outline">Toca los números en pantalla</p>
+            <NumericKeypad
               value={pin}
-              onChange={(e) => {
-                setPin(e.target.value.replace(/\D/g, "").slice(0, 4));
+              onChange={(next) => {
+                setPin(next);
                 if (localError) setLocalError(null);
               }}
-              className="w-full px-3 py-2.5 border border-primary/10 rounded-lg text-sm font-sans font-bold text-primary bg-surface outline-none focus:border-secondary tracking-[0.45em] text-center"
-              placeholder="••••"
-              autoComplete="off"
+              maxLength={4}
               disabled={isSubmitting}
+              variant="light"
+              showDots
             />
-          </label>
+          </div>
 
           {displayError && (
             <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">

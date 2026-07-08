@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import { AlertCircle, Shield, X } from "lucide-react";
+import NumericKeypad from "./NumericKeypad";
 
 type MasterPinModalProps = {
   title: string;
@@ -24,12 +25,6 @@ export default function MasterPinModal({
 }: MasterPinModalProps) {
   const [pin, setPin] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-  const pinRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => pinRef.current?.focus(), 50);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   const handleSubmit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -47,7 +42,7 @@ export default function MasterPinModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-surface max-w-sm w-full rounded-2xl border border-primary/10 luxury-shadow overflow-hidden">
+      <div className="bg-surface max-w-sm w-full max-h-[95vh] overflow-y-auto rounded-2xl border border-primary/10 luxury-shadow">
         <div className="px-5 py-4 border-b border-primary/5 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-display text-lg font-bold text-primary flex items-center gap-2">
@@ -68,22 +63,18 @@ export default function MasterPinModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">
               Clave de administrador
             </label>
-            <input
-              ref={pinRef}
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
+            <p className="text-[10px] text-outline">Toca los números en pantalla</p>
+            <NumericKeypad
               value={pin}
-              onChange={(event) =>
-                setPin(event.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              className="w-full px-3 py-2.5 border border-primary/10 rounded-lg text-center text-lg tracking-[0.4em] font-bold text-primary bg-surface outline-none focus:border-secondary"
-              placeholder="••••"
-              autoComplete="off"
+              onChange={setPin}
+              maxLength={4}
+              disabled={isSubmitting}
+              variant="light"
+              showDots
             />
           </div>
 
@@ -105,7 +96,7 @@ export default function MasterPinModal({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || pin.length !== 4}
               className="flex-1 px-4 py-2.5 rounded-lg bg-primary text-on-primary text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-colors disabled:opacity-60"
             >
               {isSubmitting ? "Validando..." : confirmLabel}

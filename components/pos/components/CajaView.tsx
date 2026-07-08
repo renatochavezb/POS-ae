@@ -29,6 +29,7 @@ import {
   writeCashCloseDraft,
 } from '@/libs/cashCloseDraft';
 import AppointmentServiceList from '../serviceDisplay';
+import NumericKeypad from './NumericKeypad';
 
 interface CajaViewProps {
   appointments: Appointment[];
@@ -1519,15 +1520,16 @@ function ReceptionistPinFields({
         </select>
       </Field>
       <Field label="Clave de 4 dígitos">
-        <input
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={pin}
-          onChange={(e) => onPinChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
-          className={`${fieldClassName} tracking-[0.45em] text-center`}
-          placeholder="••••"
-        />
+        <div className="space-y-2">
+          <p className="text-[10px] text-outline">Toca los números en pantalla</p>
+          <NumericKeypad
+            value={pin}
+            onChange={onPinChange}
+            maxLength={4}
+            variant="light"
+            showDots
+          />
+        </div>
       </Field>
     </div>
   );
@@ -1653,16 +1655,16 @@ function AdminPinOverlay({
             Ingresa la clave para ver las restas del corte.
           </p>
         </div>
-        <input
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={adminPin}
-          onChange={(e) => onPinChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
-          className={`${fieldClassName} tracking-[0.45em] text-center`}
-          placeholder="••••"
-          autoFocus
-        />
+        <div className="space-y-2">
+          <p className="text-[10px] text-outline">Toca los números en pantalla</p>
+          <NumericKeypad
+            value={adminPin}
+            onChange={onPinChange}
+            maxLength={4}
+            variant="light"
+            showDots
+          />
+        </div>
         {adminPinError && <ModalError message={adminPinError} />}
         <div className="flex items-center gap-2">
           <button
