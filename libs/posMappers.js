@@ -55,6 +55,50 @@ export function mapReceptionistDoc(doc) {
   };
 }
 
+export function mapServiceDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.serviceCode,
+    name: raw.name,
+    category: raw.category,
+    subtitle: raw.subtitle || "",
+    price: raw.price ?? 0,
+    duration: raw.duration ?? 60,
+    image: raw.image || "",
+    description: raw.description || "",
+    staffIds: raw.staffIds || [],
+    exclusive: Boolean(raw.exclusive),
+    isActive: raw.isActive !== false,
+  };
+}
+
+export function mapCashTicketDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.ticketCode,
+    appointmentId: raw.appointmentCode,
+    appointmentDate: raw.appointmentDate,
+    clientId: raw.clientId || "",
+    clientName: raw.clientName,
+    staffId: raw.staffId || "",
+    staffName: raw.staffName || "",
+    lines: (raw.lines || []).map((line) => ({
+      serviceId: line.serviceId || "",
+      name: line.name,
+      price: line.price ?? 0,
+    })),
+    subtotal: raw.subtotal ?? 0,
+    status: raw.status,
+    submittedByStaffId: raw.submittedByStaffId || "",
+    submittedByStaffName: raw.submittedByStaffName || "",
+    submittedAt: raw.submittedAt ? new Date(raw.submittedAt).toISOString() : "",
+    chargedAt: raw.chargedAt ? new Date(raw.chargedAt).toISOString() : "",
+    paymentId: raw.paymentCode || "",
+  };
+}
+
 export function mapAppointmentDoc(doc) {
   const raw = doc.toObject ? doc.toObject() : doc;
 
@@ -147,6 +191,12 @@ export function mapPaymentDoc(doc) {
     staffId: raw.staffId || "",
     staffName: raw.staffName || "",
     serviceName: raw.serviceName || "",
+    serviceLines: (raw.serviceLines || []).map((line) => ({
+      serviceId: line.serviceId || "",
+      name: line.name,
+      price: line.price ?? 0,
+    })),
+    ticketId: raw.ticketCode || "",
     amount: raw.amount ?? 0,
     tip: raw.tip ?? 0,
     total: raw.total ?? 0,

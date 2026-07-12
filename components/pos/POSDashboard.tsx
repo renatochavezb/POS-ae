@@ -65,6 +65,8 @@ import MasterReceptionLogView from './components/MasterReceptionLogView';
 import posApi, { ReceptionistAuthPayload } from '@/libs/posApi';
 import { getBookableStaff } from '@/libs/posStaffAgenda';
 import { readPosSession, writePosSession, clearPosSession, PosSession, getActiveReceptionistSession, markAccountantLogoutRecorded, wasAccountantLogoutRecorded } from '@/libs/posSession';
+
+const MANICURISTA_TAB_IDS = ['agenda', 'staff', 'caja'];
 import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus } from './appointmentStatus';
 
 type BookingServiceLine = {
@@ -161,10 +163,12 @@ export default function POSDashboard() {
   const [loggedInReceptionistId, setLoggedInReceptionistId] = useState<string | null>(null);
   const [loggedInAccountantId, setLoggedInAccountantId] = useState<string | null>(null);
   const [loggedInAccountantName, setLoggedInAccountantName] = useState<string | null>(null);
+  const [loggedInStaffId, setLoggedInStaffId] = useState<string | null>(null);
   const [isMasterSession, setIsMasterSession] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
   const [blockedSlots, setBlockedSlots] = useState<StaffBlockedSlot[]>(INITIAL_BLOCKED_SLOTS);
-  const [services] = useState<Service[]>(INITIAL_SERVICES);
+  const [services, setServices] = useState<Service[]>(INITIAL_SERVICES);
+  const [ticketAppointmentIds, setTicketAppointmentIds] = useState<string[]>([]);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>(DEFAULT_SCHEDULE_CONFIG);
 
   // Overlay Dialog Triggers
@@ -224,19 +228,6 @@ export default function POSDashboard() {
   const [newStaffShift, setNewStaffShift] = useState('Completo');
   const [newStaffBio, setNewStaffBio] = useState('');
 
-  // Quick navigation handlers
-  const handleSelectCarla = () => {
-    setSelectedStaffId('CA');
-    setCurrentTab('staff');
-    setMobileMenuOpen(false);
-  };
-
-  const handleSelectElenaValenzuela = () => {
-    setSelectedClientId('SA-2022');
-    setCurrentTab('clients');
-    setMobileMenuOpen(false);
-  };
-
   const applyStoredSession = (session: PosSession) => {
     setLoggedInReceptionistId(
       session.role === 'reception' ? (session.receptionistId || null) : null
@@ -250,8 +241,11 @@ export default function POSDashboard() {
     setIsMasterSession(Boolean(session.isMaster));
 
     if (session.role === 'manicurista' && session.staffId) {
+      setLoggedInStaffId(session.staffId);
       setSelectedStaffId(session.staffId);
-      setCurrentTab('staff');
+      setCurrentTab(session.isMaster ? 'staff' : 'agenda');
+    } else {
+      setLoggedInStaffId(null);
     }
 
     if (session.role === 'accountant') {
@@ -262,6 +256,7 @@ export default function POSDashboard() {
   };
 
   const isAccountantSession = Boolean(loggedInAccountantId);
+  const isManicuristaSession = Boolean(loggedInStaffId && !isMasterSession);
 
   const handleLocalLogin = (
     role: 'reception' | 'manicurista' | 'accountant',
@@ -305,6 +300,7 @@ export default function POSDashboard() {
     setLoggedInReceptionistId(null);
     setLoggedInAccountantId(null);
     setLoggedInAccountantName(null);
+    setLoggedInStaffId(null);
     setIsMasterSession(false);
     setSelectedClientId(null);
     setSelectedStaffId(null);
@@ -345,6 +341,9 @@ export default function POSDashboard() {
   const resolveActiveReceptionist = () => getBookingReceptionist();
 
   const loggedInReceptionist = resolveActiveReceptionist();
+  const loggedInStaffMember = loggedInStaffId
+    ? staffList.find((member) => member.id === loggedInStaffId) || null
+    : null;
 
   const activeSession = loggedInReceptionist
     ? {
@@ -370,6 +369,17 @@ export default function POSDashboard() {
           .toUpperCase()
           .slice(0, 2),
       }
+    : isManicuristaSession && loggedInStaffMember
+    ? {
+        name: loggedInStaffMember.name,
+        subtitle: 'Manicurista · Solo consulta',
+        initials: loggedInStaffMember.name
+          .split(' ')
+          .map((part) => part[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2),
+      }
     : isMasterSession
     ? {
         name: 'Master',
@@ -377,6 +387,19 @@ export default function POSDashboard() {
         initials: 'M',
       }
     : null;
+
+  const refreshTicketAppointmentIds = async () => {
+    try {
+      const result = await posApi.getCashTickets({
+        date: getTodaySpanishShortDate(),
+        status: 'submitted',
+        staffId: loggedInStaffId || undefined,
+      });
+      setTicketAppointmentIds(result.tickets.map((ticket) => ticket.appointmentId));
+    } catch (ticketError) {
+      console.error(ticketError);
+    }
+  };
 
   const loadPosData = async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -391,6 +414,7 @@ export default function POSDashboard() {
       posApi.getClients(),
       posApi.getReceptionists(),
       posApi.getScheduleConfig(),
+      posApi.getServices(),
     ]);
 
     const failedSections: string[] = [];
@@ -437,6 +461,15 @@ export default function POSDashboard() {
       console.error(results[5].reason);
     }
 
+    if (results[6].status === 'fulfilled') {
+      setServices(results[6].value);
+    } else {
+      failedSections.push('catálogo de servicios');
+      console.error(results[6].reason);
+    }
+
+    await refreshTicketAppointmentIds();
+
     if (failedSections.length > 0 && !options?.silent) {
       setDbWarning(
         `No se pudo sincronizar: ${failedSections.join(', ')}. Reintenta para cargar todos los datos.`
@@ -481,6 +514,15 @@ export default function POSDashboard() {
     }
     setSelectedClientId(null);
   }, [isAccountantSession, currentTab]);
+
+  useEffect(() => {
+    if (!isManicuristaSession || !loggedInStaffId) return;
+    if (!MANICURISTA_TAB_IDS.includes(currentTab)) {
+      setCurrentTab('agenda');
+    }
+    setSelectedClientId(null);
+    setSelectedStaffId(loggedInStaffId);
+  }, [isManicuristaSession, currentTab, loggedInStaffId]);
 
   useEffect(() => {
     if (!isMasterSession || mobileLogoClicks < 3 || isAccountantSession) return;
@@ -1350,10 +1392,13 @@ export default function POSDashboard() {
             scheduleConfig={scheduleConfig}
             receptionists={receptionists}
             defaultReceptionistId={loggedInReceptionistId}
+            readOnly={isManicuristaSession}
+            lockedStaffId={isManicuristaSession ? loggedInStaffId : null}
             onOpenNewAppointment={(day, hour, staffId) =>
               handleOpenAppointmentModal(undefined, hour, undefined, day, staffId)
             }
             onSelectStaff={(id) => {
+              if (isManicuristaSession) return;
               setSelectedStaffId(id);
               setCurrentTab('staff');
             }}
@@ -1363,6 +1408,11 @@ export default function POSDashboard() {
             onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
             onCloseStaffSlot={handleCloseStaffSlot}
             onRemoveBlockedSlot={handleRemoveBlockedSlot}
+            services={services}
+            ticketAppointmentIds={ticketAppointmentIds}
+            onTicketSubmitted={async () => {
+              await loadPosData({ silent: true });
+            }}
           />
         );
       case 'caja':
@@ -1374,7 +1424,13 @@ export default function POSDashboard() {
             loggedInReceptionist={
               receptionists.find((member) => member.id === loggedInReceptionistId) || null
             }
+            isManicuristaSession={isManicuristaSession}
+            loggedInStaffId={loggedInStaffId}
+            services={services}
             onPaymentComplete={() => loadPosData({ silent: true })}
+            onTicketSubmitted={async () => {
+              await loadPosData({ silent: true });
+            }}
           />
         );
       case 'clients':
@@ -1398,6 +1454,20 @@ export default function POSDashboard() {
           />
         );
       case 'staff':
+        if (isManicuristaSession && loggedInStaffId) {
+          const ownStaff =
+            staffList.find((member) => member.id === loggedInStaffId) || staffList[0];
+          return (
+            <StaffAnalyticsView
+              staff={ownStaff}
+              appointments={appointments}
+              onBack={() => setSelectedStaffId(loggedInStaffId)}
+              onStaffUpdated={handleStaffUpdated}
+              readOnly
+              hideBack
+            />
+          );
+        }
         if (selectedStaffId) {
           const staffObj = staffList.find(s => s.id === selectedStaffId) || staffList[0];
           return (
@@ -1531,24 +1601,43 @@ export default function POSDashboard() {
           </p>
         </div>
       )}
+      {loggedInStaffMember && isManicuristaSession && (
+        <div className="shrink-0 px-4 py-2 bg-sky-500/10 border-b border-sky-500/20 text-center">
+          <p className="text-xs font-sans font-bold text-primary">
+            Sesión de{' '}
+            <span className="text-sky-800 uppercase tracking-wider">{loggedInStaffMember.name}</span>
+            <span className="text-outline font-medium normal-case tracking-normal">
+              {' '}· Agenda y perfil en solo consulta
+            </span>
+          </p>
+        </div>
+      )}
       <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* 1. Desktop Persistent Left Sidebar Navigation */}
       <Sidebar 
         currentTab={currentTab} 
         setCurrentTab={(tab) => {
           if (isAccountantSession && tab !== 'staff') return;
+          if (isManicuristaSession && !MANICURISTA_TAB_IDS.includes(tab)) return;
           setCurrentTab(tab);
           setSelectedClientId(null);
-          setSelectedStaffId(null);
+          if (isManicuristaSession && loggedInStaffId) {
+            setSelectedStaffId(loggedInStaffId);
+          } else {
+            setSelectedStaffId(null);
+          }
         }} 
-        onSelectCarla={handleSelectCarla}
-        onSelectElenaValenzuela={handleSelectElenaValenzuela}
         activeSession={activeSession}
         onLogout={handlePosLogout}
         isMasterSession={isMasterSession}
         onOpenMasterPanel={() => setCurrentTab('master-log')}
-        allowedTabIds={isAccountantSession ? ['staff'] : undefined}
-        hideQuickLinks={isAccountantSession}
+        allowedTabIds={
+          isAccountantSession
+            ? ['staff']
+            : isManicuristaSession
+            ? MANICURISTA_TAB_IDS
+            : undefined
+        }
       />
 
       {/* 2. Main content scrollable canvas shell */}
@@ -1573,6 +1662,11 @@ export default function POSDashboard() {
             {loggedInAccountantName && (
               <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
                 {loggedInAccountantName} · Contabilidad
+              </p>
+            )}
+            {loggedInStaffMember && isManicuristaSession && (
+              <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
+                {loggedInStaffMember.name} · Manicurista
               </p>
             )}
           </div>
@@ -1618,14 +1712,24 @@ export default function POSDashboard() {
                   { id: 'services', label: 'Servicios' },
                   { id: 'settings', label: 'Configuración' }
                 ]
-                  .filter((item) => !isAccountantSession || item.id === 'staff')
+                  .filter((item) =>
+                    isAccountantSession
+                      ? item.id === 'staff'
+                      : isManicuristaSession
+                      ? MANICURISTA_TAB_IDS.includes(item.id)
+                      : true
+                  )
                   .map((item) => (
                   <button
                     key={item.id}
                     onClick={() => {
                       setCurrentTab(item.id);
                       setSelectedClientId(null);
-                      setSelectedStaffId(null);
+                      if (isManicuristaSession && loggedInStaffId) {
+                        setSelectedStaffId(loggedInStaffId);
+                      } else {
+                        setSelectedStaffId(null);
+                      }
                       setMobileMenuOpen(false);
                     }}
                     className={`w-full text-left px-4 py-3 rounded-lg font-sans text-xs tracking-wider uppercase font-bold transition-colors ${
@@ -1661,25 +1765,6 @@ export default function POSDashboard() {
               >
                 Cerrar sesión
               </button>
-              {!isAccountantSession && (
-              <>
-              <p className="text-[9px] text-outline font-bold tracking-widest uppercase">Visuales Rápidas</p>
-              <div className="flex flex-col gap-1.5 text-xs text-left">
-                <button 
-                  onClick={handleSelectElenaValenzuela}
-                  className="text-left text-on-surface-variant hover:text-primary transition-colors hover:underline"
-                >
-                  ● Perfil Elena Valenzuela
-                </button>
-                <button 
-                  onClick={handleSelectCarla}
-                  className="text-left text-on-surface-variant hover:text-primary transition-colors hover:underline"
-                >
-                  ● Analíticas Carla
-                </button>
-              </div>
-              </>
-              )}
             </div>
           </div>
         </div>

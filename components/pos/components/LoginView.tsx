@@ -196,24 +196,21 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     viewState === "staff_pin" ||
     viewState === "accountant_pin";
 
+  const isListView =
+    viewState === "reception_select" ||
+    viewState === "staff_select" ||
+    viewState === "accountant_select";
+
   return (
-    <div className="pos-theme fixed inset-0 min-h-[100dvh] bg-[#00261b] z-[9999] flex flex-col items-center justify-start sm:justify-center overflow-y-auto overscroll-contain p-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-4 md:p-8 font-sans">
+    <div className={`pos-theme fixed inset-0 min-h-[100dvh] bg-[#00261b] z-[9999] flex flex-col items-center overflow-y-auto overscroll-contain px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 font-sans ${isListView ? "justify-start" : "justify-center"}`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(254,214,91,0.06),transparent_60%)] pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(254,214,91,0.04),transparent_60%)] pointer-events-none" />
 
       <div
-        className={`w-full max-w-md bg-[#001f16] border border-[#e5c158]/20 rounded-3xl luxury-shadow flex flex-col items-center relative transition-all duration-500 hover:border-[#e5c158]/35 ${
-          isPinView
-            ? "my-auto max-h-none overflow-visible p-4 sm:p-5"
-            : "overflow-hidden p-5 sm:p-6 md:p-8"
+        className={`w-full max-w-[22rem] sm:max-w-md md:max-w-lg bg-[#001f16] border border-[#e5c158]/20 rounded-3xl luxury-shadow flex flex-col items-center relative transition-all duration-500 hover:border-[#e5c158]/35 ${
+          isPinView ? "overflow-visible p-4 sm:p-5" : "overflow-visible p-5 sm:p-6"
         }`}
       >
-        {!isPinView && (
-          <div className="mb-5 sm:mb-8 relative shrink-0">
-            <StudioLogo size="lg" />
-          </div>
-        )}
-
         {success && (
           <div className="absolute inset-0 bg-[#00261b]/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 z-50 text-center">
             <div className="w-16 h-16 rounded-full bg-[#e5c158]/10 border border-[#e5c158]/40 flex items-center justify-center mb-4">
@@ -225,13 +222,20 @@ export default function LoginView({ onLogin }: LoginViewProps) {
         )}
 
         {viewState === "select" && (
-          <div className="w-full space-y-6">
-            <div className="text-center space-y-1">
-              <h2 className="font-display text-xl text-[#e5c158] font-bold tracking-wide">Terminal del Salón</h2>
-              <p className="text-white/60 text-xs uppercase tracking-widest font-semibold">Iniciar Sesión de Trabajo</p>
-              {bootstrapError && (
-                <p className="text-amber-200/70 text-[10px] mt-2">{bootstrapError}</p>
-              )}
+          <div className="w-full space-y-5">
+            <div className="text-center space-y-4">
+              <StudioLogo size="loginCompact" />
+              <div className="space-y-1">
+                <h2 className="font-display text-xl sm:text-2xl text-[#e5c158] font-bold tracking-wide">
+                  Terminal del Salón
+                </h2>
+                <p className="text-white/60 text-xs uppercase tracking-widest font-semibold">
+                  Iniciar Sesión de Trabajo
+                </p>
+                {bootstrapError && (
+                  <p className="text-amber-200/70 text-[10px] mt-1">{bootstrapError}</p>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
@@ -354,26 +358,28 @@ export default function LoginView({ onLogin }: LoginViewProps) {
               </button>
               <h3 className="font-display text-lg text-[#e5c158] font-bold">Selecciona tu Artista</h3>
             </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2">
               {staffList.map((staff) => (
                 <button
                   key={staff.id}
                   onClick={() => handleStaffMemberSelect(staff)}
                   className="w-full p-3 rounded-xl bg-[#00261b] border border-[#e5c158]/5 hover:border-[#e5c158]/20 flex items-center justify-between text-left"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <img
                       referrerPolicy="no-referrer"
                       src={staff.image}
                       alt={staff.name}
-                      className="w-10 h-10 rounded-full object-cover border border-[#e5c158]/10"
+                      className="w-10 h-10 rounded-full object-cover border border-[#e5c158]/10 shrink-0"
                     />
-                    <div>
-                      <h4 className="font-sans text-xs font-bold text-[#e5c158]">{staff.name}</h4>
-                      <p className="text-white/40 text-[10px] uppercase font-semibold">{staff.role}</p>
+                    <div className="min-w-0">
+                      <h4 className="font-sans text-xs font-bold text-[#e5c158] truncate">{staff.name}</h4>
+                      <p className="text-white/40 text-[10px] uppercase font-semibold truncate">{staff.role}</p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-[#e5c158]/5 text-[#e5c158] text-[9px] font-bold">FICHAR</span>
+                  <span className="px-2 py-0.5 rounded bg-[#e5c158]/5 text-[#e5c158] text-[9px] font-bold shrink-0 ml-2">
+                    INGRESAR
+                  </span>
                 </button>
               ))}
             </div>

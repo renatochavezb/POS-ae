@@ -13,6 +13,7 @@ interface AppointmentStatusControlsProps {
   onChange: (status: AppointmentStatus) => void;
   compact?: boolean;
   accentColor?: string;
+  readOnly?: boolean;
 }
 
 export default function AppointmentStatusControls({
@@ -20,13 +21,14 @@ export default function AppointmentStatusControls({
   onChange,
   compact = false,
   accentColor,
+  readOnly = false,
 }: AppointmentStatusControlsProps) {
   const normalized = normalizeAppointmentStatus(status);
   const styles = getAppointmentStatusStyles(normalized);
   const nextStatus = getNextAppointmentStatus(status);
   const label = getAppointmentStatusLabel(status);
 
-  if (isAppointmentStatusFinal(status)) {
+  if (readOnly || isAppointmentStatusFinal(status)) {
     return (
       <span
         className={`inline-flex items-center justify-center gap-1 rounded font-bold uppercase tracking-wider ${

@@ -8,6 +8,9 @@ import {
   CashSessionSummary,
   PosPayment,
   PaymentMethod,
+  PosCashTicket,
+  CashTicketLine,
+  Service,
   Receptionist,
   ScheduleConfig,
   Staff,
@@ -65,8 +68,19 @@ const attachReceptionistToRequest = (config: InternalAxiosRequestConfig) => {
   return config;
 };
 
+const attachStaffToRequest = (config: InternalAxiosRequestConfig) => {
+  if (typeof window === "undefined") return config;
+
+  const session = readPosSession();
+  if (session?.role === "manicurista" && session.staffId) {
+    config.headers.set("X-Pos-Staff-Id", session.staffId);
+  }
+
+  return config;
+};
+
 posClient.interceptors.request.use((config) =>
-  attachReceptionistToRequest(attachMasterSessionHeader(config))
+  attachStaffToRequest(attachReceptionistToRequest(attachMasterSessionHeader(config)))
 );
 
 posClient.interceptors.response.use(
@@ -355,8 +369,34 @@ const posApi = {
   }> {
     return posClient.get("/pos/payments", { params });
   },
+  getServices(): Promise<Service[]> {
+    return posClient.get("/pos/services");
+  },
+  getCashTickets(params?: {
+    date?: string;
+    status?: "submitted" | "charged" | "cancelled" | "all";
+    staffId?: string;
+    appointmentId?: string;
+  }): Promise<{ date: string; tickets: PosCashTicket[] }> {
+    return posClient.get("/pos/cash-tickets", { params });
+  },
+  submitCashTicket(data: {
+    appointmentId: string;
+    lines: CashTicketLine[];
+    submittedByStaffId?: string;
+    submittedByStaffName?: string;
+  }): Promise<{ ticket: PosCashTicket }> {
+    return posClient.post("/pos/cash-tickets", data);
+  },
+  updateCashTicket(
+    ticketId: string,
+    data: { lines: CashTicketLine[] }
+  ): Promise<{ ticket: PosCashTicket }> {
+    return posClient.patch(`/pos/cash-tickets/${ticketId}`, data);
+  },
   registerPayment(data: {
     appointmentId: string;
+    ticketId?: string;
     amount: number;
     tip?: number;
     method: PaymentMethod;

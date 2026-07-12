@@ -241,6 +241,32 @@ export interface DailyStats {
 
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'mixto';
 
+export interface CashTicketLine {
+  serviceId?: string;
+  name: string;
+  price: number;
+}
+
+export type CashTicketStatus = 'submitted' | 'charged' | 'cancelled';
+
+export interface PosCashTicket {
+  id: string;
+  appointmentId: string;
+  appointmentDate: string;
+  clientId: string;
+  clientName: string;
+  staffId: string;
+  staffName: string;
+  lines: CashTicketLine[];
+  subtotal: number;
+  status: CashTicketStatus;
+  submittedByStaffId: string;
+  submittedByStaffName: string;
+  submittedAt: string;
+  chargedAt: string;
+  paymentId: string;
+}
+
 export interface PosPayment {
   id: string;
   appointmentId: string;
@@ -250,6 +276,8 @@ export interface PosPayment {
   staffId: string;
   staffName: string;
   serviceName: string;
+  serviceLines?: CashTicketLine[];
+  ticketId?: string;
   amount: number;
   tip: number;
   total: number;

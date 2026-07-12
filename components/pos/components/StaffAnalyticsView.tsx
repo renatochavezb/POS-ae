@@ -50,6 +50,8 @@ interface StaffAnalyticsViewProps {
   showAccountantBitacora?: boolean;
   onAccountantActivity?: () => void;
   activityRefreshKey?: number;
+  readOnly?: boolean;
+  hideBack?: boolean;
 }
 
 export default function StaffAnalyticsView({
@@ -62,6 +64,8 @@ export default function StaffAnalyticsView({
   showAccountantBitacora = false,
   onAccountantActivity,
   activityRefreshKey = 0,
+  readOnly = false,
+  hideBack = false,
 }: StaffAnalyticsViewProps) {
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
   const [workHistoryMode, setWorkHistoryMode] = useState<WorkHistoryMode>('day');
@@ -244,6 +248,7 @@ export default function StaffAnalyticsView({
 
   return (
     <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-7xl mx-auto">
+      {!hideBack && (
       <div>
         <button
           onClick={onBack}
@@ -253,6 +258,7 @@ export default function StaffAnalyticsView({
           <span>Volver al Listado</span>
         </button>
       </div>
+      )}
 
       <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
@@ -281,6 +287,7 @@ export default function StaffAnalyticsView({
           </div>
         </div>
 
+        {!readOnly && (
         <div className="flex flex-col sm:flex-row gap-3">
           {!isAccountantSession && (
           <button
@@ -301,6 +308,7 @@ export default function StaffAnalyticsView({
             <span>Descargar reporte</span>
           </button>
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -356,6 +364,7 @@ export default function StaffAnalyticsView({
             </div>
             <p className="text-[11px] text-outline leading-tight">{settlementStatusDetail}</p>
           </div>
+          {!readOnly && (
           <button
             type="button"
             onClick={handleRequestPayment}
@@ -363,6 +372,7 @@ export default function StaffAnalyticsView({
           >
             Liquidar
           </button>
+          )}
         </div>
       </div>
 

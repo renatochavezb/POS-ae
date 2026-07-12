@@ -38,10 +38,25 @@ const posPaymentSchema = mongoose.Schema(
       default: "",
       trim: true,
     },
+    ticketCode: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     serviceName: {
       type: String,
       default: "",
       trim: true,
+    },
+    serviceLines: {
+      type: [
+        {
+          serviceId: { type: String, default: "", trim: true },
+          name: { type: String, required: true, trim: true },
+          price: { type: Number, required: true, min: 0 },
+        },
+      ],
+      default: [],
     },
     amount: {
       type: Number,

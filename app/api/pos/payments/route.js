@@ -3,6 +3,7 @@ import connectMongo from "@/libs/mongoose";
 import { requirePosSession } from "@/libs/posAuth";
 import PosPayment from "@/models/PosPayment";
 import PosAppointment from "@/models/PosAppointment";
+import PosCashTicket from "@/models/PosCashTicket";
 import PosClient from "@/models/PosClient";
 import PosStaff from "@/models/PosStaff";
 import PosReceptionist from "@/models/PosReceptionist";
@@ -63,6 +64,7 @@ export async function POST(req) {
 
     const body = await req.json();
     const appointmentCode = String(body?.appointmentId || body?.appointmentCode || "").trim();
+    const ticketCode = String(body?.ticketId || body?.ticketCode || "").trim();
     const method = String(body?.method || "").trim().toLowerCase();
 
     if (!appointmentCode) {
@@ -94,6 +96,40 @@ export async function POST(req) {
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
     }
 
+    let ticket = null;
+    if (ticketCode) {
+      ticket = await PosCashTicket.findOne({ ticketCode });
+      if (!ticket) {
+        return NextResponse.json({ error: "Ficha de caja no encontrada" }, { status: 404 });
+      }
+      if (ticket.appointmentCode !== appointmentCode) {
+        return NextResponse.json(
+          { error: "La ficha no corresponde a esta cita" },
+          { status: 409 }
+        );
+      }
+      if (ticket.status !== "submitted") {
+        return NextResponse.json(
+          { error: "Esta ficha ya fue cobrada o cancelada" },
+          { status: 409 }
+        );
+      }
+    } else {
+      const submittedTicket = await PosCashTicket.findOne({
+        appointmentCode,
+        status: "submitted",
+      });
+      if (submittedTicket) {
+        return NextResponse.json(
+          {
+            error:
+              "Esta cita tiene una ficha pendiente. Cobra desde la ficha enviada por la manicurista.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const existingPayment = await PosPayment.findOne({ appointmentCode });
     if (existingPayment) {
       return NextResponse.json({ error: "Esta cita ya tiene un pago registrado" }, { status: 409 });
@@ -117,8 +153,25 @@ export async function POST(req) {
       );
     }
 
-    const amount = body.amount !== undefined ? Number(body.amount) : Number(appointment.cost ?? 0);
+    const amount =
+      body.amount !== undefined
+        ? Number(body.amount)
+        : ticket
+        ? Number(ticket.subtotal ?? 0)
+        : Number(appointment.cost ?? 0);
     const tip = Number(body.tip ?? 0);
+
+    const serviceLines = ticket?.lines?.length
+      ? ticket.lines.map((line) => ({
+          serviceId: line.serviceId || "",
+          name: line.name,
+          price: line.price,
+        }))
+      : [];
+
+    const serviceName = ticket
+      ? serviceLines.map((line) => line.name).join(" + ")
+      : appointment.serviceName;
 
     let breakdown;
     try {
@@ -161,7 +214,9 @@ export async function POST(req) {
       clientName: appointment.clientName,
       staffId: appointment.staffId,
       staffName: appointment.staffName,
-      serviceName: appointment.serviceName,
+      ticketCode: ticket?.ticketCode || "",
+      serviceName,
+      serviceLines,
       amount: breakdown.amount,
       tip: breakdown.tip,
       total: breakdown.total,
@@ -180,9 +235,22 @@ export async function POST(req) {
 
     const updatedAppointment = await PosAppointment.findOneAndUpdate(
       { appointmentCode },
-      { $set: { status: targetStatus, cost: breakdown.amount } },
+      { $set: { status: targetStatus, cost: breakdown.amount, serviceName } },
       { new: true }
     );
+
+    if (ticket) {
+      await PosCashTicket.updateOne(
+        { ticketCode: ticket.ticketCode },
+        {
+          $set: {
+            status: "charged",
+            chargedAt: new Date(),
+            paymentCode,
+          },
+        }
+      );
+    }
 
     const staff = await PosStaff.findOne({ staffCode: appointment.staffId });
     if (staff) {

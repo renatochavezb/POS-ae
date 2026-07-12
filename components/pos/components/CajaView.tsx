@@ -17,11 +17,13 @@ import {
   ChevronDown,
   ChevronUp,
   CalendarDays,
+  Send,
+  Plus,
+  Trash2,
 } from 'lucide-react';
-import { Appointment, CashRegisterState, CashSession, PaymentMethod, PosPayment, Receptionist } from '../types';
+import { Appointment, CashRegisterState, CashSession, CashTicketLine, PaymentMethod, PosCashTicket, PosPayment, Receptionist, Service } from '../types';
 import { formatMXN } from '../data';
-import { formatAppointmentTimeRange } from '../scheduleUtils';
-import { isAppointmentPaid, isAppointmentPendingPayment, normalizeAppointmentStatus } from '../appointmentStatus';
+import { isAppointmentPaid, isAppointmentPendingPayment } from '../appointmentStatus';
 import posApi from '@/libs/posApi';
 import {
   clearCashCloseDraft,
@@ -30,6 +32,7 @@ import {
 } from '@/libs/cashCloseDraft';
 import AppointmentServiceList from '../serviceDisplay';
 import NumericKeypad from './NumericKeypad';
+import SendToCajaModal from './SendToCajaModal';
 
 interface CajaViewProps {
   appointments: Appointment[];
@@ -37,6 +40,10 @@ interface CajaViewProps {
   receptionists: Receptionist[];
   loggedInReceptionist: Receptionist | null;
   onPaymentComplete: () => Promise<void> | void;
+  isManicuristaSession?: boolean;
+  loggedInStaffId?: string | null;
+  services?: Service[];
+  onTicketSubmitted?: () => void | Promise<void>;
 }
 
 const EMPTY_SUMMARY = {
@@ -64,13 +71,22 @@ export default function CajaView({
   receptionists,
   loggedInReceptionist,
   onPaymentComplete,
+  isManicuristaSession = false,
+  loggedInStaffId = null,
+  services = [],
+  onTicketSubmitted,
 }: CajaViewProps) {
   const [registerState, setRegisterState] = useState<CashRegisterState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [cashTickets, setCashTickets] = useState<PosCashTicket[]>([]);
+  const [editingLines, setEditingLines] = useState<CashTicketLine[]>([]);
+  const [linesDirty, setLinesDirty] = useState(false);
+  const [isSavingLines, setIsSavingLines] = useState(false);
+  const [sendToCajaAppointment, setSendToCajaAppointment] = useState<Appointment | null>(null);
   const [amount, setAmount] = useState('');
   const [tip, setTip] = useState('0');
   const [method, setMethod] = useState<PaymentMethod>('efectivo');
@@ -153,24 +169,68 @@ export default function CajaView({
     return Array.from(dates).sort((a, b) => parseSpanishDateSortKey(b) - parseSpanishDateSortKey(a));
   }, [todayLabel, cashDayLabel, pendingByDate, appointments]);
 
-  const pendingAppointments = useMemo(
+  const pendingTickets = useMemo(
     () =>
-      appointments
-        .filter((appointment) => {
-          if (appointment.date !== operationalDay) return false;
-          if (collectedInCajaIds.has(appointment.id)) return false;
-          return (
-            isAppointmentPendingPayment(appointment.status) ||
-            isAppointmentPaid(appointment.status)
-          );
-        })
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [appointments, operationalDay, collectedInCajaIds]
+      cashTickets
+        .filter(
+          (ticket) =>
+            ticket.status === 'submitted' && ticket.appointmentDate === operationalDay
+        )
+        .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)),
+    [cashTickets, operationalDay]
   );
 
-  const selectedAppointment = pendingAppointments.find(
-    (appointment) => appointment.id === selectedAppointmentId
+  const ticketAppointmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    cashTickets.forEach((ticket) => {
+      if (ticket.status === 'submitted') {
+        ids.add(ticket.appointmentId);
+      }
+    });
+    return ids;
+  }, [cashTickets]);
+
+  const manicuristAppointments = useMemo(() => {
+    if (!loggedInStaffId) return [];
+    return appointments
+      .filter((appointment) => {
+        if (appointment.date !== todayLabel) return false;
+        if (appointment.staffId !== loggedInStaffId) return false;
+        if (appointment.status === 'cancelled') return false;
+        if (collectedInCajaIds.has(appointment.id)) return false;
+        if (ticketAppointmentIds.has(appointment.id)) return false;
+        return true;
+      })
+      .sort((a, b) => a.time.localeCompare(b.time));
+  }, [appointments, todayLabel, loggedInStaffId, collectedInCajaIds, ticketAppointmentIds]);
+
+  const manicuristSentTickets = useMemo(
+    () =>
+      cashTickets
+        .filter(
+          (ticket) =>
+            ticket.staffId === loggedInStaffId &&
+            ticket.appointmentDate === todayLabel &&
+            ticket.status === 'submitted'
+        )
+        .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)),
+    [cashTickets, loggedInStaffId, todayLabel]
   );
+
+  const selectedTicket = pendingTickets.find((ticket) => ticket.id === selectedTicketId);
+
+  const loadTickets = async (date?: string) => {
+    try {
+      const result = await posApi.getCashTickets({
+        date: date || (isManicuristaSession ? todayLabel : operationalDay),
+        status: isManicuristaSession ? 'all' : 'submitted',
+        staffId: isManicuristaSession ? loggedInStaffId || undefined : undefined,
+      });
+      setCashTickets(result.tickets);
+    } catch (ticketError) {
+      console.error(ticketError);
+    }
+  };
 
   const loadRegister = async () => {
     setIsLoading(true);
@@ -178,6 +238,7 @@ export default function CajaView({
     try {
       const state = await posApi.getCashRegisterState();
       setRegisterState(state);
+      await loadTickets(state.session ? state.cashDay || state.today : todayLabel);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'No se pudo cargar la caja');
     } finally {
@@ -222,8 +283,12 @@ export default function CajaView({
   };
 
   useEffect(() => {
+    if (isManicuristaSession) {
+      loadTickets(todayLabel);
+      return;
+    }
     loadRegister();
-  }, []);
+  }, [isManicuristaSession, todayLabel]);
 
   useEffect(() => {
     if (!registerState) return;
@@ -267,15 +332,17 @@ export default function CajaView({
   ]);
 
   useEffect(() => {
-    if (!selectedAppointment) return;
-    setAmount(String(selectedAppointment.cost || 0));
+    if (!selectedTicket) return;
+    setEditingLines(selectedTicket.lines.map((line) => ({ ...line })));
+    setLinesDirty(false);
+    setAmount(String(selectedTicket.subtotal || 0));
     setTip('0');
     setMethod('efectivo');
     setCashAmount('');
     setCardAmount('');
     setTransferAmount('');
     setNotes('');
-  }, [selectedAppointment?.id]);
+  }, [selectedTicket?.id]);
 
   const serviceTotal = Number(amount) || 0;
   const tipValue = Number(tip) || 0;
@@ -459,9 +526,9 @@ export default function CajaView({
   const handleCloseSession = async () => {
     if (!registerState?.session) return;
 
-    if (pendingAppointments.length > 0) {
+    if (pendingTickets.length > 0) {
       setModalError(
-        `Quedan ${pendingAppointments.length} cita(s) sin cobrar en Por cobrar. Regístralas antes del corte.`
+        `Quedan ${pendingTickets.length} ficha(s) sin cobrar en Por cobrar. Regístralas antes del corte.`
       );
       return;
     }
@@ -500,16 +567,52 @@ export default function CajaView({
     }
   };
 
+  const handleSaveTicketLines = async () => {
+    if (!selectedTicket || !linesDirty) return;
+
+    setIsSavingLines(true);
+    setError(null);
+    try {
+      const result = await posApi.updateCashTicket(selectedTicket.id, { lines: editingLines });
+      setCashTickets((prev) =>
+        prev.map((ticket) => (ticket.id === result.ticket.id ? result.ticket : ticket))
+      );
+      setEditingLines(result.ticket.lines.map((line) => ({ ...line })));
+      setAmount(String(result.ticket.subtotal || 0));
+      setLinesDirty(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'No se pudo guardar la ficha');
+    } finally {
+      setIsSavingLines(false);
+    }
+  };
+
   const handleRegisterPayment = async () => {
-    if (!selectedAppointment || !registerState?.session) return;
+    if (!selectedTicket || !registerState?.session) return;
 
     setIsSubmitting(true);
     setError(null);
 
     try {
+      let ticketToCharge = selectedTicket;
+
+      if (linesDirty) {
+        const result = await posApi.updateCashTicket(selectedTicket.id, { lines: editingLines });
+        ticketToCharge = result.ticket;
+        setCashTickets((prev) =>
+          prev.map((ticket) => (ticket.id === result.ticket.id ? result.ticket : ticket))
+        );
+        setEditingLines(result.ticket.lines.map((line) => ({ ...line })));
+        setAmount(String(result.ticket.subtotal || 0));
+        setLinesDirty(false);
+      }
+
+      const chargeAmount = Number(amount) || ticketToCharge.subtotal;
+
       const payload = {
-        appointmentId: selectedAppointment.id,
-        amount: serviceTotal,
+        appointmentId: ticketToCharge.appointmentId,
+        ticketId: ticketToCharge.id,
+        amount: chargeAmount,
         tip: tipValue,
         method,
         notes,
@@ -525,7 +628,7 @@ export default function CajaView({
       };
 
       await posApi.registerPayment(payload);
-      setSelectedAppointmentId(null);
+      setSelectedTicketId(null);
       await loadRegister();
       await onPaymentComplete();
     } catch (paymentError) {
@@ -540,10 +643,99 @@ export default function CajaView({
   const shiftPayments = registerState?.shiftPayments ?? [];
   const session = registerState?.session;
 
-  if (isLoading && !registerState) {
+  if (isLoading && !registerState && !isManicuristaSession) {
     return (
       <div className="flex items-center justify-center min-h-[420px]">
         <Loader2 className="w-8 h-8 animate-spin text-secondary" />
+      </div>
+    );
+  }
+
+  if (isManicuristaSession) {
+    return (
+      <div className="space-y-6 animate-fade-in p-1 md:p-2 max-w-3xl mx-auto">
+        <div>
+          <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">
+            Caja
+          </span>
+          <h2 className="font-display text-3xl font-bold text-primary mt-1">Enviar a caja</h2>
+          <p className="text-on-surface-variant text-sm mt-1">
+            Arma la ficha de cada cliente como en WhatsApp. La recepción la cobra.
+          </p>
+        </div>
+
+        <section className="bg-surface border border-primary/10 rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-primary/5 bg-surface-container-low/40">
+            <h3 className="font-display text-lg font-bold text-primary">Pendientes de enviar</h3>
+            <p className="text-xs text-outline mt-1">{todayLabel}</p>
+          </div>
+          <div className="divide-y divide-primary/5">
+            {manicuristAppointments.length === 0 ? (
+              <p className="p-6 text-sm text-outline text-center">
+                No tienes citas pendientes de enviar hoy.
+              </p>
+            ) : (
+              manicuristAppointments.map((appointment) => (
+                <div key={appointment.id} className="p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-sans text-sm font-bold text-primary">{appointment.clientName}</p>
+                    <AppointmentServiceList
+                      serviceName={appointment.serviceName}
+                      lineClassName="text-xs text-outline"
+                      className="mt-0.5"
+                    />
+                    <p className="text-[10px] text-outline mt-1">{appointment.time}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSendToCajaAppointment(appointment)}
+                    className="shrink-0 px-4 py-2.5 rounded-xl bg-primary text-on-primary text-[10px] font-bold uppercase tracking-wider hover:bg-primary-container transition-colors inline-flex items-center gap-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    Enviar
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {manicuristSentTickets.length > 0 && (
+          <section className="bg-surface border border-primary/10 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-primary/5 bg-surface-container-low/40">
+              <h3 className="font-display text-lg font-bold text-primary">Enviadas hoy</h3>
+              <p className="text-xs text-outline mt-1">Esperando cobro en recepción</p>
+            </div>
+            <div className="divide-y divide-primary/5">
+              {manicuristSentTickets.map((ticket) => (
+                <div key={ticket.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-sans text-sm font-bold text-primary">{ticket.clientName}</p>
+                      <TicketLinesList lines={ticket.lines} className="mt-1" />
+                    </div>
+                    <p className="font-display text-sm font-bold text-primary">
+                      {formatMXN(ticket.subtotal)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {sendToCajaAppointment && (
+          <SendToCajaModal
+            appointment={sendToCajaAppointment}
+            services={services}
+            staffName={sendToCajaAppointment.staffName}
+            onClose={() => setSendToCajaAppointment(null)}
+            onSubmitted={async () => {
+              await loadTickets(todayLabel);
+              await onTicketSubmitted?.();
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -643,59 +835,46 @@ export default function CajaView({
           <div className="px-5 py-4 border-b border-primary/5 bg-surface-container-low/40">
             <h3 className="font-display text-lg font-bold text-primary">Por cobrar</h3>
             <p className="text-xs text-outline mt-1">
-              {pendingAppointments.length} sin cobrar · {operationalDay}
+              {pendingTickets.length} sin cobrar · {operationalDay}
             </p>
             <p className="text-[10px] text-outline mt-1">
-              Cobra cada servicio aquí antes del corte de caja.
+              Fichas enviadas por las manicuristas. Cobra cada una antes del corte.
             </p>
           </div>
           <div className="max-h-[520px] overflow-y-auto divide-y divide-primary/5">
-            {pendingAppointments.length === 0 ? (
+            {pendingTickets.length === 0 ? (
               <p className="p-6 text-sm text-outline text-center">
                 {session
-                  ? `No hay citas por cobrar para ${operationalDay}. Ya puedes hacer el corte.`
-                  : 'Abre turno para ver y cobrar servicios pendientes.'}
+                  ? `No hay fichas por cobrar para ${operationalDay}. Ya puedes hacer el corte.`
+                  : 'Abre turno para ver fichas pendientes de cobro.'}
               </p>
             ) : (
-              pendingAppointments.map((appointment) => {
-                const isSelected = appointment.id === selectedAppointmentId;
-                const status = normalizeAppointmentStatus(appointment.status);
-                const paidInAgendaOnly =
-                  isAppointmentPaid(status) && !collectedInCajaIds.has(appointment.id);
+              pendingTickets.map((ticket) => {
+                const isSelected = ticket.id === selectedTicketId;
 
                 return (
                   <button
-                    key={appointment.id}
+                    key={ticket.id}
                     type="button"
-                    onClick={() => setSelectedAppointmentId(appointment.id)}
+                    onClick={() => setSelectedTicketId(ticket.id)}
                     className={`w-full text-left p-4 transition-colors ${
                       isSelected ? 'bg-primary/5 border-l-2 border-secondary' : 'hover:bg-surface-container-low'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-sans text-sm font-bold text-primary">{appointment.clientName}</p>
-                        <AppointmentServiceList
-                          serviceName={appointment.serviceName}
-                          lineClassName="text-xs text-outline"
-                          className="mt-0.5"
-                        />
+                        <p className="font-sans text-sm font-bold text-primary">{ticket.clientName}</p>
+                        <TicketLinesList lines={ticket.lines} className="mt-0.5" />
                         <p className="text-[10px] text-outline mt-1">
-                          {appointment.time} · {appointment.staffName}
+                          {ticket.submittedByStaffName || ticket.staffName} envió cobro
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="font-display text-sm font-bold text-primary">
-                          {formatMXN(appointment.cost || 0)}
+                          {formatMXN(ticket.subtotal)}
                         </p>
-                        <span
-                          className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                            paidInAgendaOnly
-                              ? 'bg-sky-100 text-sky-900'
-                              : 'bg-amber-100 text-amber-900'
-                          }`}
-                        >
-                          {paidInAgendaOnly ? 'Sin cobrar en caja' : status}
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-sky-100 text-sky-900">
+                          Ficha enviada
                         </span>
                       </div>
                     </div>
@@ -717,24 +896,89 @@ export default function CajaView({
               <Lock className="w-10 h-10 text-outline mx-auto" />
               <p className="text-sm text-outline">Abre un turno de caja para empezar a cobrar.</p>
             </div>
-          ) : !selectedAppointment ? (
+          ) : !selectedTicket ? (
             <div className="p-6 text-center space-y-3">
               <Receipt className="w-10 h-10 text-outline mx-auto" />
-              <p className="text-sm text-outline">Selecciona una cita de la cola para cobrar.</p>
+              <p className="text-sm text-outline">Selecciona una ficha de la cola para cobrar.</p>
             </div>
           ) : (
             <div className="p-5 space-y-4">
               <div className="rounded-xl bg-surface-container-low p-4 border border-primary/5">
                 <p className="text-xs font-bold uppercase tracking-wider text-outline">Cliente</p>
-                <p className="font-sans text-sm font-bold text-primary mt-1">{selectedAppointment.clientName}</p>
-                <AppointmentServiceList
-                  serviceName={selectedAppointment.serviceName}
-                  lineClassName="text-xs text-outline"
-                  className="mt-2"
-                />
+                <p className="font-sans text-sm font-bold text-primary mt-1">{selectedTicket.clientName}</p>
                 <p className="text-[10px] text-outline mt-1">
-                  {formatAppointmentTimeRange(selectedAppointment.time, selectedAppointment.duration)} · {selectedAppointment.staffName}
+                  Enviada por {selectedTicket.submittedByStaffName || selectedTicket.staffName}
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[10px] text-outline font-bold uppercase tracking-wider">Servicios</p>
+                {editingLines.map((line, index) => (
+                  <div key={`${line.name}-${index}`} className="grid grid-cols-[1fr_88px_32px] gap-2 items-center">
+                    <input
+                      type="text"
+                      value={line.name}
+                      onChange={(e) => {
+                        const next = [...editingLines];
+                        next[index] = { ...line, name: e.target.value };
+                        setEditingLines(next);
+                        setLinesDirty(true);
+                      }}
+                      className={fieldClassName}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={line.price || ''}
+                      onChange={(e) => {
+                        const next = [...editingLines];
+                        next[index] = { ...line, price: Number(e.target.value) || 0 };
+                        setEditingLines(next);
+                        setLinesDirty(true);
+                        setAmount(
+                          String(next.reduce((sum, item) => sum + (Number(item.price) || 0), 0))
+                        );
+                      }}
+                      className={fieldClassName}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingLines.length <= 1) return;
+                        const next = editingLines.filter((_, i) => i !== index);
+                        setEditingLines(next);
+                        setLinesDirty(true);
+                        setAmount(String(next.reduce((sum, item) => sum + (Number(item.price) || 0), 0)));
+                      }}
+                      className="p-2 rounded-lg text-outline hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = [...editingLines, { serviceId: '', name: '', price: 0 }];
+                    setEditingLines(next);
+                    setLinesDirty(true);
+                  }}
+                  className="w-full py-2 rounded-lg border border-dashed border-primary/20 text-[10px] font-bold uppercase tracking-wider text-outline hover:border-secondary flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Agregar línea
+                </button>
+                {linesDirty && (
+                  <button
+                    type="button"
+                    disabled={isSavingLines}
+                    onClick={handleSaveTicketLines}
+                    className="w-full py-2 rounded-lg bg-surface-container-high text-xs font-bold uppercase tracking-wider text-primary border border-primary/10"
+                  >
+                    {isSavingLines ? 'Guardando…' : 'Guardar cambios en ficha'}
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1025,9 +1269,9 @@ export default function CajaView({
           onTitleClick={() => setCloseTitleClicks((prev) => prev + 1)}
         >
           <div className="space-y-4">
-            {pendingAppointments.length > 0 && (
+            {pendingTickets.length > 0 && (
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-                Quedan <strong>{pendingAppointments.length}</strong> cita(s) en Por cobrar. Debes
+                Quedan <strong>{pendingTickets.length}</strong> ficha(s) en Por cobrar. Debes
                 registrar cada cobro antes de cerrar el turno.
               </div>
             )}
@@ -1452,6 +1696,24 @@ function CloseHistoryRow({
   );
 }
 
+function TicketLinesList({
+  lines,
+  className = '',
+}: {
+  lines: CashTicketLine[];
+  className?: string;
+}) {
+  return (
+    <div className={`space-y-0.5 ${className}`}>
+      {lines.map((line, index) => (
+        <p key={`${line.name}-${index}`} className="text-xs text-outline">
+          {formatMXN(line.price)} {line.name}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function PaymentRow({ payment }: { payment: PosPayment }) {
   const methodLabel =
     payment.method === 'mixto'
@@ -1463,11 +1725,15 @@ function PaymentRow({ payment }: { payment: PosPayment }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-sans text-sm font-bold text-primary">{payment.clientName}</p>
-          <AppointmentServiceList
-            serviceName={payment.serviceName}
-            lineClassName="text-xs text-outline"
-            className="mt-0.5"
-          />
+          {payment.serviceLines && payment.serviceLines.length > 0 ? (
+            <TicketLinesList lines={payment.serviceLines} className="mt-0.5" />
+          ) : (
+            <AppointmentServiceList
+              serviceName={payment.serviceName}
+              lineClassName="text-xs text-outline"
+              className="mt-0.5"
+            />
+          )}
           <p className="text-[10px] text-outline mt-1 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {payment.createdAt

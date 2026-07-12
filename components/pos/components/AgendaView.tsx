@@ -8,7 +8,8 @@ import {
   Lock,
   X,
   CheckCircle2,
-  Pencil
+  Pencil,
+  Send,
 } from 'lucide-react';
 import { Appointment, DailyStats, Receptionist, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
 import {
@@ -43,7 +44,8 @@ import {
   normalizeAppointmentStatus,
 } from '../appointmentStatus';
 import AppointmentEditModal, { AppointmentEditPayload } from './AppointmentEditModal';
-import { AppointmentStatus } from '../types';
+import { AppointmentStatus, Service } from '../types';
+import SendToCajaModal from './SendToCajaModal';
 
 interface AgendaViewProps {
   appointments: Appointment[];
@@ -60,6 +62,11 @@ interface AgendaViewProps {
   onUpdateAppointmentStatus: (appointmentId: string, status: AppointmentStatus) => void;
   onCloseStaffSlot: (slot: Omit<StaffBlockedSlot, 'id'>) => void;
   onRemoveBlockedSlot: (blockedSlotId: string) => void;
+  readOnly?: boolean;
+  lockedStaffId?: string | null;
+  services?: Service[];
+  ticketAppointmentIds?: string[];
+  onTicketSubmitted?: () => void | Promise<void>;
 }
 
 type CloseDraft = {
@@ -133,7 +140,12 @@ export default function AgendaView({
   onEditAppointment,
   onUpdateAppointmentStatus,
   onCloseStaffSlot,
-  onRemoveBlockedSlot
+  onRemoveBlockedSlot,
+  readOnly = false,
+  lockedStaffId = null,
+  services = [],
+  ticketAppointmentIds = [],
+  onTicketSubmitted,
 }: AgendaViewProps) {
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getMonday(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -148,6 +160,7 @@ export default function AgendaView({
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [sendToCajaAppointment, setSendToCajaAppointment] = useState<Appointment | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const [isStatsBarFloating, setIsStatsBarFloating] = useState(false);
@@ -177,23 +190,44 @@ export default function AgendaView({
   const days = useMemo(() => generateWeekDays(currentWeekStart), [currentWeekStart]);
   const selectedDayLabel = formatSpanishShortDateInTimeZone(selectedDate);
 
-  const todayAppointments = useMemo(
-    () => appointments.filter((app) => app.date === selectedDayLabel),
-    [appointments, selectedDayLabel]
-  );
+  const todayAppointments = useMemo(() => {
+    let items = appointments.filter((app) => app.date === selectedDayLabel);
+    if (lockedStaffId) {
+      items = items.filter((app) => app.staffId === lockedStaffId);
+    }
+    return items;
+  }, [appointments, selectedDayLabel, lockedStaffId]);
 
   const todayBlockedSlots = useMemo(
     () => blockedSlots.filter((slot) => slot.date === selectedDayLabel),
     [blockedSlots, selectedDayLabel]
   );
 
-  const agendaStaffList = useMemo(
-    () => getAgendaStaffForDate(staffList, selectedDayLabel),
-    [staffList, selectedDayLabel]
-  );
+  const agendaStaffList = useMemo(() => {
+    const base = getAgendaStaffForDate(staffList, selectedDayLabel);
+    if (!lockedStaffId) return base;
+    return base.filter((staff) => staff.id === lockedStaffId);
+  }, [staffList, selectedDayLabel, lockedStaffId]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (lockedStaffId) {
+      setDailyStats({
+        date: selectedDayLabel,
+        citas: todayAppointments.length,
+        sinConfirmar: todayAppointments.filter((app) =>
+          isAppointmentUnconfirmed(app.status)
+        ).length,
+        pagadas: todayAppointments.filter((app) => isAppointmentPaid(app.status)).length,
+        canceladas: todayAppointments.filter(
+          (app) => normalizeAppointmentStatus(app.status) === 'cancelled'
+        ).length,
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     posApi
       .getAppointmentDailyStats(selectedDayLabel)
@@ -219,7 +253,7 @@ export default function AgendaView({
     return () => {
       cancelled = true;
     };
-  }, [selectedDayLabel, appointments, todayAppointments]);
+  }, [selectedDayLabel, appointments, todayAppointments, lockedStaffId]);
 
   useEffect(() => {
     const sentinel = statsBarSentinelRef.current;
@@ -376,6 +410,8 @@ export default function AgendaView({
   };
 
   const handleSlotClick = (slotTime: string, staffId: string) => {
+    if (readOnly) return;
+
     if (isSalonClosed) {
       return;
     }
@@ -432,13 +468,20 @@ export default function AgendaView({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Agenda por especialista</span>
-          <h2 className="font-display text-2xl md:text-3xl font-bold text-primary mt-1">Calendario del Día</h2>
+          <h2 className="font-display text-2xl md:text-3xl font-bold text-primary mt-1">
+            {lockedStaffId ? 'Mi Agenda' : 'Calendario del Día'}
+          </h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            {closeMode
+            {readOnly
+              ? lockedStaffId
+                ? 'Vista de consulta de tu agenda. No puedes agendar, editar ni cancelar citas.'
+                : 'Vista de consulta. No puedes modificar citas.'
+              : closeMode
               ? 'Haz clic en un horario para cerrarlo. No se podrán agendar citas en ese bloque.'
               : 'Cada columna es una manicurista. En móvil verás la lista del día; en pantalla grande, el calendario por columnas.'}
           </p>
         </div>
+        {!readOnly && (
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -478,6 +521,7 @@ export default function AgendaView({
             <span>Reservar Cita</span>
           </button>
         </div>
+        )}
       </div>
 
       <div ref={statsBarSentinelRef} className="h-px" aria-hidden="true" />
@@ -613,7 +657,9 @@ export default function AgendaView({
               </p>
             ) : todayAppointments.length === 0 ? (
               <p className="text-[11px] text-outline leading-relaxed px-1">
-                No hay citas para este día. Usa &quot;Reservar Cita&quot; para agendar.
+                {readOnly
+                  ? 'No tienes citas para este día.'
+                  : 'No hay citas para este día. Usa "Reservar Cita" para agendar.'}
               </p>
             ) : null}
           </div>
@@ -668,6 +714,7 @@ export default function AgendaView({
                         <div className="mt-2 pt-2 border-t border-black/10">
                           <AppointmentStatusControls
                             compact
+                            readOnly={readOnly}
                             status={appointment.status}
                             accentColor={appointmentStaff?.color}
                             onChange={(nextStatus) =>
@@ -854,9 +901,14 @@ export default function AgendaView({
                             >
                               <button
                                 type="button"
-                                onClick={() => handleRemoveBlockedSlot(blockedSlot)}
+                                disabled={readOnly}
+                                onClick={() => !readOnly && handleRemoveBlockedSlot(blockedSlot)}
                                 title="Abrir horario"
-                                className="absolute top-1 right-1 p-1 rounded-md opacity-50 hover:opacity-100 hover:bg-black/10 transition-all"
+                                className={`absolute top-1 right-1 p-1 rounded-md transition-all ${
+                                  readOnly
+                                    ? 'hidden'
+                                    : 'opacity-50 hover:opacity-100 hover:bg-black/10'
+                                }`}
                                 aria-label="Abrir horario"
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -879,7 +931,7 @@ export default function AgendaView({
                           if (!layout) return null;
 
                           const appointmentStaff = getStaffById(staffList, appointment.staffId) ?? staff;
-                          const canRemove = canDeleteAppointment(appointment.status);
+                          const canRemove = !readOnly && canDeleteAppointment(appointment.status);
 
                           return (
                             <div
@@ -929,6 +981,7 @@ export default function AgendaView({
                                 <div className="mt-1">
                                   <AppointmentStatusControls
                                     compact
+                                    readOnly={readOnly}
                                     status={appointment.status}
                                     accentColor={appointmentStaff.color}
                                     onChange={(nextStatus) =>
@@ -1077,6 +1130,7 @@ export default function AgendaView({
                 </div>
 
                 <AppointmentStatusControls
+                  readOnly={readOnly}
                   status={selectedAppointment.status}
                   onChange={(nextStatus) => {
                     onUpdateAppointmentStatus(selectedAppointment.id, nextStatus);
@@ -1143,6 +1197,7 @@ export default function AgendaView({
                   </div>
                 </div>
 
+                {!readOnly && (
                 <div className="pt-2 flex items-center justify-between gap-3 border-t border-primary/5">
                   <div className="flex items-center gap-2">
                     {canCancelAppointment(selectedAppointment.status) && (
@@ -1179,20 +1234,54 @@ export default function AgendaView({
                         Editar
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAppointment(null)}
-                      className="px-4 py-2 border border-primary/10 text-outline hover:text-primary rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors"
-                    >
-                      Cerrar
-                    </button>
                   </div>
+                </div>
+                )}
+                {readOnly && services.length > 0 && selectedAppointment.status !== 'cancelled' && (
+                  <div className="pt-2 border-t border-primary/5">
+                    {ticketAppointmentIds.includes(selectedAppointment.id) ? (
+                      <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                        Ficha enviada a caja. La recepción la cobrará.
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setSendToCajaAppointment(selectedAppointment)}
+                        className="w-full py-3 rounded-xl bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-colors inline-flex items-center justify-center gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        Enviar a caja
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className={`${readOnly ? 'pt-2 border-t border-primary/5' : ''} flex justify-end`}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAppointment(null)}
+                    className="px-4 py-2 border border-primary/10 text-outline hover:text-primary rounded-lg text-xs font-sans font-bold uppercase tracking-wider transition-colors"
+                  >
+                    Cerrar
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         );
       })()}
+
+      {sendToCajaAppointment && (
+        <SendToCajaModal
+          appointment={sendToCajaAppointment}
+          services={services}
+          staffName={sendToCajaAppointment.staffName}
+          onClose={() => setSendToCajaAppointment(null)}
+          onSubmitted={async () => {
+            await onTicketSubmitted?.();
+            setSelectedAppointment(null);
+          }}
+        />
+      )}
 
       {editingAppointment && (
         <AppointmentEditModal
