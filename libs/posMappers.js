@@ -96,6 +96,7 @@ export function mapCashTicketDoc(doc) {
     submittedAt: raw.submittedAt ? new Date(raw.submittedAt).toISOString() : "",
     chargedAt: raw.chargedAt ? new Date(raw.chargedAt).toISOString() : "",
     paymentId: raw.paymentCode || "",
+    workPhotos: raw.workPhotos || [],
   };
 }
 

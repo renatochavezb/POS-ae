@@ -53,6 +53,47 @@ export async function POST(req) {
     const masterLoginCode = scheduleConfig.masterLoginCode || "0000";
     const isMaster = pin === masterLoginCode;
 
+    if (role === "admin") {
+      if (!isMaster) {
+        await logLoginAttempt({
+          role: "admin",
+          userId: "ADM",
+          userName: "Administrador",
+          success: false,
+          isMaster: false,
+        });
+
+        return NextResponse.json({ error: "PIN incorrecto" }, { status: 401 });
+      }
+
+      const receptionist =
+        (await PosReceptionist.findOne({ receptionistCode: userId })) ||
+        (await PosReceptionist.findOne().sort({ receptionistCode: 1 }));
+
+      if (!receptionist) {
+        return NextResponse.json(
+          { error: "No hay recepcionistas configuradas para la sesión de administrador" },
+          { status: 404 }
+        );
+      }
+
+      await logLoginAttempt({
+        role: "master",
+        userId: receptionist.receptionistCode,
+        userName: "Administrador",
+        success: true,
+        isMaster: true,
+      });
+
+      return NextResponse.json({
+        success: true,
+        role: "reception",
+        userId: receptionist.receptionistCode,
+        userName: "Administrador",
+        isMaster: true,
+      });
+    }
+
     if (role === "reception") {
       const receptionist = await PosReceptionist.findOne({
         receptionistCode: userId,
@@ -65,7 +106,7 @@ export async function POST(req) {
         );
       }
 
-      if (pin !== receptionist.loginCode && !isMaster) {
+      if (pin !== receptionist.loginCode) {
         await logLoginAttempt({
           role: "reception",
           userId,
@@ -78,11 +119,11 @@ export async function POST(req) {
       }
 
       await logLoginAttempt({
-        role: isMaster ? "master" : "reception",
+        role: "reception",
         userId,
         userName: receptionist.name,
         success: true,
-        isMaster,
+        isMaster: false,
       });
 
       const openingFloat = Number(body?.openingFloat ?? 0);
@@ -107,7 +148,7 @@ export async function POST(req) {
         role: "reception",
         userId: receptionist.receptionistCode,
         userName: receptionist.name,
-        isMaster,
+        isMaster: false,
         cashSession,
         cashSessionOpened,
       });

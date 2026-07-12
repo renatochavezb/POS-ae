@@ -137,7 +137,7 @@ const posApi = {
     return posClient.get("/pos/login/bootstrap");
   },
   verifyLogin(data: {
-    role: "reception" | "manicurista" | "accountant";
+    role: "reception" | "manicurista" | "accountant" | "admin";
     userId: string;
     pin: string;
     openingFloat?: number;
@@ -383,10 +383,20 @@ const posApi = {
   submitCashTicket(data: {
     appointmentId: string;
     lines: CashTicketLine[];
+    workPhotos: string[];
     submittedByStaffId?: string;
     submittedByStaffName?: string;
   }): Promise<{ ticket: PosCashTicket }> {
     return posClient.post("/pos/cash-tickets", data);
+  },
+  uploadCashTicketWorkPhotos(
+    appointmentId: string,
+    files: File[]
+  ): Promise<{ photos: string[] }> {
+    const formData = new FormData();
+    formData.append("appointmentId", appointmentId);
+    files.forEach((file) => formData.append("photos", file));
+    return posClient.post("/pos/cash-tickets/work-photos", formData);
   },
   updateCashTicket(
     ticketId: string,

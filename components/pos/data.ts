@@ -454,6 +454,17 @@ export const INITIAL_RECEPTIONISTS: Receptionist[] = [
     image: STAFF_IMAGE,
     color: '#6B5C8E',
     colorLight: '#f0ecf5'
+  },
+  {
+    id: 'NI',
+    name: 'Nitzia',
+    role: 'Supervisora',
+    loginCode: '5500',
+    bookingsToday: 0,
+    bookingsTodayDate: '',
+    image: STAFF_IMAGE,
+    color: '#8E5C6B',
+    colorLight: '#f5ecf0'
   }
 ];
 

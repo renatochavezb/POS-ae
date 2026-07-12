@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
 import { mapAppointmentDoc } from "@/libs/posMappers";
 import PosAppointment from "@/models/PosAppointment";
 import PosStaff from "@/models/PosStaff";
@@ -37,6 +37,9 @@ export async function POST(req) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
+
+    const manicuristaBlock = rejectManicuristaAgendaMutation(req, "agendar citas");
+    if (manicuristaBlock) return manicuristaBlock;
 
     const body = await req.json();
 

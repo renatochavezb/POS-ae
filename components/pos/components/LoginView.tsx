@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle, Calculator } from "lucide-react";
+import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle, Calculator, KeyRound } from "lucide-react";
 import { Staff, Receptionist, Accountant } from "../types";
 import { INITIAL_RECEPTIONISTS, INITIAL_STAFF, INITIAL_ACCOUNTANTS } from "../data";
 import posApi from "@/libs/posApi";
@@ -28,6 +28,7 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     | "staff_pin"
     | "accountant_select"
     | "accountant_pin"
+    | "admin_pin"
   >("select");
   const [receptionists, setReceptionists] = useState<Receptionist[]>(INITIAL_RECEPTIONISTS);
   const [staffList, setStaffList] = useState<Staff[]>(INITIAL_STAFF);
@@ -75,6 +76,12 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     setPin("");
     setError(null);
     setViewState("accountant_select");
+  };
+
+  const handleAdminClick = () => {
+    setPin("");
+    setError(null);
+    setViewState("admin_pin");
   };
 
   const handleAccountantSelect = (accountant: Accountant) => {
@@ -152,6 +159,28 @@ export default function LoginView({ onLogin }: LoginViewProps) {
       } finally {
         setIsVerifying(false);
       }
+    } else if (viewState === "admin_pin") {
+      setIsVerifying(true);
+      try {
+        const result = await posApi.verifyLogin({
+          role: "admin",
+          userId: "ADM",
+          pin,
+        });
+
+        setSuccess(true);
+        setTimeout(
+          () => onLogin("reception", undefined, result.userId, result.isMaster),
+          800
+        );
+      } catch (verifyError) {
+        setError(
+          verifyError instanceof Error ? verifyError.message : "PIN incorrecto. Intenta de nuevo."
+        );
+        setPin("");
+      } finally {
+        setIsVerifying(false);
+      }
     } else if (viewState === "accountant_pin" && selectedAccountant) {
       setIsVerifying(true);
       try {
@@ -185,7 +214,9 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     }
   };
 
-  const handlePinBack = (target: "reception_select" | "staff_select" | "accountant_select") => {
+  const handlePinBack = (
+    target: "select" | "reception_select" | "staff_select" | "accountant_select"
+  ) => {
     setPin("");
     setError(null);
     setViewState(target);
@@ -194,7 +225,8 @@ export default function LoginView({ onLogin }: LoginViewProps) {
   const isPinView =
     viewState === "reception_pin" ||
     viewState === "staff_pin" ||
-    viewState === "accountant_pin";
+    viewState === "accountant_pin" ||
+    viewState === "admin_pin";
 
   const isListView =
     viewState === "reception_select" ||
@@ -249,9 +281,27 @@ export default function LoginView({ onLogin }: LoginViewProps) {
                   </div>
                   <div>
                     <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
-                      Recepción / Admin
+                      Recepción / Supervisión
                     </h4>
-                    <p className="text-white/40 text-[11px]">Gestión total de agenda y caja</p>
+                    <p className="text-white/40 text-[11px]">Agenda, caja y atención al cliente</p>
+                  </div>
+                </div>
+                <div className="text-[#e5c158]">→</div>
+              </button>
+
+              <button
+                onClick={handleAdminClick}
+                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <KeyRound className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
+                      Administrador
+                    </h4>
+                    <p className="text-white/40 text-[11px]">Configuración y acceso total</p>
                   </div>
                 </div>
                 <div className="text-[#e5c158]">→</div>
@@ -429,6 +479,20 @@ export default function LoginView({ onLogin }: LoginViewProps) {
             isVerifying={isVerifying}
             submitLabel="Validar"
             onBack={() => handlePinBack("accountant_select")}
+            onPinChange={handlePinChange}
+            onSubmit={handlePinSubmit}
+          />
+        )}
+
+        {viewState === "admin_pin" && (
+          <PinEntryScreen
+            key="admin"
+            personName="Administrador"
+            pin={pin}
+            error={error}
+            isVerifying={isVerifying}
+            submitLabel="Validar"
+            onBack={() => handlePinBack("select")}
             onPinChange={handlePinChange}
             onSubmit={handlePinSubmit}
           />

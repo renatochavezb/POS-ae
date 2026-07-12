@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
 import { mapAppointmentDoc } from "@/libs/posMappers";
 import PosAppointment from "@/models/PosAppointment";
 import PosStaff from "@/models/PosStaff";
@@ -24,6 +24,9 @@ export async function PATCH(req, { params }) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
+
+    const manicuristaBlock = rejectManicuristaAgendaMutation(req, "modificar citas");
+    if (manicuristaBlock) return manicuristaBlock;
 
     const { appointmentId } = await params;
     const body = await req.json();
@@ -187,6 +190,9 @@ export async function DELETE(req, { params }) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
+
+    const manicuristaBlock = rejectManicuristaAgendaMutation(req, "eliminar citas");
+    if (manicuristaBlock) return manicuristaBlock;
 
     const { appointmentId } = await params;
     const body = await req.json().catch(() => ({}));

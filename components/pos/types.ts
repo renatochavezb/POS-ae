@@ -265,6 +265,7 @@ export interface PosCashTicket {
   submittedAt: string;
   chargedAt: string;
   paymentId: string;
+  workPhotos?: string[];
 }
 
 export interface PosPayment {

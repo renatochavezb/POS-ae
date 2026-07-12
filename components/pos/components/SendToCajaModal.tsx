@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Loader2, Plus, Send, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Camera, Loader2, Plus, Send, Trash2, X } from "lucide-react";
 import { Appointment, CashTicketLine, Service } from "../types";
 import { formatMXN } from "../data";
 import { splitAppointmentServices } from "../serviceDisplay";
@@ -9,7 +9,16 @@ import posApi from "@/libs/posApi";
 
 type TicketLine = CashTicketLine & { key: string };
 
+type PhotoDraft = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+const MAX_WORK_PHOTOS = 3;
+
 const createLineKey = () => `line-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+const createPhotoId = () => `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
 function findCatalogByName(services: Service[], name: string) {
   const normalized = name.trim().toLowerCase();
@@ -78,8 +87,18 @@ export default function SendToCajaModal({
   const [lines, setLines] = useState<TicketLine[]>(() =>
     buildInitialLines(appointment, services)
   );
+  const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+
+  useEffect(() => {
+    return () => {
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+    };
+  }, []);
 
   const subtotal = lines.reduce((sum, line) => sum + (Number(line.price) || 0), 0);
 
@@ -116,6 +135,35 @@ export default function SendToCajaModal({
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((line) => line.key !== key)));
   };
 
+  const handlePhotoPick = (event: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(event.target.files || []);
+    event.target.value = "";
+
+    if (picked.length === 0) return;
+
+    setPhotos((prev) => {
+      const remaining = MAX_WORK_PHOTOS - prev.length;
+      if (remaining <= 0) return prev;
+
+      const next = picked.slice(0, remaining).map((file) => ({
+        id: createPhotoId(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+
+      return [...prev, ...next];
+    });
+    if (error) setError(null);
+  };
+
+  const removePhoto = (photoId: string) => {
+    setPhotos((prev) => {
+      const target = prev.find((photo) => photo.id === photoId);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((photo) => photo.id !== photoId);
+    });
+  };
+
   const handleSubmit = async () => {
     const payloadLines = lines
       .map(({ serviceId, name, price }) => ({
@@ -135,13 +183,24 @@ export default function SendToCajaModal({
       return;
     }
 
+    if (photos.length === 0) {
+      setError("Agrega al menos una foto del trabajo.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
     try {
+      const { photos: workPhotos } = await posApi.uploadCashTicketWorkPhotos(
+        appointment.id,
+        photos.map((photo) => photo.file)
+      );
+
       await posApi.submitCashTicket({
         appointmentId: appointment.id,
         lines: payloadLines,
+        workPhotos,
         submittedByStaffId: appointment.staffId,
         submittedByStaffName: staffName,
       });
@@ -179,9 +238,64 @@ export default function SendToCajaModal({
 
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <p className="text-xs text-outline">
-            Arma la ficha como en el grupo de WhatsApp: servicios y precios. La recepción la cobra
-            en caja.
+            Arma la ficha como en el grupo de WhatsApp: servicios, precios y fotos del trabajo.
+            La recepción la cobra en caja.
           </p>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-outline">
+                Fotos del trabajo
+              </p>
+              <span className="text-[10px] text-outline">
+                {photos.length}/{MAX_WORK_PHOTOS} · mínimo 1
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((photo) => (
+                <div
+                  key={photo.id}
+                  className="relative aspect-square rounded-xl overflow-hidden border border-primary/10 bg-surface-container-low"
+                >
+                  <img
+                    src={photo.previewUrl}
+                    alt="Foto del trabajo"
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(photo.id)}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                    title="Quitar foto"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+
+              {photos.length < MAX_WORK_PHOTOS && (
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  className="aspect-square rounded-xl border border-dashed border-primary/20 bg-surface-container-low/50 flex flex-col items-center justify-center gap-1 text-outline hover:border-secondary hover:text-secondary transition-colors"
+                >
+                  <Camera className="w-5 h-5" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider">Agregar</span>
+                </button>
+              )}
+            </div>
+
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              multiple
+              className="hidden"
+              onChange={handlePhotoPick}
+            />
+          </div>
 
           <div className="space-y-3">
             {lines.map((line) => (
@@ -263,7 +377,7 @@ export default function SendToCajaModal({
         <div className="p-5 border-t border-primary/5 bg-surface-container-low/30">
           <button
             type="button"
-            disabled={isSubmitting || subtotal <= 0}
+            disabled={isSubmitting || subtotal <= 0 || photos.length === 0}
             onClick={handleSubmit}
             className="w-full py-3.5 rounded-xl bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
           >

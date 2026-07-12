@@ -838,8 +838,8 @@ export default function AgendaView({
                               className={`absolute left-0 right-0 border-primary/5 transition-colors group ${
                                 isHourBoundary ? 'border-t' : 'border-t border-dashed opacity-70'
                               } ${
-                                isSalonClosed || isInactiveColumn
-                                  ? 'cursor-not-allowed opacity-40'
+                                isSalonClosed || isInactiveColumn || readOnly
+                                  ? 'cursor-default opacity-40'
                                   : closeMode
                                   ? 'hover:bg-amber-500/10 cursor-crosshair'
                                   : isBlocked
@@ -851,7 +851,9 @@ export default function AgendaView({
                                 height: HALF_HOUR_HEIGHT
                               }}
                               title={
-                                isSalonClosed
+                                readOnly
+                                  ? 'Vista de consulta'
+                                  : isSalonClosed
                                   ? 'Salón cerrado este día'
                                   : isInactiveColumn
                                   ? `Historial de ${staff.name} (sin reservas nuevas)`
@@ -862,7 +864,7 @@ export default function AgendaView({
                                   : `Reservar ${staff.name} a las ${slotTime}`
                               }
                             >
-                              {!isBlocked && !closeMode && !isInactiveColumn && !isSalonClosed && (
+                              {!isBlocked && !closeMode && !isInactiveColumn && !isSalonClosed && !readOnly && (
                                 <span
                                   className="opacity-0 group-hover:opacity-100 text-[9px] px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm inline-flex items-center gap-1 border"
                                   style={{

@@ -44,6 +44,7 @@ interface CajaViewProps {
   loggedInStaffId?: string | null;
   services?: Service[];
   onTicketSubmitted?: () => void | Promise<void>;
+  liveSyncAt?: number;
 }
 
 const EMPTY_SUMMARY = {
@@ -75,6 +76,7 @@ export default function CajaView({
   loggedInStaffId = null,
   services = [],
   onTicketSubmitted,
+  liveSyncAt = 0,
 }: CajaViewProps) {
   const [registerState, setRegisterState] = useState<CashRegisterState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -289,6 +291,17 @@ export default function CajaView({
     }
     loadRegister();
   }, [isManicuristaSession, todayLabel]);
+
+  useEffect(() => {
+    if (!liveSyncAt) return;
+
+    if (isManicuristaSession) {
+      void loadTickets(todayLabel);
+      return;
+    }
+
+    void loadRegister();
+  }, [liveSyncAt]);
 
   useEffect(() => {
     if (!registerState) return;
@@ -910,6 +923,36 @@ export default function CajaView({
                   Enviada por {selectedTicket.submittedByStaffName || selectedTicket.staffName}
                 </p>
               </div>
+
+              {(selectedTicket.workPhotos?.length ?? 0) > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-outline font-bold uppercase tracking-wider">
+                    Fotos del trabajo
+                  </p>
+                  <div
+                    className={`grid gap-2 ${
+                      (selectedTicket.workPhotos?.length ?? 0) > 1 ? 'grid-cols-3' : 'grid-cols-1'
+                    }`}
+                  >
+                    {selectedTicket.workPhotos?.map((photoUrl, index) => (
+                      <a
+                        key={`${photoUrl}-${index}`}
+                        href={photoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block aspect-square rounded-xl overflow-hidden border border-primary/10 bg-surface-container-low hover:opacity-90 transition-opacity"
+                        title="Ver foto completa"
+                      >
+                        <img
+                          src={photoUrl}
+                          alt={`Trabajo ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <p className="text-[10px] text-outline font-bold uppercase tracking-wider">Servicios</p>

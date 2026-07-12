@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Menu, 
   X, 
@@ -67,6 +67,10 @@ import { getBookableStaff } from '@/libs/posStaffAgenda';
 import { readPosSession, writePosSession, clearPosSession, PosSession, getActiveReceptionistSession, markAccountantLogoutRecorded, wasAccountantLogoutRecorded } from '@/libs/posSession';
 
 const MANICURISTA_TAB_IDS = ['agenda', 'staff', 'caja'];
+const RECEPTIONIST_TAB_IDS = ['agenda', 'caja', 'clients', 'staff', 'services'];
+const AGENDA_POLL_INTERVAL_MS = 30_000;
+
+const isReceptionSupervisorRole = (role?: string) => /supervis/i.test(role || '');
 import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus } from './appointmentStatus';
 
 type BookingServiceLine = {
@@ -169,6 +173,8 @@ export default function POSDashboard() {
   const [blockedSlots, setBlockedSlots] = useState<StaffBlockedSlot[]>(INITIAL_BLOCKED_SLOTS);
   const [services, setServices] = useState<Service[]>(INITIAL_SERVICES);
   const [ticketAppointmentIds, setTicketAppointmentIds] = useState<string[]>([]);
+  const [liveSyncAt, setLiveSyncAt] = useState(0);
+  const agendaPollInFlight = useRef(false);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>(DEFAULT_SCHEDULE_CONFIG);
 
   // Overlay Dialog Triggers
@@ -253,10 +259,21 @@ export default function POSDashboard() {
       setSelectedClientId(null);
       setCurrentTab('staff');
     }
+
+    if (session.role === 'reception') {
+      const receptionist =
+        INITIAL_RECEPTIONISTS.find((member) => member.id === session.receptionistId) || null;
+      const isSupervisor =
+        session.isMaster || isReceptionSupervisorRole(receptionist?.role);
+      setCurrentTab(isSupervisor ? 'dashboard' : 'agenda');
+      setSelectedStaffId(null);
+      setSelectedClientId(null);
+    }
   };
 
   const isAccountantSession = Boolean(loggedInAccountantId);
-  const isManicuristaSession = Boolean(loggedInStaffId && !isMasterSession);
+  const isManicuristaProfile = Boolean(loggedInStaffId);
+  const isManicuristaSession = isManicuristaProfile && !isMasterSession;
 
   const handleLocalLogin = (
     role: 'reception' | 'manicurista' | 'accountant',
@@ -345,12 +362,36 @@ export default function POSDashboard() {
     ? staffList.find((member) => member.id === loggedInStaffId) || null
     : null;
 
-  const activeSession = loggedInReceptionist
+  const isPlainReceptionSession = Boolean(
+    loggedInReceptionistId &&
+      !isMasterSession &&
+      !isReceptionSupervisorRole(loggedInReceptionist?.role)
+  );
+
+  const receptionSessionLabel = isMasterSession
+    ? 'Acceso total'
+    : isReceptionSupervisorRole(loggedInReceptionist?.role)
+    ? 'Supervisión'
+    : 'Recepción';
+
+  const allowedTabIds = isAccountantSession
+    ? ['staff']
+    : isManicuristaSession
+    ? MANICURISTA_TAB_IDS
+    : isPlainReceptionSession
+    ? RECEPTIONIST_TAB_IDS
+    : undefined;
+
+  const activeSession = isMasterSession && loggedInReceptionist
+    ? {
+        name: 'Administrador',
+        subtitle: 'Acceso total',
+        initials: 'AD',
+      }
+    : loggedInReceptionist
     ? {
         name: loggedInReceptionist.name,
-        subtitle: isMasterSession
-          ? 'Recepción · Master'
-          : 'Recepción · Turno activo',
+        subtitle: receptionSessionLabel,
         initials: loggedInReceptionist.name
           .split(' ')
           .map((part) => part[0])
@@ -481,6 +522,24 @@ export default function POSDashboard() {
     }
   };
 
+  const refreshLiveAgendaData = async () => {
+    const [appointmentsResult, blockedSlotsResult] = await Promise.allSettled([
+      posApi.getAppointments(),
+      posApi.getBlockedSlots(),
+    ]);
+
+    if (appointmentsResult.status === 'fulfilled') {
+      setAppointments(appointmentsResult.value);
+    }
+
+    if (blockedSlotsResult.status === 'fulfilled') {
+      setBlockedSlots(blockedSlotsResult.value);
+    }
+
+    await refreshTicketAppointmentIds();
+    setLiveSyncAt(Date.now());
+  };
+
   useEffect(() => {
     const storedSession = readPosSession();
     if (storedSession) {
@@ -497,6 +556,40 @@ export default function POSDashboard() {
     }
     loadPosData();
   }, [isSessionValidated]);
+
+  useEffect(() => {
+    if (!isSessionValidated) return;
+
+    const pollAgenda = async () => {
+      if (agendaPollInFlight.current || document.visibilityState !== 'visible') return;
+
+      agendaPollInFlight.current = true;
+      try {
+        await refreshLiveAgendaData();
+      } catch (pollError) {
+        console.error(pollError);
+      } finally {
+        agendaPollInFlight.current = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void pollAgenda();
+    }, AGENDA_POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void pollAgenda();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isSessionValidated, loggedInStaffId]);
 
   useEffect(() => {
     if (!isSessionValidated || !isMasterSession) return;
@@ -523,6 +616,13 @@ export default function POSDashboard() {
     setSelectedClientId(null);
     setSelectedStaffId(loggedInStaffId);
   }, [isManicuristaSession, currentTab, loggedInStaffId]);
+
+  useEffect(() => {
+    if (!isPlainReceptionSession) return;
+    if (!RECEPTIONIST_TAB_IDS.includes(currentTab)) {
+      setCurrentTab('agenda');
+    }
+  }, [isPlainReceptionSession, currentTab]);
 
   useEffect(() => {
     if (!isMasterSession || mobileLogoClicks < 3 || isAccountantSession) return;
@@ -618,6 +718,8 @@ export default function POSDashboard() {
     defaultDate?: string,
     defaultStaffId?: string
   ) => {
+    if (isManicuristaProfile) return;
+
     const lockedStaff = defaultStaffId
       ? bookableStaff.find((member) => member.id === defaultStaffId)
       : undefined;
@@ -696,6 +798,11 @@ export default function POSDashboard() {
   // Submit appointment
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isManicuristaProfile) {
+      window.alert('Las manicuristas no pueden agendar citas. Pide apoyo a recepción.');
+      return;
+    }
 
     if (!bookingClient.trim()) {
       window.alert('Selecciona un cliente para la cita.');
@@ -788,18 +895,14 @@ export default function POSDashboard() {
     const bookedOnDate = getTodaySpanishShortDate();
 
     if (!activeReceptionist) {
-      const proceed = window.confirm(
-        'Entraste como manicurista o sin recepcionista activa. Esta cita NO se contará en el tablero de recepción.\n\n¿Continuar de todos modos?'
-      );
-      if (!proceed) return;
+      window.alert('Debe haber una recepcionista activa para agendar citas.');
+      return;
     }
 
-    const nextReceptionistStats = activeReceptionist
-      ? {
-          receptionistId: activeReceptionist.id,
-          bookingsToday: activeReceptionist.bookingsToday + 1,
-        }
-      : undefined;
+    const nextReceptionistStats = {
+      receptionistId: activeReceptionist.id,
+      bookingsToday: activeReceptionist.bookingsToday + 1,
+    };
 
     try {
       const created = await posApi.createAppointment({
@@ -816,9 +919,9 @@ export default function POSDashboard() {
         cost: serviceCost,
         duration: appointmentDuration,
         status: 'agendado',
-        bookedByReceptionistId: activeReceptionist?.id || '',
-        bookedByReceptionistName: activeReceptionist?.name || '',
-        bookedOnDate: activeReceptionist ? bookedOnDate : '',
+        bookedByReceptionistId: activeReceptionist.id,
+        bookedByReceptionistName: activeReceptionist.name,
+        bookedOnDate,
         staffStats: {
           staffId: staffObj.id,
           ...nextStaffStats,
@@ -883,6 +986,8 @@ export default function POSDashboard() {
     appointmentId: string,
     auth: ReceptionistAuthPayload
   ) => {
+    if (isManicuristaProfile) return;
+
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment) return;
 
@@ -1000,6 +1105,8 @@ export default function POSDashboard() {
     appointmentId: string,
     auth: ReceptionistAuthPayload
   ) => {
+    if (isManicuristaProfile) return;
+
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment || appointment.status === 'cancelled') return;
 
@@ -1058,6 +1165,8 @@ export default function POSDashboard() {
     appointmentId: string,
     payload: AppointmentEditPayload
   ) => {
+    if (isManicuristaProfile) return;
+
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment) return;
 
@@ -1090,6 +1199,8 @@ export default function POSDashboard() {
     appointmentId: string,
     nextStatus: AppointmentStatus
   ) => {
+    if (isManicuristaProfile) return;
+
     const appointment = appointments.find((item) => item.id === appointmentId);
     if (!appointment || appointment.status === nextStatus) return;
 
@@ -1152,6 +1263,8 @@ export default function POSDashboard() {
   };
 
   const handleCloseStaffSlot = async (slot: Omit<StaffBlockedSlot, 'id'>) => {
+    if (isManicuristaProfile) return;
+
     if (isStaffTimeBlocked(blockedSlots, slot.date, slot.staffId, slot.time, slot.duration)) {
       window.alert('Ya existe un cierre en ese horario.');
       return;
@@ -1189,6 +1302,8 @@ export default function POSDashboard() {
   };
 
   const handleRemoveBlockedSlot = async (blockedSlotId: string) => {
+    if (isManicuristaProfile) return;
+
     try {
       await posApi.deleteBlockedSlot(blockedSlotId);
       setBlockedSlots((prev) => prev.filter((slot) => slot.id !== blockedSlotId));
@@ -1392,13 +1507,13 @@ export default function POSDashboard() {
             scheduleConfig={scheduleConfig}
             receptionists={receptionists}
             defaultReceptionistId={loggedInReceptionistId}
-            readOnly={isManicuristaSession}
-            lockedStaffId={isManicuristaSession ? loggedInStaffId : null}
+            readOnly={isManicuristaProfile}
+            lockedStaffId={isManicuristaProfile ? loggedInStaffId : null}
             onOpenNewAppointment={(day, hour, staffId) =>
               handleOpenAppointmentModal(undefined, hour, undefined, day, staffId)
             }
             onSelectStaff={(id) => {
-              if (isManicuristaSession) return;
+              if (isManicuristaProfile) return;
               setSelectedStaffId(id);
               setCurrentTab('staff');
             }}
@@ -1431,6 +1546,7 @@ export default function POSDashboard() {
             onTicketSubmitted={async () => {
               await loadPosData({ silent: true });
             }}
+            liveSyncAt={liveSyncAt}
           />
         );
       case 'clients':
@@ -1619,6 +1735,7 @@ export default function POSDashboard() {
         setCurrentTab={(tab) => {
           if (isAccountantSession && tab !== 'staff') return;
           if (isManicuristaSession && !MANICURISTA_TAB_IDS.includes(tab)) return;
+          if (isPlainReceptionSession && !RECEPTIONIST_TAB_IDS.includes(tab)) return;
           setCurrentTab(tab);
           setSelectedClientId(null);
           if (isManicuristaSession && loggedInStaffId) {
@@ -1631,13 +1748,7 @@ export default function POSDashboard() {
         onLogout={handlePosLogout}
         isMasterSession={isMasterSession}
         onOpenMasterPanel={() => setCurrentTab('master-log')}
-        allowedTabIds={
-          isAccountantSession
-            ? ['staff']
-            : isManicuristaSession
-            ? MANICURISTA_TAB_IDS
-            : undefined
-        }
+        allowedTabIds={allowedTabIds}
       />
 
       {/* 2. Main content scrollable canvas shell */}
@@ -1656,7 +1767,9 @@ export default function POSDashboard() {
             <StudioLogo size="sm" showWordmark />
             {loggedInReceptionist && (
               <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
-                {loggedInReceptionist.name} · Recepción
+                {isMasterSession
+                  ? 'Administrador'
+                  : `${loggedInReceptionist.name} · ${receptionSessionLabel}`}
               </p>
             )}
             {loggedInAccountantName && (
@@ -1713,11 +1826,7 @@ export default function POSDashboard() {
                   { id: 'settings', label: 'Configuración' }
                 ]
                   .filter((item) =>
-                    isAccountantSession
-                      ? item.id === 'staff'
-                      : isManicuristaSession
-                      ? MANICURISTA_TAB_IDS.includes(item.id)
-                      : true
+                    allowedTabIds ? allowedTabIds.includes(item.id) : true
                   )
                   .map((item) => (
                   <button
@@ -1748,8 +1857,12 @@ export default function POSDashboard() {
             <div className="border-t border-primary/5 pt-4 space-y-3">
               {loggedInReceptionist && (
                 <div className="px-2">
-                  <p className="text-xs font-bold text-primary uppercase">{loggedInReceptionist.name}</p>
-                  <p className="text-[10px] text-outline">Recepción · Turno activo</p>
+                  <p className="text-xs font-bold text-primary uppercase">
+                    {isMasterSession ? 'Administrador' : loggedInReceptionist.name}
+                  </p>
+                  <p className="text-[10px] text-outline">
+                    {receptionSessionLabel}
+                  </p>
                 </div>
               )}
               {loggedInAccountantName && (

@@ -22,6 +22,15 @@ function normalizeLines(rawLines) {
     .filter((line) => line.name.length > 0 && line.price >= 0);
 }
 
+function normalizeWorkPhotos(rawPhotos) {
+  if (!Array.isArray(rawPhotos)) return [];
+
+  return rawPhotos
+    .map((photo) => String(photo || "").trim())
+    .filter((photo) => photo.startsWith("/cash-ticket-photos/"))
+    .slice(0, 3);
+}
+
 function sumLines(lines) {
   return lines.reduce((sum, line) => sum + line.price, 0);
 }
@@ -75,6 +84,7 @@ export async function POST(req) {
     const body = await req.json();
     const appointmentCode = String(body?.appointmentId || body?.appointmentCode || "").trim();
     const lines = normalizeLines(body?.lines);
+    const workPhotos = normalizeWorkPhotos(body?.workPhotos);
 
     if (!appointmentCode) {
       return NextResponse.json({ error: "Se requiere la cita" }, { status: 400 });
@@ -90,6 +100,20 @@ export async function POST(req) {
     if (lines.some((line) => line.price <= 0)) {
       return NextResponse.json(
         { error: "Cada servicio debe tener un precio mayor a cero" },
+        { status: 400 }
+      );
+    }
+
+    if (workPhotos.length === 0) {
+      return NextResponse.json(
+        { error: "Agrega al menos una foto del trabajo" },
+        { status: 400 }
+      );
+    }
+
+    if (workPhotos.length > 3) {
+      return NextResponse.json(
+        { error: "Máximo 3 fotos del trabajo por ficha" },
         { status: 400 }
       );
     }
@@ -160,6 +184,7 @@ export async function POST(req) {
       staffName: appointment.staffName,
       lines,
       subtotal,
+      workPhotos,
       status: "submitted",
       submittedByStaffId,
       submittedByStaffName: String(body.submittedByStaffName || appointment.staffName || "").trim(),

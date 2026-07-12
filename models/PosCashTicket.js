@@ -96,6 +96,10 @@ const posCashTicketSchema = mongoose.Schema(
       default: "",
       trim: true,
     },
+    workPhotos: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,

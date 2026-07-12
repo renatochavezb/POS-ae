@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
 import PosBlockedSlot from "@/models/PosBlockedSlot";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,9 @@ export async function DELETE(req, { params }) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
+
+    const manicuristaBlock = rejectManicuristaAgendaMutation(req, "abrir horarios cerrados");
+    if (manicuristaBlock) return manicuristaBlock;
 
     const { blockedSlotId } = await params;
 
