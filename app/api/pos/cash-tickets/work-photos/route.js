@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { requirePosSession } from "@/libs/posAuth";
+import { fileToWorkPhotoDataUrl } from "@/libs/posWorkPhotos";
 
 export const dynamic = "force-dynamic";
 
 const ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const MAX_PHOTOS = 3;
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
+const MAX_TOTAL_SIZE = 5 * 1024 * 1024;
 
 function sanitizeCode(value) {
   return String(value || "work")
@@ -22,7 +23,7 @@ export async function POST(req) {
     if (authResult.error) return authResult.error;
 
     const formData = await req.formData();
-    const appointmentCode = sanitizeCode(formData.get("appointmentId"));
+    sanitizeCode(formData.get("appointmentId"));
     const files = formData
       .getAll("photos")
       .filter((entry) => entry && typeof entry !== "string");
@@ -41,11 +42,8 @@ export async function POST(req) {
       );
     }
 
-    const photosDir = path.join(process.cwd(), "public", "cash-ticket-photos");
-    await mkdir(photosDir, { recursive: true });
-
     const uploaded = [];
-    const stamp = Date.now();
+    let totalBytes = 0;
 
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
@@ -61,16 +59,21 @@ export async function POST(req) {
 
       if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json(
-          { error: "Cada foto no puede pesar más de 5 MB." },
+          { error: "Cada foto no puede pesar más de 2 MB. Intenta acercarte o usa menos fotos." },
           { status: 400 }
         );
       }
 
-      const normalizedExt = ext === ".jpeg" ? ".jpg" : ext;
-      const filename = `${appointmentCode}-${stamp}-${index + 1}${normalizedExt}`;
+      totalBytes += file.size;
+      if (totalBytes > MAX_TOTAL_SIZE) {
+        return NextResponse.json(
+          { error: "Las fotos en conjunto superan el límite. Usa menos fotos o más ligeras." },
+          { status: 400 }
+        );
+      }
+
       const bytes = await file.arrayBuffer();
-      await writeFile(path.join(photosDir, filename), Buffer.from(bytes));
-      uploaded.push(`/cash-ticket-photos/${filename}`);
+      uploaded.push(fileToWorkPhotoDataUrl(Buffer.from(bytes), ext));
     }
 
     return NextResponse.json({ photos: uploaded });

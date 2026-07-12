@@ -7,6 +7,7 @@ import PosPayment from "@/models/PosPayment";
 import { mapCashTicketDoc } from "@/libs/posMappers";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 import { normalizeAppointmentStatus } from "@/components/pos/appointmentStatus";
+import { normalizeWorkPhotos } from "@/libs/posWorkPhotos";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +21,6 @@ function normalizeLines(rawLines) {
       price: Number(line?.price ?? 0),
     }))
     .filter((line) => line.name.length > 0 && line.price >= 0);
-}
-
-function normalizeWorkPhotos(rawPhotos) {
-  if (!Array.isArray(rawPhotos)) return [];
-
-  return rawPhotos
-    .map((photo) => String(photo || "").trim())
-    .filter((photo) => photo.startsWith("/cash-ticket-photos/"))
-    .slice(0, 3);
 }
 
 function sumLines(lines) {

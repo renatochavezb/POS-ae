@@ -935,20 +935,17 @@ export default function CajaView({
                     }`}
                   >
                     {selectedTicket.workPhotos?.map((photoUrl, index) => (
-                      <a
-                        key={`${photoUrl}-${index}`}
-                        href={photoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block aspect-square rounded-xl overflow-hidden border border-primary/10 bg-surface-container-low hover:opacity-90 transition-opacity"
-                        title="Ver foto completa"
+                      <div
+                        key={`${photoUrl.slice(0, 32)}-${index}`}
+                        className="block aspect-square rounded-xl overflow-hidden border border-primary/10 bg-surface-container-low"
+                        title="Foto del trabajo"
                       >
                         <img
                           src={photoUrl}
                           alt={`Trabajo ${index + 1}`}
                           className="w-full h-full object-cover"
                         />
-                      </a>
+                      </div>
                     ))}
                   </div>
                 </div>

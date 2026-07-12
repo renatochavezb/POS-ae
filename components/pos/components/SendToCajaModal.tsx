@@ -17,6 +17,45 @@ type PhotoDraft = {
 
 const MAX_WORK_PHOTOS = 3;
 
+async function compressImageForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || typeof createImageBitmap !== "function") {
+    return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxWidth = 1400;
+    const scale = Math.min(1, maxWidth / bitmap.width);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.8)
+    );
+    if (!blob) return file;
+
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "foto";
+    return new File([blob], `${baseName}.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } catch {
+    return file;
+  }
+}
+
 const createLineKey = () => `line-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const createPhotoId = () => `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -192,9 +231,12 @@ export default function SendToCajaModal({
     setError(null);
 
     try {
+      const compressedFiles = await Promise.all(
+        photos.map((photo) => compressImageForUpload(photo.file))
+      );
       const { photos: workPhotos } = await posApi.uploadCashTicketWorkPhotos(
         appointment.id,
-        photos.map((photo) => photo.file)
+        compressedFiles
       );
 
       await posApi.submitCashTicket({
