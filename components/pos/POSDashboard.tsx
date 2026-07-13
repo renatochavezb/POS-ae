@@ -1967,16 +1967,17 @@ export default function POSDashboard() {
           MODAL OVERLAYS: NEW APPOINTMENT BOOKING 
           ============================================== */}
       {isAppointmentModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-          <div className="bg-surface-container-lowest max-w-lg w-full rounded-2xl border border-primary/5 luxury-shadow overflow-hidden p-6 relative">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-container-lowest max-w-lg w-full max-h-[min(92dvh,920px)] rounded-2xl border border-primary/5 luxury-shadow overflow-hidden relative flex flex-col">
             <button 
               onClick={closeAppointmentModal}
-              className="absolute top-4 right-4 text-outline hover:text-primary transition-colors"
+              className="absolute top-4 right-4 z-10 text-outline hover:text-primary transition-colors"
               title="Cerrar"
             >
               <X className="w-5 h-5" />
             </button>
 
+            <div className="shrink-0 px-6 pt-6 pb-3 pr-12">
             <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">Cuidado Estético</span>
             <h3 className="font-display text-xl font-bold text-primary mb-2">Reservar Nueva Cita</h3>
             {bookingStaffLocked && (() => {
@@ -1984,7 +1985,7 @@ export default function POSDashboard() {
               if (!lockedStaff) return null;
               return (
                 <div
-                  className="mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5"
+                  className="mb-1 flex items-center gap-2 rounded-xl border px-3 py-2.5"
                   style={{
                     backgroundColor: lockedStaff.colorLight,
                     borderColor: `${lockedStaff.color}40`
@@ -2004,8 +2005,10 @@ export default function POSDashboard() {
                 </div>
               );
             })()}
+            </div>
 
-            <form onSubmit={handleCreateAppointment} className="space-y-4">
+            <form onSubmit={handleCreateAppointment} className="flex flex-col min-h-0 flex-1">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-2 space-y-4">
               {/* Select Client */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -2363,9 +2366,10 @@ export default function POSDashboard() {
                   ? 'El salón está cerrado en esta fecha. Elige otro día para agendar.'
                   : `Horario del día: ${bookingDaySchedule.hoursLabel}. La duración se ajusta según el servicio; puedes modificarla si hace falta.`}
               </p>
+              </div>
 
               {/* Confirm Actions */}
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-primary/5 mt-6">
+              <div className="shrink-0 px-6 py-4 flex items-center justify-end gap-3 border-t border-primary/5 bg-surface-container-lowest">
                 <button 
                   type="button" 
                   onClick={closeAppointmentModal}
