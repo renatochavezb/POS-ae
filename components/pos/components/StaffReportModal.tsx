@@ -7,7 +7,7 @@ import {
   addDays,
   formatSpanishShortDateFromYmd,
   getMexicoDateYMD,
-  getMonday,
+  getStudioWeekStart,
   getTodaySpanishShortDate,
 } from "../scheduleUtils";
 import posApi from "@/libs/posApi";
@@ -55,9 +55,9 @@ export default function StaffReportModal({
 }: StaffReportModalProps) {
   const [mode, setMode] = useState<ReportMode>("day");
   const [dayYmd, setDayYmd] = useState(() => getMexicoDateYMD(new Date()));
-  const [periodStartYmd, setPeriodStartYmd] = useState(() => getMexicoDateYMD(getMonday(new Date())));
+  const [periodStartYmd, setPeriodStartYmd] = useState(() => getMexicoDateYMD(getStudioWeekStart(new Date())));
   const [periodEndYmd, setPeriodEndYmd] = useState(() =>
-    getMexicoDateYMD(addDays(getMonday(new Date()), 6))
+    getMexicoDateYMD(addDays(getStudioWeekStart(new Date()), 6))
   );
   const [isRecording, setIsRecording] = useState(false);
 
@@ -95,7 +95,7 @@ export default function StaffReportModal({
   };
 
   const handleUseCurrentWeek = () => {
-    const start = getMonday(new Date());
+    const start = getStudioWeekStart(new Date());
     setMode("period");
     setPeriodStartYmd(getMexicoDateYMD(start));
     setPeriodEndYmd(getMexicoDateYMD(addDays(start, 6)));

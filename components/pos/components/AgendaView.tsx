@@ -18,7 +18,7 @@ import {
   DEFAULT_SCHEDULE_CONFIG,
   formatAppointmentTimeRange,
   formatDuration,
-  getMonday,
+  getStudioWeekStart,
   formatSpanishShortDateInTimeZone,
   getTodaySpanishShortDate,
   addDays,
@@ -84,12 +84,12 @@ type WeekDay = {
   rawDate: Date;
 };
 
-const generateWeekDays = (monday: Date): WeekDay[] => {
-  const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const generateWeekDays = (weekStart: Date): WeekDay[] => {
+  const dayNames = ['Sáb', 'Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'];
 
   return Array.from({ length: 7 }, (_, index) => {
-    const tempDate = new Date(monday);
-    tempDate.setDate(monday.getDate() + index);
+    const tempDate = new Date(weekStart);
+    tempDate.setDate(weekStart.getDate() + index);
     const fullDate = formatSpanishShortDateInTimeZone(tempDate);
 
     return {
@@ -147,7 +147,7 @@ export default function AgendaView({
   ticketAppointmentIds = [],
   onTicketSubmitted,
 }: AgendaViewProps) {
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getMonday(new Date()));
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [closeMode, setCloseMode] = useState(false);
   const [closeDraft, setCloseDraft] = useState<CloseDraft | null>(null);
@@ -274,20 +274,20 @@ export default function AgendaView({
 
   const handleGoToToday = () => {
     const today = new Date();
-    setCurrentWeekStart(getMonday(today));
+    setCurrentWeekStart(getStudioWeekStart(today));
     setSelectedDate(today);
   };
 
   const handlePrevWeek = () => {
-    const prevMonday = addDays(currentWeekStart, -7);
-    setCurrentWeekStart(prevMonday);
-    setSelectedDate(prevMonday);
+    const prevWeekStart = addDays(currentWeekStart, -7);
+    setCurrentWeekStart(prevWeekStart);
+    setSelectedDate(prevWeekStart);
   };
 
   const handleNextWeek = () => {
-    const nextMonday = addDays(currentWeekStart, 7);
-    setCurrentWeekStart(nextMonday);
-    setSelectedDate(nextMonday);
+    const nextWeekStart = addDays(currentWeekStart, 7);
+    setCurrentWeekStart(nextWeekStart);
+    setSelectedDate(nextWeekStart);
   };
 
   const formatSelectedDayHeading = (date: Date) => {
@@ -382,7 +382,7 @@ export default function AgendaView({
     }
   };
 
-  const gridTemplateColumns = `48px repeat(${agendaStaffList.length}, minmax(0, 1fr))`;
+  const gridTemplateColumns = `40px repeat(${agendaStaffList.length}, minmax(0, 1fr))`;
 
   const getTimelineLayout = (time: string, duration: number) => {
     const startMinutes = parseTimeToMinutes(time);
@@ -464,25 +464,25 @@ export default function AgendaView({
   };
 
   return (
-    <div className="space-y-5 md:space-y-8 animate-fade-in p-1 md:p-6 max-w-full mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Agenda por especialista</span>
-          <h2 className="font-display text-2xl md:text-3xl font-bold text-primary mt-1">
+    <div className="space-y-3 lg:space-y-8 animate-fade-in p-0 lg:p-6 max-w-full min-w-0 mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 lg:gap-4">
+        <div className="min-w-0">
+          <span className="text-secondary font-sans text-[10px] lg:text-xs font-bold tracking-widest uppercase">Agenda por especialista</span>
+          <h2 className="font-display text-xl lg:text-3xl font-bold text-primary mt-0.5 lg:mt-1">
             {lockedStaffId ? 'Mi Agenda' : 'Calendario del Día'}
           </h2>
-          <p className="text-on-surface-variant text-sm mt-1">
+          <p className="hidden lg:block text-on-surface-variant text-sm mt-1">
             {readOnly
               ? lockedStaffId
                 ? 'Vista de consulta de tu agenda. No puedes agendar, editar ni cancelar citas.'
                 : 'Vista de consulta. No puedes modificar citas.'
               : closeMode
               ? 'Haz clic en un horario para cerrarlo. No se podrán agendar citas en ese bloque.'
-              : 'Cada columna es una manicurista. En móvil verás la lista del día; en pantalla grande, el calendario por columnas.'}
+              : 'Cada columna es una manicurista. Usa el calendario por columnas para agendar y gestionar citas.'}
           </p>
         </div>
         {!readOnly && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             disabled={isSalonClosed}
@@ -491,7 +491,7 @@ export default function AgendaView({
               setCloseMode((prev) => !prev);
               setCloseDraft(null);
             }}
-            className={`hidden lg:flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all border ${
+            className={`flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 rounded-lg font-sans text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all border ${
               isSalonClosed
                 ? 'border-primary/10 text-outline opacity-50 cursor-not-allowed'
                 : closeMode
@@ -499,7 +499,7 @@ export default function AgendaView({
                 : 'border-primary/10 text-primary hover:bg-surface-container-low'
             }`}
           >
-            <Lock className="w-4 h-4" />
+            <Lock className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             <span>{closeMode ? 'Cerrar: activo' : 'Cerrar horario'}</span>
           </button>
           <button
@@ -511,13 +511,13 @@ export default function AgendaView({
               onOpenNewAppointment(selectedDayLabel);
             }}
             disabled={isSalonClosed}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-sans text-xs font-bold uppercase tracking-wider transition-all shadow-sm ${
+            className={`flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 rounded-lg font-sans text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all shadow-sm ${
               isSalonClosed
                 ? 'bg-surface-container-low text-outline cursor-not-allowed opacity-60'
                 : 'bg-primary text-on-primary hover:bg-primary-container'
             }`}
           >
-            <Plus className="w-4 h-4 text-secondary" />
+            <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-secondary" />
             <span>Reservar Cita</span>
           </button>
         </div>
@@ -556,29 +556,29 @@ export default function AgendaView({
 
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="px-3 py-2 rounded-xl border border-primary/10 bg-primary/5 text-center min-w-[76px]">
-                      <p className="text-lg font-display font-extrabold text-primary leading-none">
+                    <div className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-xl border border-primary/10 bg-primary/5 text-center min-w-[56px] lg:min-w-[76px]">
+                      <p className="text-base lg:text-lg font-display font-extrabold text-primary leading-none">
                         {dailyStats.citas}
                       </p>
-                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Citas</p>
+                      <p className="text-[8px] lg:text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Citas</p>
                     </div>
-                    <div className="px-3 py-2 rounded-xl border border-sky-200 bg-sky-50 text-center min-w-[76px]">
-                      <p className="text-lg font-display font-extrabold text-sky-700 leading-none">
+                    <div className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-xl border border-sky-200 bg-sky-50 text-center min-w-[56px] lg:min-w-[76px]">
+                      <p className="text-base lg:text-lg font-display font-extrabold text-sky-700 leading-none">
                         {dailyStats.sinConfirmar}
                       </p>
-                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Sin confirmar</p>
+                      <p className="text-[8px] lg:text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Sin conf.</p>
                     </div>
-                    <div className="px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-center min-w-[76px]">
-                      <p className="text-lg font-display font-extrabold text-emerald-700 leading-none">
+                    <div className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-center min-w-[56px] lg:min-w-[76px]">
+                      <p className="text-base lg:text-lg font-display font-extrabold text-emerald-700 leading-none">
                         {dailyStats.pagadas}
                       </p>
-                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Pagadas</p>
+                      <p className="text-[8px] lg:text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Pagadas</p>
                     </div>
-                    <div className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-center min-w-[76px]">
-                      <p className="text-lg font-display font-extrabold text-red-700 leading-none">
+                    <div className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-xl border border-red-200 bg-red-50 text-center min-w-[56px] lg:min-w-[76px]">
+                      <p className="text-base lg:text-lg font-display font-extrabold text-red-700 leading-none">
                         {dailyStats.canceladas}
                       </p>
-                      <p className="text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Canceladas</p>
+                      <p className="text-[8px] lg:text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Cancel.</p>
                     </div>
                   </div>
 
@@ -664,78 +664,13 @@ export default function AgendaView({
             ) : null}
           </div>
 
-          <div className="lg:hidden px-4 md:px-6 pb-4 space-y-3">
-            <p className="text-[10px] text-outline font-bold uppercase tracking-wider">
-              Citas del día · vista móvil
-            </p>
-            {todayAppointments.length === 0 ? (
-              <p className="text-xs text-outline rounded-xl border border-primary/10 bg-surface px-4 py-6 text-center">
-                No hay citas para este día.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {[...todayAppointments]
-                  .sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time))
-                  .map((appointment) => {
-                    const appointmentStaff =
-                      getStaffById(staffList, appointment.staffId) ?? agendaStaffList[0];
-                    const duration = appointment.duration;
-
-                    return (
-                      <button
-                        key={appointment.id}
-                        type="button"
-                        onClick={() => setSelectedAppointment(appointment)}
-                        className="w-full text-left rounded-xl border p-3 shadow-sm transition-transform active:scale-[0.99]"
-                        style={{
-                          backgroundColor: appointmentStaff?.colorLight ?? '#f6f3f2',
-                          borderColor: appointmentStaff?.color ?? '#00261b',
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-primary truncate">
-                              {appointment.clientName}
-                            </p>
-                            <p className="text-[11px] text-outline mt-0.5">
-                              {appointment.staffName}
-                            </p>
-                          </div>
-                          <span className="text-xs font-mono font-bold text-primary shrink-0">
-                            {formatAppointmentTimeRange(appointment.time, duration)}
-                          </span>
-                        </div>
-                        <div className="mt-2">
-                          <AppointmentServiceList
-                            serviceName={appointment.serviceName}
-                            lineClassName="text-[11px] text-outline line-clamp-2"
-                          />
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-black/10">
-                          <AppointmentStatusControls
-                            compact
-                            readOnly={readOnly}
-                            status={appointment.status}
-                            accentColor={appointmentStaff?.color}
-                            onChange={(nextStatus) =>
-                              onUpdateAppointmentStatus(appointment.id, nextStatus)
-                            }
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-
-          <div className="hidden lg:block overflow-x-auto">
-            <div className="w-full min-w-[860px]">
+          <div className="min-w-0 overflow-x-auto">
+            <div className="w-full min-w-0">
               <div
                 className="border-b border-primary/5 bg-surface-container-low/20"
                 style={{ display: 'grid', gridTemplateColumns }}
               >
-                <div className="px-1 py-2 border-r border-primary/5 flex items-center justify-center text-[9px] text-outline font-bold uppercase tracking-widest">
+                <div className="px-0.5 py-2 border-r border-primary/5 flex items-center justify-center text-[8px] lg:text-[9px] text-outline font-bold uppercase tracking-widest">
                   Hora
                 </div>
                 {agendaStaffList.map((staff) => (
@@ -744,21 +679,23 @@ export default function AgendaView({
                     type="button"
                     onClick={() => onSelectStaff(staff.id)}
                     title={`${staff.name} — ${staff.role}`}
-                    className="px-1 py-2 border-r border-primary/5 text-center hover:bg-surface-container-low/40 transition-colors min-w-0"
+                    className="px-0.5 lg:px-1 py-2 border-r border-primary/5 text-center hover:bg-surface-container-low/40 transition-colors min-w-0"
                     style={{ borderTop: `3px solid ${staff.color}` }}
                   >
                     <div
-                      className="w-7 h-7 rounded-full mx-auto flex items-center justify-center text-[9px] font-bold"
+                      className="w-6 h-6 lg:w-7 lg:h-7 rounded-full mx-auto flex items-center justify-center text-[8px] lg:text-[9px] font-bold"
                       style={{ backgroundColor: staff.colorLight, color: staff.color }}
                     >
                       {staff.id}
                     </div>
-                    <p className="text-[10px] font-bold text-primary mt-1 truncate px-0.5">{staff.name}</p>
+                    <p className="text-[9px] lg:text-[10px] font-bold text-primary mt-1 truncate px-0.5">
+                      {staff.name.split(' ')[0]}
+                    </p>
                   </button>
                 ))}
               </div>
 
-              <div className="max-h-[calc(100dvh-280px)] min-h-[420px] lg:min-h-[520px] overflow-y-auto relative">
+              <div className="max-h-[calc(100dvh-240px)] lg:max-h-[calc(100dvh-280px)] min-h-[360px] lg:min-h-[520px] overflow-y-auto relative">
                 {isSalonClosed ? (
                   <div
                     className="absolute inset-0 z-30 pointer-events-none"

@@ -11,12 +11,15 @@ import {
   TrendingUp,
   Trash2
 } from 'lucide-react';
-import { Staff, StaffStatus, Receptionist } from '../types';
+import { Appointment, Staff, StaffStatus, Receptionist } from '../types';
 import { formatServicePrice, INITIAL_RECEPTIONISTS } from '../data';
 import AccountantActivityPanel from './AccountantActivityPanel';
+import { isAppointmentPaid } from '../appointmentStatus';
+import { buildWeekDayEntries, getStudioWeekStart } from '../scheduleUtils';
 
 interface StaffViewProps {
   staffList: Staff[];
+  appointments: Appointment[];
   receptionists: Receptionist[];
   onOpenNewStaff: () => void;
   onSelectStaff: (_staffId: string) => void;
@@ -30,6 +33,7 @@ interface StaffViewProps {
 
 export default function StaffView({
   staffList,
+  appointments,
   receptionists,
   onOpenNewStaff,
   onSelectStaff,
@@ -62,6 +66,22 @@ export default function StaffView({
 
     return matchesSearch && matchesStatus;
   });
+
+  const currentWeekDateLabels = new Set(
+    buildWeekDayEntries(getStudioWeekStart(new Date())).map((day) => day.dateLabel)
+  );
+
+  const weeklyRevenueByStaff = appointments.reduce((totals, appointment) => {
+    if (!isAppointmentPaid(appointment.status) || !currentWeekDateLabels.has(appointment.date)) {
+      return totals;
+    }
+
+    totals.set(
+      appointment.staffId,
+      (totals.get(appointment.staffId) ?? 0) + (appointment.cost || 0)
+    );
+    return totals;
+  }, new Map<string, number>());
 
   return (
     <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-7xl mx-auto">
@@ -236,8 +256,8 @@ export default function StaffView({
                   <TrendingUp className="w-3.5 h-3.5 text-secondary" /> Ventas Semana
                 </span>
                 <span className="font-display font-black text-primary">
-                  {staff.weeklyRevenue > 0
-                    ? formatServicePrice(staff.weeklyRevenue)
+                  {(weeklyRevenueByStaff.get(staff.id) ?? 0) > 0
+                    ? formatServicePrice(weeklyRevenueByStaff.get(staff.id) ?? 0)
                     : 'Por definir'}
                 </span>
               </div>

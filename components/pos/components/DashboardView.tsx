@@ -1,20 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { 
-  CheckCircle2, 
-  TrendingUp, 
-  Clock, 
   Plus, 
   UserPlus, 
   ShieldAlert, 
-  DollarSign, 
   ArrowRight,
-  MoreVertical,
   ChevronRight,
   UserCheck
 } from 'lucide-react';
 import { Staff, Client, Appointment } from '../types';
 import { formatMXN } from '../data';
-import { isAppointmentPaid } from '../appointmentStatus';
+import { getBookableStaff } from '@/libs/posStaffAgenda';
+import WeeklyCompletedAppointmentsCard from './WeeklyCompletedAppointmentsCard';
+import WeeklySalesCard from './WeeklySalesCard';
+import WeeklyCutsCard from './WeeklyCutsCard';
+import CabinOccupancyCard from './CabinOccupancyCard';
 
 interface DashboardViewProps {
   staffList: Staff[];
@@ -36,20 +35,15 @@ export default function DashboardView({
   onSelectStaff
 }: DashboardViewProps) {
   
-  // Local state to simulate live notifications
-  const [salonLoad, setSalonload] = useState({ occupied: 5, total: 6 });
   const [waitingQueue, setWaitingQueue] = useState([
     { id: 'wq-1', name: 'María González', service: 'Soft gel / Gel X', time: '13:00', status: 'En espera' },
     { id: 'wq-2', name: 'Ana Lucía Ruiz', service: 'Laminado de ceja', time: '13:30', status: 'En camino' }
   ]);
 
-  // Compute stats based on appointments & clients
-  const completedAppointments = appointments.filter((a) => isAppointmentPaid(a.status));
-  const totalSales = completedAppointments.reduce((sum, a) => sum + a.cost, 0);
-  const averageTicket = completedAppointments.length > 0 ? (totalSales / completedAppointments.length) : 0;
-
-  // Active or working staff members today
-  const activeStaff = staffList.filter(s => s.status === 'online' || s.status === 'break');
+  const operationalStaff = useMemo(() => getBookableStaff(staffList), [staffList]);
+  const activeStaff = operationalStaff.filter(
+    (member) => member.status === 'online' || member.status === 'break'
+  );
 
   const handleAttendInQueue = (id: string) => {
     setWaitingQueue(waitingQueue.filter(item => item.id !== id));
@@ -83,56 +77,24 @@ export default function DashboardView({
       </div>
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Card 1: Completed Appointments */}
-        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
-          <div className="space-y-3">
-            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">Citas Finalizadas</span>
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-4xl font-extrabold text-primary">{completedAppointments.length + 15}</span>
-              <span className="text-emerald-700 text-xs font-bold font-sans flex items-center gap-0.5">
-                +18% hoy
-              </span>
-            </div>
-            <p className="text-xs text-on-surface-variant">Meta diaria de 20 citas superada con éxito.</p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/5 flex items-center justify-center text-emerald-700">
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-2 gap-6 items-stretch">
+        <div className="h-full min-h-0">
+          <WeeklyCompletedAppointmentsCard
+            appointments={appointments}
+            staffList={staffList}
+          />
         </div>
 
-        {/* Card 2: Sales Total */}
-        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
-          <div className="space-y-3">
-            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">Ventas Totales</span>
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-4xl font-extrabold text-primary">{formatMXN(totalSales + 1420)}</span>
-              <span className="text-secondary text-xs font-bold font-sans flex items-center gap-0.5">
-                +12% vs ayer
-              </span>
-            </div>
-            <p className="text-xs text-on-surface-variant">Ticket promedio actual de {formatMXN(averageTicket)} por visita.</p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
-            <TrendingUp className="w-6 h-6" />
-          </div>
+        <div className="md:col-span-2 h-full min-h-0">
+          <WeeklySalesCard appointments={appointments} staffList={staffList} />
         </div>
 
-        {/* Card 3: Salon Load */}
-        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
-          <div className="space-y-3">
-            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">Ocupación Cabinas</span>
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-4xl font-extrabold text-primary">{salonLoad.occupied}/{salonLoad.total}</span>
-              <span className="text-sky-700 text-xs font-bold font-sans">
-                {Math.round((salonLoad.occupied / salonLoad.total) * 100)}% de carga
-              </span>
-            </div>
-            <p className="text-xs text-on-surface-variant">2 cabinas de esmalte de gel listas para citas entrantes.</p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-primary/5 flex items-center justify-center text-primary">
-            <Clock className="w-6 h-6 text-secondary" />
-          </div>
+        <div className="h-full min-h-0">
+          <CabinOccupancyCard staffList={staffList} />
+        </div>
+
+        <div className="md:col-span-2 h-full min-h-0">
+          <WeeklyCutsCard />
         </div>
       </div>
 
@@ -164,7 +126,7 @@ export default function DashboardView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-primary/5">
-                  {staffList.map((staff) => (
+                  {operationalStaff.map((staff) => (
                     <tr 
                       key={staff.id} 
                       className="hover:bg-surface-container-low/30 transition-colors group cursor-pointer"

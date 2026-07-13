@@ -1,16 +1,24 @@
 import { useSession } from 'next-auth/react';
 import { useEffect, useState } from 'react';
-import { 
-  LayoutDashboard, 
-  CalendarDays, 
-  Users, 
-  Sparkles, 
-  Settings, 
+import {
+  LayoutDashboard,
+  CalendarDays,
+  Users,
+  Sparkles,
+  Settings,
   LogOut,
   Award,
-  Banknote
+  Banknote,
+  ChevronDown,
+  Package,
 } from 'lucide-react';
 import StudioLogo from './StudioLogo';
+import {
+  ADMIN_SECTION_ICON,
+  ADMIN_SECTION_LABEL,
+  AdminNavItem,
+  isAdminTab,
+} from '../admin/adminNav';
 
 interface SidebarProps {
   currentTab: string;
@@ -24,19 +32,28 @@ interface SidebarProps {
   isMasterSession?: boolean;
   onOpenMasterPanel?: () => void;
   allowedTabIds?: string[];
+  adminNavItems?: AdminNavItem[];
 }
 
-export default function Sidebar({ 
-  currentTab, 
+export default function Sidebar({
+  currentTab,
   setCurrentTab,
   activeSession,
   onLogout,
   isMasterSession = false,
   onOpenMasterPanel,
   allowedTabIds,
+  adminNavItems = [],
 }: SidebarProps) {
   const { data: session } = useSession();
   const [logoClicks, setLogoClicks] = useState(0);
+  const [adminExpanded, setAdminExpanded] = useState(isAdminTab(currentTab));
+
+  useEffect(() => {
+    if (isAdminTab(currentTab)) {
+      setAdminExpanded(true);
+    }
+  }, [currentTab]);
 
   useEffect(() => {
     if (!isMasterSession || logoClicks < 3) return;
@@ -52,17 +69,18 @@ export default function Sidebar({
     return () => window.clearTimeout(timer);
   }, [logoClicks]);
 
-  const userName = activeSession?.name || session?.user?.name || "Admin Jane";
-  const userEmail = activeSession?.subtitle || session?.user?.email || "Gerente General";
-  const userInitials = activeSession?.initials || (session?.user?.name
-    ? session.user.name
-        .split(' ')
-        .map((n: string) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : "JD");
-  
+  const userName = activeSession?.name || session?.user?.name || 'Admin Jane';
+  const userEmail = activeSession?.subtitle || session?.user?.email || 'Gerente General';
+  const userInitials = activeSession?.initials ||
+    (session?.user?.name
+      ? session.user.name
+          .split(' ')
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2)
+      : 'JD');
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'agenda', label: 'Agenda', icon: CalendarDays },
@@ -70,27 +88,32 @@ export default function Sidebar({
     { id: 'clients', label: 'Clientes', icon: Users },
     { id: 'staff', label: 'Equipo', icon: Award },
     { id: 'services', label: 'Servicios', icon: Sparkles },
+    { id: 'inventario', label: 'Inventario', icon: Package },
     { id: 'settings', label: 'Configuración', icon: Settings },
   ].filter((item) => !allowedTabIds || allowedTabIds.includes(item.id));
 
+  const AdminSectionIcon = ADMIN_SECTION_ICON;
+  const adminSectionActive = isAdminTab(currentTab);
+
   return (
-    <aside className="w-64 h-full min-h-0 bg-surface border-r border-primary/10 flex flex-col hidden md:flex shrink-0">
-      {/* Brand Logo */}
+    <aside className="w-[4.25rem] lg:w-64 h-full min-h-0 bg-surface border-r border-primary/10 flex flex-col shrink-0 transition-[width] duration-200">
       <div
-        className="p-5 border-b border-primary/5 flex items-center gap-3 select-none shrink-0"
+        className="p-3 lg:p-5 border-b border-primary/5 flex items-center justify-center lg:justify-start gap-3 select-none shrink-0"
         onClick={() => {
           if (isMasterSession) {
             setLogoClicks((prev) => prev + 1);
           }
         }}
-        title={isMasterSession ? 'Acceso maestro' : undefined}
+        title={isMasterSession ? 'Acceso maestro' : 'studio aé'}
       >
-        <StudioLogo size="sm" showWordmark />
+        <StudioLogo size="sm" showWordmark={false} className="lg:hidden" />
+        <div className="hidden lg:block">
+          <StudioLogo size="sm" showWordmark />
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-        {/* Navigation Links */}
-        <nav className="py-4 px-4 space-y-2">
+        <nav className="py-3 px-2 lg:py-4 lg:px-4 space-y-1.5 lg:space-y-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
@@ -100,37 +123,101 @@ export default function Sidebar({
                 onClick={() => {
                   setCurrentTab(item.id);
                 }}
-                className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg font-sans text-xs tracking-widest font-bold uppercase transition-all duration-300 ${
-                  isActive 
-                    ? 'bg-primary/5 text-primary border-l-2 border-secondary' 
+                title={item.label}
+                className={`w-full flex items-center justify-center lg:justify-start gap-0 lg:gap-4 px-0 lg:px-4 py-3 rounded-lg font-sans text-xs tracking-widest font-bold uppercase transition-all duration-300 ${
+                  isActive
+                    ? 'bg-primary/5 text-primary lg:border-l-2 border-secondary'
                     : 'text-outline hover:bg-surface-container-low hover:text-primary'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-secondary' : 'text-outline group-hover:text-primary'}`} />
-                <span>{item.label}</span>
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${isActive ? 'text-secondary' : 'text-outline'}`}
+                />
+                <span className="hidden lg:inline">{item.label}</span>
               </button>
             );
           })}
+
+          {adminNavItems.length > 0 ? (
+            <div className="pt-1 lg:pt-2">
+              <button
+                type="button"
+                onClick={() => setAdminExpanded((prev) => !prev)}
+                title={ADMIN_SECTION_LABEL}
+                className={`w-full flex items-center justify-center lg:justify-between gap-0 lg:gap-3 px-0 lg:px-4 py-3 rounded-lg font-sans text-xs tracking-widest font-bold uppercase transition-all duration-300 ${
+                  adminSectionActive
+                    ? 'bg-primary/5 text-primary lg:border-l-2 border-secondary'
+                    : 'text-outline hover:bg-surface-container-low hover:text-primary'
+                }`}
+              >
+                <span className="flex items-center justify-center lg:justify-start gap-0 lg:gap-4">
+                  <AdminSectionIcon
+                    className={`w-4 h-4 shrink-0 ${adminSectionActive ? 'text-secondary' : 'text-outline'}`}
+                  />
+                  <span className="hidden lg:inline">{ADMIN_SECTION_LABEL}</span>
+                </span>
+                <ChevronDown
+                  className={`hidden lg:block w-4 h-4 transition-transform ${adminExpanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {adminExpanded ? (
+                <div className="mt-1 space-y-1 lg:ml-3 lg:pl-3 lg:border-l lg:border-primary/10">
+                  {adminNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = currentTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setCurrentTab(item.id)}
+                        title={item.label}
+                        className={`w-full flex items-center justify-center lg:justify-start gap-0 lg:gap-3 px-0 lg:px-3 py-2.5 rounded-lg font-sans text-[10px] tracking-wider font-bold uppercase transition-all ${
+                          isActive
+                            ? 'bg-secondary/10 text-primary'
+                            : 'text-outline hover:bg-surface-container-low hover:text-primary'
+                        }`}
+                      >
+                        <Icon
+                          className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-secondary' : 'text-outline'}`}
+                        />
+                        <span className="hidden lg:inline">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </nav>
 
-        {/* Administrator Footnote */}
-        <div className="p-4 border-t border-primary/5 bg-surface-container-low/50 shrink-0">
-          <div className="flex items-center gap-3 p-2 hover:bg-surface-container-low rounded-lg transition-colors cursor-pointer group">
-            <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold text-sm shrink-0">
+        <div className="p-2 lg:p-4 border-t border-primary/5 bg-surface-container-low/50 shrink-0 mt-auto">
+          <div className="flex items-center justify-center lg:justify-start gap-0 lg:gap-3 p-1.5 lg:p-2 hover:bg-surface-container-low rounded-lg transition-colors">
+            <div
+              className="w-9 h-9 lg:w-10 lg:h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold text-sm shrink-0"
+              title={`${userName} · ${userEmail}`}
+            >
               {userInitials}
             </div>
-            <div className="flex-grow min-w-0">
+            <div className="hidden lg:block flex-grow min-w-0">
               <p className="text-xs font-bold truncate text-primary uppercase">{userName}</p>
               <p className="text-[10px] text-outline truncate">{userEmail}</p>
             </div>
-            <button 
+            <button
               onClick={onLogout}
               title="Cerrar sesión"
-              className="text-outline hover:text-error transition-colors p-1 shrink-0"
+              className="hidden lg:inline-flex text-outline hover:text-error transition-colors p-1 shrink-0"
             >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
+          <button
+            onClick={onLogout}
+            title="Cerrar sesión"
+            className="lg:hidden mt-1 w-full flex items-center justify-center py-2 text-outline hover:text-error transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </aside>

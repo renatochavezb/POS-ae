@@ -7,7 +7,7 @@ import {
   addDays,
   formatSpanishShortDateFromYmd,
   getMexicoDateYMD,
-  getMonday,
+  getStudioWeekStart,
 } from "../scheduleUtils";
 import {
   buildStaffReportPeriodTitle,
@@ -55,9 +55,9 @@ export default function StaffLiquidateModal({
 }: StaffLiquidateModalProps) {
   const [mode, setMode] = useState<LiquidateMode>("day");
   const [dayYmd, setDayYmd] = useState(() => getMexicoDateYMD(new Date()));
-  const [periodStartYmd, setPeriodStartYmd] = useState(() => getMexicoDateYMD(getMonday(new Date())));
+  const [periodStartYmd, setPeriodStartYmd] = useState(() => getMexicoDateYMD(getStudioWeekStart(new Date())));
   const [periodEndYmd, setPeriodEndYmd] = useState(() =>
-    getMexicoDateYMD(addDays(getMonday(new Date()), 6))
+    getMexicoDateYMD(addDays(getStudioWeekStart(new Date()), 6))
   );
   const [step, setStep] = useState<"period" | "pin">("period");
   const [accountants, setAccountants] = useState<Accountant[]>([]);
@@ -70,9 +70,9 @@ export default function StaffLiquidateModal({
     setStep("period");
     setError(null);
     setDayYmd(getMexicoDateYMD(new Date()));
-    const weekStartMonday = getMonday(new Date());
-    setPeriodStartYmd(getMexicoDateYMD(weekStartMonday));
-    setPeriodEndYmd(getMexicoDateYMD(addDays(weekStartMonday, 6)));
+    const currentWeekStart = getStudioWeekStart(new Date());
+    setPeriodStartYmd(getMexicoDateYMD(currentWeekStart));
+    setPeriodEndYmd(getMexicoDateYMD(addDays(currentWeekStart, 6)));
 
     posApi
       .getAccountants()
@@ -304,7 +304,7 @@ export default function StaffLiquidateModal({
             <button
               type="button"
               onClick={() => {
-                const start = getMonday(new Date());
+                const start = getStudioWeekStart(new Date());
                 setMode("period");
                 setPeriodStartYmd(getMexicoDateYMD(start));
                 setPeriodEndYmd(getMexicoDateYMD(addDays(start, 6)));

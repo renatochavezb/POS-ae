@@ -343,3 +343,135 @@ export interface CashRegisterState {
   today: string;
   cashDay: string;
 }
+
+export type ExpenseCategoryRole = "reception" | "accountant" | "both";
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  description: string;
+  allowedRoles: ExpenseCategoryRole;
+  isActive: boolean;
+}
+
+export type ExpensePaymentMethod = "efectivo" | "tarjeta" | "transferencia" | "cheque";
+export type ExpenseStatus = "pendiente" | "pagado" | "cancelado";
+
+export interface Expense {
+  id: string;
+  categoryCode: string;
+  categoryName: string;
+  description: string;
+  amount: number;
+  expenseDate: string;
+  paymentMethod: ExpensePaymentMethod;
+  status: ExpenseStatus;
+  supplierCode: string;
+  supplierName: string;
+  receiptReference: string;
+  notes: string;
+  recordedByRole: "reception" | "accountant" | "master";
+  recordedById: string;
+  recordedByName: string;
+  approvedByAccountantId: string;
+  cashSessionCode: string;
+  createdAt?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  taxId: string;
+  category: string;
+  paymentTerms: string;
+  notes: string;
+  isActive: boolean;
+  recordedByRole: "reception" | "accountant" | "master";
+  recordedById: string;
+  recordedByName: string;
+  createdAt?: string;
+}
+
+export interface InventoryCategory {
+  id: string;
+  label: string;
+  description: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: string;
+  system: string;
+  brand: string;
+  shade: string;
+  unit: string;
+  currentStock: number;
+  minStock: number;
+  unitCost: number;
+  supplierCode: string;
+  supplierName: string;
+  lastRestockedAt: string;
+  notes: string;
+  isActive: boolean;
+  recordedByRole: "reception" | "accountant" | "master";
+  recordedById: string;
+  recordedByName: string;
+  createdAt?: string;
+}
+
+export interface PurchaseLine {
+  itemCode: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+  subtotal: number;
+}
+
+export type PurchaseStatus = "borrador" | "recibida" | "cancelada";
+export type PurchasePaymentStatus = "pendiente" | "parcial" | "pagada";
+
+export interface Purchase {
+  id: string;
+  supplierCode: string;
+  supplierName: string;
+  purchaseDate: string;
+  items: PurchaseLine[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  status: PurchaseStatus;
+  paymentStatus: PurchasePaymentStatus;
+  notes: string;
+  recordedByRole: "reception" | "accountant" | "master";
+  recordedById: string;
+  recordedByName: string;
+  createdAt?: string;
+}
+
+export type PayableStatus = "pendiente" | "pagada" | "vencida" | "cancelada";
+
+export interface Payable {
+  id: string;
+  supplierCode: string;
+  supplierName: string;
+  concept: string;
+  amount: number;
+  dueDate: string;
+  status: PayableStatus;
+  linkedExpenseCode: string;
+  linkedPurchaseCode: string;
+  paidAt: string;
+  paidAmount: number;
+  notes: string;
+  recordedByRole: "reception" | "accountant" | "master";
+  recordedById: string;
+  recordedByName: string;
+  createdAt?: string;
+}

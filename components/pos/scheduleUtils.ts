@@ -59,6 +59,21 @@ export const getMexicoDateYMD = (date: Date = new Date()): string =>
     day: '2-digit',
   }).format(date);
 
+/** Minutos desde medianoche en la zona horaria del salón. */
+export const getMexicoTimeMinutes = (date: Date = new Date()): number => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: POS_TIME_ZONE,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(date);
+
+  const hours = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
+  const minutes = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+
+  return hours * 60 + minutes;
+};
+
 /** Convierte YYYY-MM-DD a Date local (medianoche). */
 export const dateFromMexicoYmd = (ymd: string): Date => {
   const [year, month, day] = ymd.split('-').map(Number);
@@ -69,13 +84,15 @@ export const dateFromMexicoYmd = (ymd: string): Date => {
 export const formatSpanishShortDateFromYmd = (ymd: string): string =>
   formatSpanishShortDateInTimeZone(dateFromMexicoYmd(ymd));
 
-/** Lunes de la semana que contiene la fecha dada. */
-export const getMonday = (date: Date): Date => {
+/** Sábado de la semana operativa del studio (sábado a viernes). */
+export const getStudioWeekStart = (date: Date): Date => {
   const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = normalized.getDay();
-  const diff = normalized.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(normalized.setDate(diff));
+  const daysSinceSaturday = (normalized.getDay() + 1) % 7;
+  return addDays(normalized, -daysSinceSaturday);
 };
+
+/** @deprecated Usar getStudioWeekStart. Se mantiene como alias para imports existentes. */
+export const getMonday = getStudioWeekStart;
 
 export const addDays = (date: Date, days: number): Date => {
   const next = new Date(date);
@@ -83,7 +100,7 @@ export const addDays = (date: Date, days: number): Date => {
   return next;
 };
 
-export const WEEK_DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const;
+export const WEEK_DAY_LABELS = ['Sáb', 'Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'] as const;
 
 export type WeekDayEntry = {
   dayLabel: string;
@@ -91,10 +108,10 @@ export type WeekDayEntry = {
   date: Date;
 };
 
-/** Lunes a domingo de la semana que empieza en weekStartMonday. */
-export function buildWeekDayEntries(weekStartMonday: Date): WeekDayEntry[] {
+/** Sábado a viernes de la semana operativa que empieza en weekStart. */
+export function buildWeekDayEntries(weekStart: Date): WeekDayEntry[] {
   return WEEK_DAY_LABELS.map((dayLabel, index) => {
-    const date = addDays(weekStartMonday, index);
+    const date = addDays(weekStart, index);
     return {
       dayLabel,
       dateLabel: formatSpanishShortDateInTimeZone(date),
@@ -104,9 +121,9 @@ export function buildWeekDayEntries(weekStartMonday: Date): WeekDayEntry[] {
 }
 
 /** Rango legible: "29 Jun – 5 Jul, 2026" */
-export function formatWeekRangeLabel(weekStartMonday: Date): string {
-  const weekEnd = addDays(weekStartMonday, 6);
-  const startLabel = formatSpanishShortDateInTimeZone(weekStartMonday);
+export function formatWeekRangeLabel(weekStart: Date): string {
+  const weekEnd = addDays(weekStart, 6);
+  const startLabel = formatSpanishShortDateInTimeZone(weekStart);
   const endLabel = formatSpanishShortDateInTimeZone(weekEnd);
 
   const startMatch = startLabel.match(/^(\d{1,2})\s+([A-Za-záéíóú]+)/i);
@@ -119,8 +136,8 @@ export function formatWeekRangeLabel(weekStartMonday: Date): string {
   return `${startMatch[1]} ${startMatch[2]} – ${endMatch[1]} ${endMatch[2]}, ${endMatch[3]}`;
 }
 
-export function isCurrentWeek(weekStartMonday: Date): boolean {
-  return getMonday(new Date()).getTime() === weekStartMonday.getTime();
+export function isCurrentWeek(weekStart: Date): boolean {
+  return getStudioWeekStart(new Date()).getTime() === weekStart.getTime();
 }
 
 /** Hourly rows shown in the agenda grid (9:00 – 21:00). */

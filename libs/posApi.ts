@@ -19,8 +19,19 @@ import {
   StaffSettlement,
   StaffSettlementAppointmentSnapshot,
   AccountantActivity,
+  Expense,
+  ExpenseCategory,
+  Supplier,
+  InventoryCategory,
+  InventoryItem,
+  Purchase,
+  Payable,
 } from "@/components/pos/types";
-import { getActiveReceptionistSession, readPosSession } from "@/libs/posSession";
+import {
+  getActiveAccountantSession,
+  getActiveReceptionistSession,
+  readPosSession,
+} from "@/libs/posSession";
 import { INITIAL_RECEPTIONISTS } from "@/components/pos/data";
 
 const posClient = axios.create({ baseURL: "/api" });
@@ -40,9 +51,17 @@ const attachReceptionistToRequest = (config: InternalAxiosRequestConfig) => {
   if (typeof window === "undefined") return config;
 
   const receptionist = getActiveReceptionistSession();
-  if (!receptionist?.id) return config;
-
-  config.headers.set("X-Pos-Receptionist-Id", receptionist.id);
+  const session = readPosSession();
+  if (receptionist?.id) {
+    config.headers.set("X-Pos-Receptionist-Id", receptionist.id);
+    const receptionistName =
+      INITIAL_RECEPTIONISTS.find((member) => member.id === receptionist.id)?.name || "";
+    if (receptionistName) {
+      config.headers.set("X-Pos-Receptionist-Name", receptionistName);
+    }
+  } else if (session?.isMaster) {
+    config.headers.set("X-Pos-Receptionist-Name", "Administrador");
+  }
 
   const isCreateAppointment =
     config.method?.toLowerCase() === "post" &&
@@ -57,13 +76,27 @@ const attachReceptionistToRequest = (config: InternalAxiosRequestConfig) => {
       : {};
 
   const receptionistName =
-    INITIAL_RECEPTIONISTS.find((member) => member.id === receptionist.id)?.name || "";
+    INITIAL_RECEPTIONISTS.find((member) => member.id === receptionist?.id)?.name || "";
 
   config.data = {
     ...payload,
-    bookedByReceptionistId: payload.bookedByReceptionistId || receptionist.id,
+    bookedByReceptionistId: payload.bookedByReceptionistId || receptionist?.id,
     bookedByReceptionistName: payload.bookedByReceptionistName || receptionistName,
   };
+
+  return config;
+};
+
+const attachAccountantToRequest = (config: InternalAxiosRequestConfig) => {
+  if (typeof window === "undefined") return config;
+
+  const accountant = getActiveAccountantSession();
+  if (!accountant?.id) return config;
+
+  config.headers.set("X-Pos-Accountant-Id", accountant.id);
+  if (accountant.name) {
+    config.headers.set("X-Pos-Accountant-Name", accountant.name);
+  }
 
   return config;
 };
@@ -80,7 +113,9 @@ const attachStaffToRequest = (config: InternalAxiosRequestConfig) => {
 };
 
 posClient.interceptors.request.use((config) =>
-  attachStaffToRequest(attachReceptionistToRequest(attachMasterSessionHeader(config)))
+  attachStaffToRequest(
+    attachAccountantToRequest(attachReceptionistToRequest(attachMasterSessionHeader(config)))
+  )
 );
 
 posClient.interceptors.response.use(
@@ -418,6 +453,119 @@ const posApi = {
     processedByReceptionistName?: string;
   }): Promise<{ payment: PosPayment; appointment: Appointment }> {
     return posClient.post("/pos/payments", data);
+  },
+  getExpenseCategories(): Promise<ExpenseCategory[]> {
+    return posClient.get("/pos/expense-categories");
+  },
+  getExpenses(params?: { status?: string; categoryCode?: string }): Promise<Expense[]> {
+    return posClient.get("/pos/expenses", { params });
+  },
+  createExpense(data: {
+    categoryCode: string;
+    description: string;
+    amount: number;
+    expenseDate?: string;
+    paymentMethod?: Expense["paymentMethod"];
+    status?: Expense["status"];
+    supplierCode?: string;
+    supplierName?: string;
+    receiptReference?: string;
+    notes?: string;
+    cashSessionCode?: string;
+  }): Promise<Expense> {
+    return posClient.post("/pos/expenses", data);
+  },
+  getSuppliers(): Promise<Supplier[]> {
+    return posClient.get("/pos/suppliers");
+  },
+  createSupplier(data: {
+    name: string;
+    contactName?: string;
+    phone?: string;
+    email?: string;
+    taxId?: string;
+    category?: string;
+    paymentTerms?: string;
+    notes?: string;
+  }): Promise<Supplier> {
+    return posClient.post("/pos/suppliers", data);
+  },
+  getInventoryCategories(): Promise<InventoryCategory[]> {
+    return posClient.get("/pos/inventory-categories");
+  },
+  createInventoryCategory(data: {
+    name: string;
+    description?: string;
+  }): Promise<InventoryCategory> {
+    return posClient.post("/pos/inventory-categories", data);
+  },
+  getInventoryItems(): Promise<InventoryItem[]> {
+    return posClient.get("/pos/inventory");
+  },
+  createInventoryItem(data: {
+    name: string;
+    category?: string;
+    system?: string;
+    brand?: string;
+    shade?: string;
+    unit?: string;
+    currentStock?: number;
+    minStock?: number;
+    unitCost?: number;
+    supplierCode?: string;
+    supplierName?: string;
+    notes?: string;
+  }): Promise<InventoryItem> {
+    return posClient.post("/pos/inventory", data);
+  },
+  adjustInventoryStock(
+    itemCode: string,
+    stockAdjustment: number,
+    notes?: string
+  ): Promise<InventoryItem> {
+    return posClient.patch(`/pos/inventory/${itemCode}`, { stockAdjustment, notes });
+  },
+  getPurchases(): Promise<Purchase[]> {
+    return posClient.get("/pos/purchases");
+  },
+  createPurchase(data: {
+    supplierCode?: string;
+    supplierName: string;
+    purchaseDate?: string;
+    items: Array<{
+      itemCode?: string;
+      name: string;
+      quantity: number;
+      unitCost: number;
+    }>;
+    tax?: number;
+    status?: Purchase["status"];
+    paymentStatus?: Purchase["paymentStatus"];
+    notes?: string;
+  }): Promise<Purchase> {
+    return posClient.post("/pos/purchases", data);
+  },
+  getPayables(): Promise<Payable[]> {
+    return posClient.get("/pos/payables");
+  },
+  createPayable(data: {
+    supplierCode?: string;
+    supplierName: string;
+    concept: string;
+    amount: number;
+    dueDate: string;
+    status?: Payable["status"];
+    linkedExpenseCode?: string;
+    linkedPurchaseCode?: string;
+    notes?: string;
+  }): Promise<Payable> {
+    return posClient.post("/pos/payables", data);
+  },
+  updatePayable(
+    payableCode: string,
+    data: { status?: Payable["status"]; paidAmount?: number; notes?: string }
+  ): Promise<Payable> {
+    return posClient.patch(`/pos/payables/${payableCode}`, data);
   },
 };
 

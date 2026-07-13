@@ -61,13 +61,40 @@ import SettingsView from './components/SettingsView';
 import LoginView from './components/LoginView';
 import StudioLogo from './components/StudioLogo';
 import CajaView from './components/CajaView';
+import InventarioView from './components/InventarioView';
 import MasterReceptionLogView from './components/MasterReceptionLogView';
+import AdminGastosView from './admin/AdminGastosView';
+import AdminProveedoresView from './admin/AdminProveedoresView';
+import AdminComprasView from './admin/AdminComprasView';
+import AdminCuentasPagarView from './admin/AdminCuentasPagarView';
+import {
+  ADMIN_NAV_ITEMS,
+  filterAdminNavByRole,
+} from './admin/adminNav';
 import posApi, { ReceptionistAuthPayload } from '@/libs/posApi';
 import { getBookableStaff } from '@/libs/posStaffAgenda';
 import { readPosSession, writePosSession, clearPosSession, PosSession, getActiveReceptionistSession, markAccountantLogoutRecorded, wasAccountantLogoutRecorded } from '@/libs/posSession';
 
 const MANICURISTA_TAB_IDS = ['agenda', 'staff', 'caja'];
-const RECEPTIONIST_TAB_IDS = ['agenda', 'caja', 'clients', 'staff', 'services'];
+const RECEPTIONIST_ADMIN_TAB_IDS = ADMIN_NAV_ITEMS.filter((item) =>
+  item.roles.includes('reception')
+).map((item) => item.id);
+const ACCOUNTANT_ADMIN_TAB_IDS = [
+  'admin-gastos',
+  'admin-proveedores',
+  'admin-compras',
+  'admin-cuentas-pagar',
+];
+const RECEPTIONIST_TAB_IDS = [
+  'agenda',
+  'caja',
+  'clients',
+  'staff',
+  'services',
+  'inventario',
+  ...RECEPTIONIST_ADMIN_TAB_IDS,
+];
+const ACCOUNTANT_TAB_IDS = ['staff', 'inventario', ...ACCOUNTANT_ADMIN_TAB_IDS];
 const AGENDA_POLL_INTERVAL_MS = 30_000;
 
 const isReceptionSupervisorRole = (role?: string) => /supervis/i.test(role || '');
@@ -375,12 +402,22 @@ export default function POSDashboard() {
     : 'Recepción';
 
   const allowedTabIds = isAccountantSession
-    ? ['staff']
+    ? ACCOUNTANT_TAB_IDS
     : isManicuristaSession
     ? MANICURISTA_TAB_IDS
     : isPlainReceptionSession
     ? RECEPTIONIST_TAB_IDS
     : undefined;
+
+  const adminNavItems = useMemo(
+    () =>
+      filterAdminNavByRole(ADMIN_NAV_ITEMS, {
+        isMaster: isMasterSession,
+        isAccountant: isAccountantSession,
+        isReception: Boolean(loggedInReceptionistId) && !isAccountantSession,
+      }),
+    [isMasterSession, isAccountantSession, loggedInReceptionistId]
+  );
 
   const activeSession = isMasterSession && loggedInReceptionist
     ? {
@@ -602,7 +639,7 @@ export default function POSDashboard() {
 
   useEffect(() => {
     if (!isAccountantSession) return;
-    if (currentTab !== 'staff') {
+    if (!ACCOUNTANT_TAB_IDS.includes(currentTab)) {
       setCurrentTab('staff');
     }
     setSelectedClientId(null);
@@ -1607,6 +1644,7 @@ export default function POSDashboard() {
         return (
           <StaffView 
             staffList={staffList}
+            appointments={appointments}
             receptionists={receptionists}
             onOpenNewStaff={() => setIsStaffModalOpen(true)}
             onSelectStaff={(id) => setSelectedStaffId(id)}
@@ -1627,6 +1665,8 @@ export default function POSDashboard() {
             }
           />
         );
+      case 'inventario':
+        return <InventarioView />;
       case 'settings':
         return (
           <SettingsView
@@ -1634,6 +1674,19 @@ export default function POSDashboard() {
             onScheduleConfigUpdated={setScheduleConfig}
           />
         );
+      case 'admin-gastos':
+        return (
+          <AdminGastosView
+            isAccountantSession={isAccountantSession}
+            isMasterSession={isMasterSession}
+          />
+        );
+      case 'admin-proveedores':
+        return <AdminProveedoresView />;
+      case 'admin-compras':
+        return <AdminComprasView />;
+      case 'admin-cuentas-pagar':
+        return <AdminCuentasPagarView />;
       case 'master-log':
         return (
           <MasterReceptionLogView
@@ -1712,7 +1765,7 @@ export default function POSDashboard() {
             Sesión de contabilidad ·{' '}
             <span className="text-emerald-800 uppercase tracking-wider">{loggedInAccountantName}</span>
             <span className="text-outline font-medium normal-case tracking-normal">
-              {' '}· Acceso limitado a Equipo
+              {' '}· Equipo y administración
             </span>
           </p>
         </div>
@@ -1733,7 +1786,7 @@ export default function POSDashboard() {
       <Sidebar 
         currentTab={currentTab} 
         setCurrentTab={(tab) => {
-          if (isAccountantSession && tab !== 'staff') return;
+          if (isAccountantSession && !ACCOUNTANT_TAB_IDS.includes(tab)) return;
           if (isManicuristaSession && !MANICURISTA_TAB_IDS.includes(tab)) return;
           if (isPlainReceptionSession && !RECEPTIONIST_TAB_IDS.includes(tab)) return;
           setCurrentTab(tab);
@@ -1749,13 +1802,14 @@ export default function POSDashboard() {
         isMasterSession={isMasterSession}
         onOpenMasterPanel={() => setCurrentTab('master-log')}
         allowedTabIds={allowedTabIds}
+        adminNavItems={adminNavItems}
       />
 
       {/* 2. Main content scrollable canvas shell */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
         
-        {/* Mobile Header bar */}
-        <header className="md:hidden h-16 border-b border-primary/10 px-6 flex items-center justify-between shrink-0 bg-surface">
+        {/* Compact header (phones only — tablets/desktop use the sidebar) */}
+        <header className="hidden h-16 border-b border-primary/10 px-6 items-center justify-between shrink-0 bg-surface">
           <div
             className="flex flex-col min-w-0 select-none"
             onClick={() => {
@@ -1793,14 +1847,14 @@ export default function POSDashboard() {
         </header>
 
         {/* Dynamic Inner Panel Renders */}
-        <main className="flex-grow overflow-y-auto px-3 sm:px-4 md:px-8 py-4 md:py-8">
+        <main className="flex-grow overflow-y-auto min-w-0 px-2 sm:px-3 lg:px-8 py-3 lg:py-8">
           {renderTabContent()}
         </main>
       </div>
 
       {/* 3. Mobile Navigation Menu Drawer overlay */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end animate-fade-in md:hidden">
+        <div className="fixed inset-0 bg-black/50 z-50 justify-end animate-fade-in hidden">
           <div className="w-64 h-full bg-surface p-6 flex flex-col justify-between border-l border-primary/10 relative">
             <button 
               onClick={() => setMobileMenuOpen(false)}
@@ -1823,6 +1877,7 @@ export default function POSDashboard() {
                   { id: 'clients', label: 'Clientes CRM' },
                   { id: 'staff', label: 'Equipo' },
                   { id: 'services', label: 'Servicios' },
+                  { id: 'inventario', label: 'Inventario Manicura' },
                   { id: 'settings', label: 'Configuración' }
                 ]
                   .filter((item) =>
@@ -1850,6 +1905,31 @@ export default function POSDashboard() {
                     {item.label}
                   </button>
                 ))}
+                {adminNavItems.length > 0 ? (
+                  <div className="pt-2 border-t border-primary/5">
+                    <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-secondary">
+                      Administración
+                    </p>
+                    {adminNavItems.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setCurrentTab(item.id);
+                          setSelectedClientId(null);
+                          setSelectedStaffId(null);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-3 rounded-lg font-sans text-xs tracking-wider uppercase font-bold transition-colors ${
+                          currentTab === item.id
+                            ? 'bg-primary/5 text-primary border-l-2 border-secondary'
+                            : 'text-outline hover:text-primary'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </nav>
             </div>
 
@@ -1868,7 +1948,7 @@ export default function POSDashboard() {
               {loggedInAccountantName && (
                 <div className="px-2">
                   <p className="text-xs font-bold text-primary uppercase">{loggedInAccountantName}</p>
-                  <p className="text-[10px] text-outline">Contabilidad · Solo equipo</p>
+                  <p className="text-[10px] text-outline">Contabilidad · Equipo y administración</p>
                 </div>
               )}
               <button

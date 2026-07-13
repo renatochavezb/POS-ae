@@ -22,7 +22,7 @@ import {
   formatSpanishShortDateInTimeZone,
   formatWeekRangeLabel,
   getMexicoDateYMD,
-  getMonday,
+  getStudioWeekStart,
   getTodaySpanishShortDate,
   isCurrentWeek,
 } from '../scheduleUtils';
@@ -67,11 +67,11 @@ export default function StaffAnalyticsView({
   readOnly = false,
   hideBack = false,
 }: StaffAnalyticsViewProps) {
-  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()));
+  const [weekStart, setWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [workHistoryMode, setWorkHistoryMode] = useState<WorkHistoryMode>('day');
   const [workDayDate, setWorkDayDate] = useState<Date>(() => new Date());
-  const [periodStart, setPeriodStart] = useState<Date>(() => getMonday(new Date()));
-  const [periodEnd, setPeriodEnd] = useState<Date>(() => addDays(getMonday(new Date()), 6));
+  const [periodStart, setPeriodStart] = useState<Date>(() => getStudioWeekStart(new Date()));
+  const [periodEnd, setPeriodEnd] = useState<Date>(() => addDays(getStudioWeekStart(new Date()), 6));
   const [settlements, setSettlements] = useState<StaffSettlement[]>([]);
   const [isLiquidateModalOpen, setIsLiquidateModalOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -178,7 +178,7 @@ export default function StaffAnalyticsView({
 
   const handlePrevWeek = () => setWeekStart((prev) => addDays(prev, -7));
   const handleNextWeek = () => setWeekStart((prev) => addDays(prev, 7));
-  const handleGoToCurrentWeek = () => setWeekStart(getMonday(new Date()));
+  const handleGoToCurrentWeek = () => setWeekStart(getStudioWeekStart(new Date()));
 
   const handlePrevWorkDay = () => setWorkDayDate((prev) => addDays(prev, -1));
   const handleNextWorkDay = () => setWorkDayDate((prev) => addDays(prev, 1));

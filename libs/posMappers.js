@@ -324,3 +324,140 @@ export function mapAccountantActivityDoc(doc) {
     metadata: raw.metadata || null,
   };
 }
+
+export function mapExpenseCategoryDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.categoryCode,
+    name: raw.name,
+    description: raw.description || "",
+    allowedRoles: raw.allowedRoles || "both",
+    isActive: raw.isActive !== false,
+  };
+}
+
+export function mapExpenseDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.expenseCode,
+    categoryCode: raw.categoryCode,
+    categoryName: raw.categoryName,
+    description: raw.description,
+    amount: raw.amount ?? 0,
+    expenseDate: raw.expenseDate,
+    paymentMethod: raw.paymentMethod || "efectivo",
+    status: raw.status || "pagado",
+    supplierCode: raw.supplierCode || "",
+    supplierName: raw.supplierName || "",
+    receiptReference: raw.receiptReference || "",
+    notes: raw.notes || "",
+    recordedByRole: raw.recordedByRole,
+    recordedById: raw.recordedById || "",
+    recordedByName: raw.recordedByName,
+    approvedByAccountantId: raw.approvedByAccountantId || "",
+    cashSessionCode: raw.cashSessionCode || "",
+    createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
+  };
+}
+
+export function mapSupplierDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.supplierCode,
+    name: raw.name,
+    contactName: raw.contactName || "",
+    phone: raw.phone || "",
+    email: raw.email || "",
+    taxId: raw.taxId || "",
+    category: raw.category || "general",
+    paymentTerms: raw.paymentTerms || "",
+    notes: raw.notes || "",
+    isActive: raw.isActive !== false,
+    recordedByRole: raw.recordedByRole || "accountant",
+    recordedById: raw.recordedById || "",
+    recordedByName: raw.recordedByName || "",
+    createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
+  };
+}
+
+export function mapInventoryItemDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.itemCode,
+    name: raw.name,
+    category: raw.category || "consumibles",
+    system: raw.system || "universal",
+    brand: raw.brand || "",
+    shade: raw.shade || "",
+    unit: raw.unit || "pieza",
+    currentStock: raw.currentStock ?? 0,
+    minStock: raw.minStock ?? 0,
+    unitCost: raw.unitCost ?? 0,
+    supplierCode: raw.supplierCode || "",
+    supplierName: raw.supplierName || "",
+    lastRestockedAt: raw.lastRestockedAt
+      ? new Date(raw.lastRestockedAt).toISOString()
+      : "",
+    notes: raw.notes || "",
+    isActive: raw.isActive !== false,
+    recordedByRole: raw.recordedByRole || "reception",
+    recordedById: raw.recordedById || "",
+    recordedByName: raw.recordedByName || "",
+    createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
+  };
+}
+
+export function mapPurchaseDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.purchaseCode,
+    supplierCode: raw.supplierCode || "",
+    supplierName: raw.supplierName,
+    purchaseDate: raw.purchaseDate,
+    items: (raw.items || []).map((line) => ({
+      itemCode: line.itemCode || "",
+      name: line.name,
+      quantity: line.quantity ?? 0,
+      unitCost: line.unitCost ?? 0,
+      subtotal: line.subtotal ?? 0,
+    })),
+    subtotal: raw.subtotal ?? 0,
+    tax: raw.tax ?? 0,
+    total: raw.total ?? 0,
+    status: raw.status || "recibida",
+    paymentStatus: raw.paymentStatus || "pendiente",
+    notes: raw.notes || "",
+    recordedByRole: raw.recordedByRole,
+    recordedById: raw.recordedById || "",
+    recordedByName: raw.recordedByName,
+    createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
+  };
+}
+
+export function mapPayableDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.payableCode,
+    supplierCode: raw.supplierCode || "",
+    supplierName: raw.supplierName,
+    concept: raw.concept,
+    amount: raw.amount ?? 0,
+    dueDate: raw.dueDate,
+    status: raw.status || "pendiente",
+    linkedExpenseCode: raw.linkedExpenseCode || "",
+    linkedPurchaseCode: raw.linkedPurchaseCode || "",
+    paidAt: raw.paidAt ? new Date(raw.paidAt).toISOString() : "",
+    paidAmount: raw.paidAmount ?? 0,
+    notes: raw.notes || "",
+    recordedByRole: raw.recordedByRole,
+    recordedById: raw.recordedById || "",
+    recordedByName: raw.recordedByName,
+    createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
+  };
+}
