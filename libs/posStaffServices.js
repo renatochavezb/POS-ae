@@ -10,7 +10,13 @@ export const DEFAULT_STAFF_PINS = {
   VE: "5555",
   DA: "6666",
   VN: "7777",
+  // Código legado en MongoDB (Vanny se creó como "V", no "VN")
+  V: "7777",
 };
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 export function getAllowedServiceIdsForStaffCode(staffCode) {
   return INITIAL_SERVICES.filter((service) =>
@@ -60,6 +66,19 @@ export async function syncStaffAllowedServices() {
 export async function syncStaffLoginCodes() {
   for (const [staffCode, loginCode] of Object.entries(DEFAULT_STAFF_PINS)) {
     await PosStaff.updateOne({ staffCode }, { $set: { loginCode } });
+  }
+
+  // Si el staffCode divergió del seed (ej. Vanny = "V"), alinear PIN por nombre.
+  for (const member of INITIAL_STAFF) {
+    const loginCode = DEFAULT_STAFF_PINS[member.id];
+    if (!loginCode) continue;
+
+    await PosStaff.updateMany(
+      {
+        name: { $regex: `^${escapeRegex(member.name)}$`, $options: "i" },
+      },
+      { $set: { loginCode } }
+    );
   }
 
   await PosStaff.updateMany(
