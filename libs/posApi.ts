@@ -197,6 +197,53 @@ const posApi = {
   }): Promise<ScheduleConfig> {
     return posClient.patch("/pos/schedule-config", payload);
   },
+  getLoginCodes(): Promise<{
+    staff: Array<{
+      role: "staff";
+      id: string;
+      name: string;
+      subtitle: string;
+      loginCode: string;
+      isActive: boolean;
+    }>;
+    receptionists: Array<{
+      role: "reception";
+      id: string;
+      name: string;
+      subtitle: string;
+      loginCode: string;
+      isActive: boolean;
+    }>;
+    accountants: Array<{
+      role: "accountant";
+      id: string;
+      name: string;
+      subtitle: string;
+      loginCode: string;
+      isActive: boolean;
+    }>;
+    master: {
+      role: "master";
+      id: string;
+      name: string;
+      subtitle: string;
+      loginCode: string;
+      isActive: boolean;
+    };
+  }> {
+    return posClient.get("/pos/admin/login-codes");
+  },
+  updateLoginCodes(payload: {
+    adminPin: string;
+    updates: Array<{
+      role: "staff" | "reception" | "accountant" | "master";
+      id: string;
+      loginCode: string;
+      name?: string;
+    }>;
+  }): Promise<{ success: boolean; updated: Array<{ role: string; id: string; loginCode: string }> }> {
+    return posClient.patch("/pos/admin/login-codes", payload);
+  },
   getClients(): Promise<Client[]> {
     return posClient.get("/pos/clients");
   },

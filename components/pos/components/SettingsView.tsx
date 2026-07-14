@@ -12,10 +12,12 @@ import { ScheduleConfig, WeeklyHoursConfig, WeeklyHoursSlot } from "../types";
 import { DEFAULT_SCHEDULE_CONFIG } from "../scheduleUtils";
 import posApi from "@/libs/posApi";
 import MasterPinModal from "./MasterPinModal";
+import PersonnelPinsPanel from "./PersonnelPinsPanel";
 
 type SettingsViewProps = {
   scheduleConfig: ScheduleConfig;
   onScheduleConfigUpdated?: (config: ScheduleConfig) => void;
+  isMasterSession?: boolean;
 };
 
 type WeeklyHoursKey = keyof WeeklyHoursConfig;
@@ -49,6 +51,7 @@ function formatSlotLabel(slot: WeeklyHoursSlot) {
 export default function SettingsView({
   scheduleConfig,
   onScheduleConfigUpdated,
+  isMasterSession = false,
 }: SettingsViewProps) {
   const [studioName, setStudioName] = useState("aé Studio");
   const [phone, setPhone] = useState("");
@@ -399,6 +402,8 @@ export default function SettingsView({
               </button>
             </div>
           </div>
+
+          {isMasterSession ? <PersonnelPinsPanel /> : null}
 
           <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow space-y-4">
             <h3 className="font-display font-bold text-sm text-primary flex items-center gap-2 border-b border-primary/5 pb-2">

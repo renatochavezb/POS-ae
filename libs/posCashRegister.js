@@ -3,7 +3,7 @@ import PosCashSession from "@/models/PosCashSession";
 import { logCashRegisterAudit } from "@/libs/posReceptionistAuth";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
-export const PAYMENT_METHODS = ["efectivo", "tarjeta", "transferencia", "mixto"];
+export const PAYMENT_METHODS = ["efectivo", "tarjeta", "transferencia", "gift_card", "mixto"];
 
 export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, cardAmount, transferAmount }) {
   const serviceTotal = Number(amount) || 0;
@@ -20,19 +20,63 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
       throw new Error("Los montos del pago mixto no coinciden con el total.");
     }
 
-    return { amount: serviceTotal, tip: tipValue, total, cashAmount: cash, cardAmount: card, transferAmount: transfer };
+    return {
+      amount: serviceTotal,
+      tip: tipValue,
+      total,
+      cashAmount: cash,
+      cardAmount: card,
+      transferAmount: transfer,
+      giftCardAmount: 0,
+    };
   }
 
   if (method === "efectivo") {
-    return { amount: serviceTotal, tip: tipValue, total, cashAmount: total, cardAmount: 0, transferAmount: 0 };
+    return {
+      amount: serviceTotal,
+      tip: tipValue,
+      total,
+      cashAmount: total,
+      cardAmount: 0,
+      transferAmount: 0,
+      giftCardAmount: 0,
+    };
   }
 
   if (method === "tarjeta") {
-    return { amount: serviceTotal, tip: tipValue, total, cashAmount: 0, cardAmount: total, transferAmount: 0 };
+    return {
+      amount: serviceTotal,
+      tip: tipValue,
+      total,
+      cashAmount: 0,
+      cardAmount: total,
+      transferAmount: 0,
+      giftCardAmount: 0,
+    };
   }
 
   if (method === "transferencia") {
-    return { amount: serviceTotal, tip: tipValue, total, cashAmount: 0, cardAmount: 0, transferAmount: total };
+    return {
+      amount: serviceTotal,
+      tip: tipValue,
+      total,
+      cashAmount: 0,
+      cardAmount: 0,
+      transferAmount: total,
+      giftCardAmount: 0,
+    };
+  }
+
+  if (method === "gift_card") {
+    return {
+      amount: serviceTotal,
+      tip: tipValue,
+      total,
+      cashAmount: 0,
+      cardAmount: 0,
+      transferAmount: 0,
+      giftCardAmount: total,
+    };
   }
 
   throw new Error("Método de pago no válido.");
@@ -106,6 +150,7 @@ export function summarizePayments(payments = []) {
       acc.efectivo += payment.cashAmount ?? 0;
       acc.tarjeta += payment.cardAmount ?? 0;
       acc.transferencia += payment.transferAmount ?? 0;
+      acc.gift_card += payment.giftCardAmount ?? 0;
       acc.tips += payment.tip ?? 0;
       acc.services += payment.amount ?? 0;
       return acc;
@@ -116,6 +161,7 @@ export function summarizePayments(payments = []) {
       efectivo: 0,
       tarjeta: 0,
       transferencia: 0,
+      gift_card: 0,
       tips: 0,
       services: 0,
     }
@@ -156,6 +202,7 @@ export async function refreshCashSessionTotals(sessionCode) {
         totalEfectivo: summary.efectivo,
         totalTarjeta: summary.tarjeta,
         totalTransferencia: summary.transferencia,
+        totalGiftCard: summary.gift_card,
       },
     }
   );

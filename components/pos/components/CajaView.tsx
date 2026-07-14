@@ -6,6 +6,7 @@ import {
   CreditCard,
   ArrowRightLeft,
   Wallet,
+  Gift,
   Lock,
   Unlock,
   Receipt,
@@ -53,6 +54,7 @@ const EMPTY_SUMMARY = {
   efectivo: 0,
   tarjeta: 0,
   transferencia: 0,
+  gift_card: 0,
   tips: 0,
   services: 0,
 };
@@ -63,8 +65,17 @@ const METHOD_OPTIONS: { id: PaymentMethod; label: string; icon: typeof Banknote 
   { id: 'efectivo', label: 'Efectivo', icon: Banknote },
   { id: 'tarjeta', label: 'Tarjeta', icon: CreditCard },
   { id: 'transferencia', label: 'Transferencia', icon: ArrowRightLeft },
+  { id: 'gift_card', label: 'Gift Card', icon: Gift },
   { id: 'mixto', label: 'Mixto', icon: Wallet },
 ];
+
+const METHOD_LABELS: Record<PaymentMethod, string> = {
+  efectivo: 'Efectivo',
+  tarjeta: 'Tarjeta',
+  transferencia: 'Transferencia',
+  gift_card: 'Gift Card',
+  mixto: 'Mixto',
+};
 
 export default function CajaView({
   appointments,
@@ -901,7 +912,7 @@ export default function CajaView({
         <section className="xl:col-span-1 bg-surface border border-primary/10 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-primary/5 bg-surface-container-low/40">
             <h3 className="font-display text-lg font-bold text-primary">Registrar cobro</h3>
-            <p className="text-xs text-outline mt-1">Efectivo, tarjeta, transferencia o mixto</p>
+            <p className="text-xs text-outline mt-1">Efectivo, tarjeta, transferencia, gift card o mixto</p>
           </div>
 
           {!session ? (
@@ -1046,7 +1057,7 @@ export default function CajaView({
 
               <div>
                 <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-2">Método de pago</p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {METHOD_OPTIONS.map((option) => {
                     const Icon = option.icon;
                     const active = method === option.id;
@@ -1495,7 +1506,7 @@ function SummaryCard({
       <p className={`font-display text-2xl font-bold mt-2 ${accent === 'secondary' ? 'text-secondary' : 'text-primary'}`}>
         {formatMXN(summary.total)}
       </p>
-      <div className="grid grid-cols-3 gap-2 mt-4 text-[10px]">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 text-[10px]">
         <div>
           <p className="text-outline font-bold uppercase">Efectivo</p>
           <p className="font-bold text-primary mt-1">{formatMXN(summary.efectivo)}</p>
@@ -1507,6 +1518,10 @@ function SummaryCard({
         <div>
           <p className="text-outline font-bold uppercase">Transf.</p>
           <p className="font-bold text-primary mt-1">{formatMXN(summary.transferencia)}</p>
+        </div>
+        <div>
+          <p className="text-outline font-bold uppercase">Gift Card</p>
+          <p className="font-bold text-primary mt-1">{formatMXN(summary.gift_card ?? 0)}</p>
         </div>
       </div>
       <p className="text-[10px] text-outline mt-3">{summary.count} servicios · propinas {formatMXN(summary.tips)}</p>
@@ -1755,10 +1770,7 @@ function TicketLinesList({
 }
 
 function PaymentRow({ payment }: { payment: PosPayment }) {
-  const methodLabel =
-    payment.method === 'mixto'
-      ? 'Mixto'
-      : payment.method.charAt(0).toUpperCase() + payment.method.slice(1);
+  const methodLabel = METHOD_LABELS[payment.method] || payment.method;
 
   return (
     <div className="p-4">

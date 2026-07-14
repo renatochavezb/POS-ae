@@ -141,18 +141,27 @@ export async function seedPosReceptionistsIfEmpty() {
 }
 
 export async function syncReceptionistLoginCodes() {
+  // Solo rellenar PINs vacíos — no sobrescribir códigos ya guardados en Mongo.
   for (const member of INITIAL_RECEPTIONISTS) {
     const loginCode = String(member.loginCode || "").trim();
     if (!loginCode) continue;
 
+    const emptyFilter = {
+      $or: [
+        { loginCode: { $exists: false } },
+        { loginCode: "" },
+        { loginCode: null },
+      ],
+    };
+
     const byCode = await PosReceptionist.updateOne(
-      { receptionistCode: member.id },
+      { receptionistCode: member.id, ...emptyFilter },
       { $set: { loginCode } }
     );
 
     if (byCode.matchedCount === 0) {
       await PosReceptionist.updateOne(
-        { name: member.name },
+        { name: member.name, ...emptyFilter },
         { $set: { loginCode } }
       );
     }

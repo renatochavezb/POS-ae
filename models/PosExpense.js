@@ -36,7 +36,7 @@ const posExpenseSchema = mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["efectivo", "tarjeta", "transferencia", "cheque"],
+      enum: ["efectivo", "tarjeta", "transferencia", "cheque", "gift_card"],
       default: "efectivo",
     },
     status: {

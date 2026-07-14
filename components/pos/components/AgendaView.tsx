@@ -1036,13 +1036,13 @@ export default function AgendaView({
         const duration = selectedAppointment.duration;
 
         return (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm">
             <div
-              className="bg-surface-container-lowest max-w-md w-full rounded-2xl border luxury-shadow overflow-hidden relative"
+              className="bg-surface-container-lowest max-w-md w-full max-h-[min(92dvh,920px)] rounded-2xl border luxury-shadow overflow-hidden relative flex flex-col"
               style={{ borderColor: `${detailStaff?.color ?? '#00261b'}40` }}
             >
               <div
-                className="h-1.5 w-full"
+                className="h-1.5 w-full shrink-0"
                 style={{ backgroundColor: detailStaff?.color ?? '#00261b' }}
               />
 
@@ -1055,19 +1055,19 @@ export default function AgendaView({
                 <X className="w-5 h-5" />
               </button>
 
-              <div className="p-6 space-y-5">
-                <div>
-                  <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">
-                    Detalle de cita
-                  </span>
-                  <h3 className="font-display text-xl font-bold text-primary pr-8">
-                    {selectedAppointment.clientName}
-                  </h3>
-                  <p className="text-[10px] text-outline font-mono mt-0.5">
-                    ID cita: {selectedAppointment.id} · Cliente: {selectedAppointment.clientId}
-                  </p>
-                </div>
+              <div className="shrink-0 px-6 pt-5 pb-3 pr-12">
+                <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">
+                  Detalle de cita
+                </span>
+                <h3 className="font-display text-xl font-bold text-primary">
+                  {selectedAppointment.clientName}
+                </h3>
+                <p className="text-[10px] text-outline font-mono mt-0.5">
+                  ID cita: {selectedAppointment.id} · Cliente: {selectedAppointment.clientId}
+                </p>
+              </div>
 
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-2 space-y-5">
                 <AppointmentStatusControls
                   readOnly={readOnly}
                   status={selectedAppointment.status}
@@ -1135,10 +1135,12 @@ export default function AgendaView({
                     </div>
                   </div>
                 </div>
+              </div>
 
+              <div className="shrink-0 px-6 py-4 space-y-3 border-t border-primary/5 bg-surface-container-lowest">
                 {!readOnly && (
-                <div className="pt-2 flex items-center justify-between gap-3 border-t border-primary/5">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {canCancelAppointment(selectedAppointment.status) && (
                       <button
                         type="button"
@@ -1177,7 +1179,7 @@ export default function AgendaView({
                 </div>
                 )}
                 {readOnly && services.length > 0 && selectedAppointment.status !== 'cancelled' && (
-                  <div className="pt-2 border-t border-primary/5">
+                  <div>
                     {ticketAppointmentIds.includes(selectedAppointment.id) ? (
                       <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                         Ficha enviada a caja. La recepción la cobrará.
@@ -1194,7 +1196,7 @@ export default function AgendaView({
                     )}
                   </div>
                 )}
-                <div className={`${readOnly ? 'pt-2 border-t border-primary/5' : ''} flex justify-end`}>
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => setSelectedAppointment(null)}

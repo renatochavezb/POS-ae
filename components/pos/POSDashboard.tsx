@@ -1672,6 +1672,7 @@ export default function POSDashboard() {
           <SettingsView
             scheduleConfig={scheduleConfig}
             onScheduleConfigUpdated={setScheduleConfig}
+            isMasterSession={isMasterSession}
           />
         );
       case 'admin-gastos':
@@ -2407,23 +2408,26 @@ export default function POSDashboard() {
           MODAL OVERLAYS: REGISTER NEW CLIENT VIP
           ============================================== */}
       {isClientModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-          <div className="bg-surface-container-lowest max-w-lg w-full rounded-2xl border border-primary/5 luxury-shadow overflow-hidden p-6 relative">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-container-lowest max-w-lg w-full max-h-[min(92dvh,920px)] rounded-2xl border border-primary/5 luxury-shadow overflow-hidden relative flex flex-col">
             <button 
               onClick={() => setIsClientModalOpen(false)}
-              className="absolute top-4 right-4 text-outline hover:text-primary transition-colors"
+              className="absolute top-4 right-4 z-10 text-outline hover:text-primary transition-colors"
               title="Cerrar"
             >
               <X className="w-5 h-5" />
             </button>
 
+            <div className="shrink-0 px-6 pt-6 pb-3 pr-12">
             <span className="text-secondary font-sans text-[10px] font-extrabold uppercase tracking-widest block mb-1">Registro de Clientes</span>
-            <h3 className="font-display text-xl font-bold text-primary mb-5">Registrar Cliente en studio aé</h3>
-            <p className="text-xs text-outline mb-4">
+            <h3 className="font-display text-xl font-bold text-primary mb-2">Registrar Cliente en studio aé</h3>
+            <p className="text-xs text-outline">
               El ID se genera automáticamente (SA-1001, SA-1002…). El teléfono evita registros duplicados.
             </p>
+            </div>
 
-            <form onSubmit={handleCreateClient} className="space-y-4">
+            <form onSubmit={handleCreateClient} className="flex flex-col min-h-0 flex-1">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-2 space-y-4">
               <div className="space-y-1">
                 <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">Nombre Completo</label>
                 <input 
@@ -2496,7 +2500,7 @@ export default function POSDashboard() {
 
               {/* Alert note input */}
               <div className="space-y-1">
-                <label className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block flex items-center gap-1">
+                <label className="text-[10px] text-amber-800 font-bold uppercase tracking-wider flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Contraindicación o Alergia Médica (Opcional)
                 </label>
                 <input 
@@ -2507,9 +2511,10 @@ export default function POSDashboard() {
                   className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs font-sans font-bold text-amber-900 bg-amber-50/20 outline-none focus:border-amber-600"
                 />
               </div>
+              </div>
 
               {/* Confirm Actions */}
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-primary/5 mt-6">
+              <div className="shrink-0 px-6 py-4 flex items-center justify-end gap-3 border-t border-primary/5 bg-surface-container-lowest">
                 <button 
                   type="button" 
                   onClick={() => setIsClientModalOpen(false)}

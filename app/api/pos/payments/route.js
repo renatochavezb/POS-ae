@@ -224,6 +224,7 @@ export async function POST(req) {
       cashAmount: breakdown.cashAmount,
       cardAmount: breakdown.cardAmount,
       transferAmount: breakdown.transferAmount,
+      giftCardAmount: breakdown.giftCardAmount,
       cashSessionCode: openSession.sessionCode,
       processedByReceptionistId,
       processedByReceptionistName,

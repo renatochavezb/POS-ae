@@ -201,6 +201,7 @@ export default function AdminGastosView({
                 <option value="efectivo">Efectivo</option>
                 <option value="tarjeta">Tarjeta</option>
                 <option value="transferencia">Transferencia</option>
+                <option value="gift_card">Gift Card</option>
                 <option value="cheque">Cheque</option>
               </select>
             </label>

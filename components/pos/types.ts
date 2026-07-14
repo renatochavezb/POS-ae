@@ -239,7 +239,7 @@ export interface DailyStats {
   canceladas: number;
 }
 
-export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'mixto';
+export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'gift_card' | 'mixto';
 
 export interface CashTicketLine {
   serviceId?: string;
@@ -286,6 +286,7 @@ export interface PosPayment {
   cashAmount: number;
   cardAmount: number;
   transferAmount: number;
+  giftCardAmount: number;
   cashSessionId: string;
   processedByReceptionistId: string;
   processedByReceptionistName: string;
@@ -299,6 +300,7 @@ export interface CashSessionSummary {
   efectivo: number;
   tarjeta: number;
   transferencia: number;
+  gift_card: number;
   tips: number;
   services: number;
 }
@@ -327,6 +329,7 @@ export interface CashSession {
   totalEfectivo: number;
   totalTarjeta: number;
   totalTransferencia: number;
+  totalGiftCard: number;
   closingNotes: string;
   openedAt: string;
   closedAt: string;
@@ -354,7 +357,7 @@ export interface ExpenseCategory {
   isActive: boolean;
 }
 
-export type ExpensePaymentMethod = "efectivo" | "tarjeta" | "transferencia" | "cheque";
+export type ExpensePaymentMethod = "efectivo" | "tarjeta" | "transferencia" | "cheque" | "gift_card";
 export type ExpenseStatus = "pendiente" | "pagado" | "cancelado";
 
 export interface Expense {

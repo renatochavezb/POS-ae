@@ -75,7 +75,7 @@ const posPaymentSchema = mongoose.Schema(
     },
     method: {
       type: String,
-      enum: ["efectivo", "tarjeta", "transferencia", "mixto"],
+      enum: ["efectivo", "tarjeta", "transferencia", "gift_card", "mixto"],
       required: true,
     },
     cashAmount: {
@@ -89,6 +89,11 @@ const posPaymentSchema = mongoose.Schema(
       min: 0,
     },
     transferAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    giftCardAmount: {
       type: Number,
       default: 0,
       min: 0,

@@ -64,11 +64,21 @@ export async function syncStaffAllowedServices() {
 }
 
 export async function syncStaffLoginCodes() {
+  // Solo rellenar PINs vacíos — no sobrescribir códigos ya guardados en Mongo.
   for (const [staffCode, loginCode] of Object.entries(DEFAULT_STAFF_PINS)) {
-    await PosStaff.updateOne({ staffCode }, { $set: { loginCode } });
+    await PosStaff.updateOne(
+      {
+        staffCode,
+        $or: [
+          { loginCode: { $exists: false } },
+          { loginCode: "" },
+          { loginCode: null },
+        ],
+      },
+      { $set: { loginCode } }
+    );
   }
 
-  // Si el staffCode divergió del seed (ej. Vanny = "V"), alinear PIN por nombre.
   for (const member of INITIAL_STAFF) {
     const loginCode = DEFAULT_STAFF_PINS[member.id];
     if (!loginCode) continue;
@@ -76,6 +86,11 @@ export async function syncStaffLoginCodes() {
     await PosStaff.updateMany(
       {
         name: { $regex: `^${escapeRegex(member.name)}$`, $options: "i" },
+        $or: [
+          { loginCode: { $exists: false } },
+          { loginCode: "" },
+          { loginCode: null },
+        ],
       },
       { $set: { loginCode } }
     );
