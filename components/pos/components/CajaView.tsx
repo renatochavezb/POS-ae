@@ -2053,8 +2053,8 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-surface max-w-lg w-full rounded-2xl border border-primary/10 luxury-shadow overflow-hidden relative">
-        <div className="px-5 py-4 border-b border-primary/5 flex items-center justify-between">
+      <div className="bg-surface max-w-lg w-full max-h-[92dvh] rounded-2xl border border-primary/10 luxury-shadow overflow-hidden relative flex flex-col">
+        <div className="px-5 py-4 border-b border-primary/5 flex items-center justify-between shrink-0">
           <h3
             className={`font-display text-lg font-bold text-primary ${
               onTitleClick ? 'select-none cursor-default' : ''
@@ -2067,7 +2067,7 @@ function Modal({
             Cerrar
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 min-h-0 overflow-y-auto overscroll-contain">{children}</div>
       </div>
     </div>
   );
