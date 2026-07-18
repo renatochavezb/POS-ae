@@ -149,7 +149,7 @@ export default function WeeklyCompletedAppointmentsCard({
           </div>
 
           <p className="text-xs text-on-surface-variant">
-            Citas pagadas · total semanal.
+            Citas terminadas · total semanal.
           </p>
 
           <button
@@ -192,7 +192,7 @@ export default function WeeklyCompletedAppointmentsCard({
               Por manicurista
             </p>
             {byStaff.length === 0 ? (
-              <p className="text-xs text-outline">Sin citas pagadas en esta semana.</p>
+              <p className="text-xs text-outline">Sin citas terminadas en esta semana.</p>
             ) : (
               <div className="space-y-1.5">
                 {byStaff.map((member) => (

@@ -13,7 +13,7 @@ export async function computeDailyStatsForDate(date) {
     const status = normalizeAppointmentStatus(appointment.status);
 
     if (status === "agendado") sinConfirmar += 1;
-    else if (status === "pagado") pagadas += 1;
+    else if (status === "terminado") pagadas += 1;
     else if (status === "cancelled") canceladas += 1;
   }
 

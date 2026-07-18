@@ -64,7 +64,7 @@ export async function PATCH(req, { params }) {
 
     if (isFieldUpdate && isAppointmentLockedOnBoard(currentStatus)) {
       return NextResponse.json(
-        { error: "No se puede modificar una cita confirmada o pagada." },
+        { error: "No se puede modificar una cita confirmada o terminada." },
         { status: 403 }
       );
     }
@@ -99,7 +99,7 @@ export async function PATCH(req, { params }) {
 
     if (isAppointmentLockedOnBoard(currentStatus) && !body.status) {
       return NextResponse.json(
-        { error: "No se puede modificar una cita confirmada o pagada." },
+        { error: "No se puede modificar una cita confirmada o terminada." },
         { status: 403 }
       );
     }
@@ -209,7 +209,7 @@ export async function DELETE(req, { params }) {
 
     if (!canDeleteAppointment(existing.status)) {
       return NextResponse.json(
-        { error: "No se puede eliminar una cita confirmada o pagada." },
+        { error: "No se puede eliminar una cita confirmada o terminada." },
         { status: 403 }
       );
     }

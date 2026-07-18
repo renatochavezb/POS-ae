@@ -121,6 +121,12 @@ export async function POST(req) {
     if (status === "cancelled") {
       return NextResponse.json({ error: "No se puede enviar una cita cancelada" }, { status: 409 });
     }
+    if (status !== "terminado") {
+      return NextResponse.json(
+        { error: "La cita debe estar terminada antes de enviarse a caja" },
+        { status: 409 }
+      );
+    }
 
     const headerStaffId = (req.headers.get("x-pos-staff-id") || "").trim().toUpperCase();
     const submittedByStaffId = (
@@ -191,7 +197,7 @@ export async function POST(req) {
         $set: {
           serviceName,
           cost: subtotal,
-          status: status === "agendado" ? "confirmado" : appointment.status,
+          status: "terminado",
         },
       }
     );

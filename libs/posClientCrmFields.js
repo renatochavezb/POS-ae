@@ -13,7 +13,7 @@ export async function computeLastPaidVisitDateForClient(clientCode) {
 
   const paidAppointments = await PosAppointment.find({
     clientId: clientCode,
-    status: { $in: ["pagado", "completed"] },
+    status: { $in: ["terminado", "pagado", "completed"] },
   }).lean();
 
   let latestLabel = "";

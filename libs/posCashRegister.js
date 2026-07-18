@@ -152,7 +152,11 @@ export function summarizePayments(payments = []) {
       acc.transferencia += payment.transferAmount ?? 0;
       acc.gift_card += payment.giftCardAmount ?? 0;
       acc.tips += payment.tip ?? 0;
-      acc.services += payment.amount ?? 0;
+      if (payment.transactionType === "gift_card_sale") {
+        acc.giftCardSales += payment.amount ?? 0;
+      } else {
+        acc.services += payment.amount ?? 0;
+      }
       return acc;
     },
     {
@@ -164,6 +168,7 @@ export function summarizePayments(payments = []) {
       gift_card: 0,
       tips: 0,
       services: 0,
+      giftCardSales: 0,
     }
   );
 }
@@ -203,6 +208,7 @@ export async function refreshCashSessionTotals(sessionCode) {
         totalTarjeta: summary.tarjeta,
         totalTransferencia: summary.transferencia,
         totalGiftCard: summary.gift_card,
+        totalGiftCardSales: summary.giftCardSales,
       },
     }
   );

@@ -9,6 +9,10 @@ let configured = false;
 export function configureMongoDns() {
   if (configured) return;
 
-  dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]);
+  try {
+    dns.setServers(["8.8.8.8", "1.1.1.1", "8.8.4.4"]);
+  } catch (err) {
+    console.error("[setupDns] setServers failed:", err.message);
+  }
   configured = true;
 }

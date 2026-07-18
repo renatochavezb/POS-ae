@@ -277,7 +277,7 @@ export default function StaffReportModal({
               <div className="min-w-0">
                 <p className="text-xs font-bold text-primary">{periodTitle}</p>
                 <p className="text-[11px] text-outline mt-1">
-                  {previewRows.length} cita{previewRows.length === 1 ? "" : "s"} pagada
+                  {previewRows.length} cita{previewRows.length === 1 ? "" : "s"} terminada
                   {previewRows.length === 1 ? "" : "s"}
                   {previewRows.length > 0
                     ? ` · ${new Intl.NumberFormat("es-MX", {
@@ -305,7 +305,7 @@ export default function StaffReportModal({
           {previewRows.length === 0 ? (
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              No hay citas pagadas en este periodo. Puedes generar el reporte vacío o cambiar las
+              No hay citas terminadas en este periodo. Puedes generar el reporte vacío o cambiar las
               fechas.
             </div>
           ) : null}

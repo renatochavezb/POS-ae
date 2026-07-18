@@ -31,7 +31,8 @@
     "react-hot-toast": "^2.4.1",
     "react-tooltip": "^5.28.0",
     "resend": "^4.0.1",
-    "stripe": "^17.5.0"
+    "stripe": "^17.5.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

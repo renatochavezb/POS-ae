@@ -110,6 +110,10 @@ const posCashSessionSchema = mongoose.Schema(
       type: Number,
       default: 0,
     },
+    totalGiftCardSales: {
+      type: Number,
+      default: 0,
+    },
     closingNotes: {
       type: String,
       default: "",

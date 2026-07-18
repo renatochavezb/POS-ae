@@ -1029,7 +1029,7 @@ export default function POSDashboard() {
     if (!appointment) return;
 
     if (!canDeleteAppointment(appointment.status)) {
-      throw new Error('No se puede eliminar una cita confirmada o pagada.');
+      throw new Error('No se puede eliminar una cita confirmada o terminada.');
     }
 
     // Eliminar = borrado permanente en MongoDB. No cambia el estatus a "cancelled".
@@ -1148,7 +1148,7 @@ export default function POSDashboard() {
     if (!appointment || appointment.status === 'cancelled') return;
 
     if (!canCancelAppointment(appointment.status)) {
-      throw new Error('No se puede cancelar una cita confirmada o pagada.');
+      throw new Error('No se puede cancelar una cita confirmada o terminada.');
     }
 
     const staffObj = staffList.find((staff) => staff.id === appointment.staffId);
@@ -1242,7 +1242,7 @@ export default function POSDashboard() {
     if (!appointment || appointment.status === nextStatus) return;
 
     if (isAppointmentLockedOnBoard(appointment.status) && appointment.status !== 'confirmado') {
-      window.alert('No se puede modificar una cita pagada o cancelada.');
+      window.alert('No se puede modificar una cita terminada o cancelada.');
       return;
     }
 
@@ -1523,6 +1523,10 @@ export default function POSDashboard() {
             staffList={staffList}
             clients={clients}
             appointments={appointments}
+            services={services}
+            canManageStatuses={isMasterSession}
+            onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
+            onOpenCaja={() => setCurrentTab('caja')}
             onOpenNewAppointment={() => handleOpenAppointmentModal()}
             onOpenNewClient={() => setIsClientModalOpen(true)}
             onSelectClient={(id) => {
@@ -1701,6 +1705,10 @@ export default function POSDashboard() {
           staffList={staffList}
           clients={clients}
           appointments={appointments}
+          services={services}
+          canManageStatuses={isMasterSession}
+          onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
+          onOpenCaja={() => setCurrentTab('caja')}
           onOpenNewAppointment={() => handleOpenAppointmentModal()}
           onOpenNewClient={() => setIsClientModalOpen(true)}
           onSelectClient={(id) => {

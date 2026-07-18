@@ -231,7 +231,8 @@ export async function POST(req) {
       notes: (body.notes || "").trim(),
     });
 
-    const targetStatus = "pagado";
+    // El cobro ocurre en caja; el estatus de agenda queda como terminado.
+    const targetStatus = "terminado";
     const wasAlreadyPaid = isAppointmentPaid(currentStatus);
 
     const updatedAppointment = await PosAppointment.findOneAndUpdate(

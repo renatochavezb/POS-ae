@@ -13,9 +13,14 @@ import {
   Star,
   TrendingUp,
 } from 'lucide-react';
-import { Staff, Appointment, StaffSettlement } from '../types';
+import { Staff, Appointment, StaffSettlement, PosPayment } from '../types';
 import { formatServicePrice, formatMXN } from '../data';
-import { isAppointmentPaid } from '../appointmentStatus';
+import {
+  getAppointmentStatusLabel,
+  getAppointmentStatusStyles,
+  isAppointmentCancelled,
+  isAppointmentPaid,
+} from '../appointmentStatus';
 import {
   addDays,
   buildWeekDayEntries,
@@ -73,6 +78,8 @@ export default function StaffAnalyticsView({
   const [periodStart, setPeriodStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [periodEnd, setPeriodEnd] = useState<Date>(() => addDays(getStudioWeekStart(new Date()), 6));
   const [settlements, setSettlements] = useState<StaffSettlement[]>([]);
+  const [weekPayments, setWeekPayments] = useState<PosPayment[]>([]);
+  const [isLoadingTips, setIsLoadingTips] = useState(false);
   const [isLiquidateModalOpen, setIsLiquidateModalOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -87,6 +94,7 @@ export default function StaffAnalyticsView({
   const weekRangeLabel = formatWeekRangeLabel(weekStart);
   const viewingCurrentWeek = isCurrentWeek(weekStart);
   const latestSettlement = settlements[0] ?? null;
+  const weekDays = useMemo(() => buildWeekDayEntries(weekStart), [weekStart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,10 +113,35 @@ export default function StaffAnalyticsView({
     };
   }, [staff.id]);
 
-  const weeklyPerformance = useMemo(() => {
-    const days = buildWeekDayEntries(weekStart);
+  useEffect(() => {
+    let cancelled = false;
 
-    return days.map((day) => ({
+    const loadWeekTips = async () => {
+      setIsLoadingTips(true);
+      try {
+        const results = await Promise.all(
+          weekDays.map((day) => posApi.getPayments({ date: day.dateLabel }))
+        );
+        if (!cancelled) {
+          setWeekPayments(results.flatMap((result) => result.payments || []));
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setWeekPayments([]);
+      } finally {
+        if (!cancelled) setIsLoadingTips(false);
+      }
+    };
+
+    loadWeekTips();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [weekDays]);
+
+  const weeklyPerformance = useMemo(() => {
+    return weekDays.map((day) => ({
       ...day,
       sales: appointments
         .filter(
@@ -119,15 +152,19 @@ export default function StaffAnalyticsView({
         )
         .reduce((sum, appointment) => sum + (appointment.cost || 0), 0),
     }));
-  }, [appointments, staff.id, weekStart]);
+  }, [appointments, staff.id, weekDays]);
 
   const weekTotalSales = weeklyPerformance.reduce((sum, day) => sum + day.sales, 0);
   const weekTotalCommission = weekTotalSales * (staff.commissionPercent / 100);
+  const weekTotalTips = weekPayments
+    .filter((payment) => payment.staffId === staff.id)
+    .reduce((sum, payment) => sum + (payment.tip || 0), 0);
+  const weekTotalCommissionAndTips = weekTotalCommission + weekTotalTips;
   const chartMax = Math.max(500, ...weeklyPerformance.map((day) => day.sales), 1);
 
   const workHistoryAppointments = useMemo(() => {
     const base = appointments.filter(
-      (app) => app.staffId === staff.id && isAppointmentPaid(app.status)
+      (app) => app.staffId === staff.id && !isAppointmentCancelled(app.status)
     );
 
     const filtered =
@@ -153,7 +190,12 @@ export default function StaffAnalyticsView({
         badge: 'Cliente',
         service: app.serviceName,
         cost: app.cost,
-        commission: app.cost > 0 ? app.cost * (staff.commissionPercent / 100) : 0,
+        status: app.status,
+        isPaid: isAppointmentPaid(app.status),
+        commission:
+          app.cost > 0 && isAppointmentPaid(app.status)
+            ? app.cost * (staff.commissionPercent / 100)
+            : 0,
       }));
   }, [
     appointments,
@@ -165,7 +207,10 @@ export default function StaffAnalyticsView({
     periodEndLabel,
   ]);
 
-  const totalWorkSales = workHistoryAppointments.reduce((sum, item) => sum + item.cost, 0);
+  const totalWorkSales = workHistoryAppointments.reduce(
+    (sum, item) => sum + (item.isPaid ? item.cost : 0),
+    0
+  );
   const totalWorkCommission = workHistoryAppointments.reduce(
     (sum, item) => sum + item.commission,
     0
@@ -342,7 +387,25 @@ export default function StaffAnalyticsView({
                 ({staff.commissionPercent}%)
               </span>
             </div>
-            <p className="text-xs text-on-surface-variant">Calculada sobre citas pagadas de la semana.</p>
+            <p className="text-xs text-on-surface-variant">
+              Calculada sobre citas terminadas de la semana.
+            </p>
+            <div className="pt-3 border-t border-primary/10 space-y-2">
+              <div className="flex items-center justify-between gap-4 text-xs">
+                <span className="font-bold text-on-surface-variant">
+                  Propinas de la semana
+                </span>
+                <span className="font-display font-bold text-primary">
+                  {isLoadingTips ? 'Cargando…' : formatMXN(weekTotalTips)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4 text-xs">
+                <span className="font-bold text-primary">Comisión + propinas</span>
+                <span className="font-display font-black text-secondary">
+                  {isLoadingTips ? '—' : formatMXN(weekTotalCommissionAndTips)}
+                </span>
+              </div>
+            </div>
           </div>
           <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
             <Coins className="w-6 h-6" />
@@ -384,7 +447,7 @@ export default function StaffAnalyticsView({
                 Ventas diarias de la semana
               </h3>
               <p className="text-xs text-outline mt-1">
-                Citas pagadas en Mongo · {weekRangeLabel}
+                Citas terminadas en Mongo · {weekRangeLabel}
               </p>
             </div>
 
@@ -497,7 +560,7 @@ export default function StaffAnalyticsView({
           <div className="p-4 bg-emerald-500/[0.03] rounded-xl border border-emerald-500/10 text-xs text-emerald-900 font-medium flex items-start gap-2.5 mt-6">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <p>
-              Las ventas del gráfico provienen de citas con estatus pagado en la base de datos.
+              Las ventas del gráfico provienen de citas con estatus terminado en la base de datos.
             </p>
           </div>
         </div>
@@ -645,7 +708,7 @@ export default function StaffAnalyticsView({
                     colSpan={workHistoryMode === 'period' ? 7 : 6}
                     className="py-8 px-6 text-center text-xs text-outline"
                   >
-                    Sin trabajos pagados para {staff.name} en{' '}
+                    Sin trabajos para {staff.name} en{' '}
                     {workHistoryMode === 'day' ? workDayLabel : 'el periodo seleccionado'}.
                   </td>
                 </tr>
@@ -673,12 +736,19 @@ export default function StaffAnalyticsView({
                       {item.cost > 0 ? formatServicePrice(item.cost) : 'Por definir'}
                     </td>
                     <td className="py-4 px-6 text-right font-display font-black text-xs text-secondary">
-                      {item.cost > 0 ? formatServicePrice(item.commission) : 'Por definir'}
+                      {item.isPaid
+                        ? item.cost > 0
+                          ? formatServicePrice(item.commission)
+                          : 'Por definir'
+                        : 'Pendiente'}
                     </td>
                     <td className="py-4 px-6 text-center">
-                      <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-800 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Completado
+                      <span
+                        className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                          getAppointmentStatusStyles(item.status).badgeClass
+                        }`}
+                      >
+                        {getAppointmentStatusLabel(item.status)}
                       </span>
                     </td>
                   </tr>
@@ -692,8 +762,8 @@ export default function StaffAnalyticsView({
                   className="py-4 px-6 text-xs text-primary uppercase"
                 >
                   {workHistoryMode === 'day'
-                    ? 'Total acumulado del día'
-                    : 'Total acumulado del periodo'}
+                    ? 'Total terminado del día'
+                    : 'Total terminado del periodo'}
                 </td>
                 <td className="py-4 px-6 text-right font-display font-extrabold text-sm text-primary">
                   {totalWorkSales > 0 ? formatServicePrice(totalWorkSales) : 'Por definir'}

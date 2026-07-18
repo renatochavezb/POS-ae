@@ -156,7 +156,7 @@ export interface AccountantActivity {
   metadata?: Record<string, unknown> | null;
 }
 
-export type AppointmentStatus = 'agendado' | 'confirmado' | 'pagado' | 'cancelled';
+export type AppointmentStatus = 'agendado' | 'confirmado' | 'terminado' | 'cancelled';
 
 /** Bloqueo de horario para una manicurista en un día específico. */
 export interface StaffBlockedSlot {
@@ -270,6 +270,8 @@ export interface PosCashTicket {
 
 export interface PosPayment {
   id: string;
+  transactionType?: 'appointment' | 'gift_card_sale';
+  giftCardCode?: string;
   appointmentId: string;
   appointmentDate: string;
   clientId: string;
@@ -303,6 +305,7 @@ export interface CashSessionSummary {
   gift_card: number;
   tips: number;
   services: number;
+  giftCardSales: number;
 }
 
 export interface CashSession {
@@ -330,11 +333,28 @@ export interface CashSession {
   totalTarjeta: number;
   totalTransferencia: number;
   totalGiftCard: number;
+  totalGiftCardSales: number;
   closingNotes: string;
   openedAt: string;
   closedAt: string;
   openedWithMasterPin?: boolean;
   closedWithMasterPin?: boolean;
+}
+
+export interface PosGiftCard {
+  id: string;
+  code: string;
+  initialValue: number;
+  balance: number;
+  status: 'active' | 'redeemed' | 'cancelled';
+  soldDate: string;
+  soldAt: string;
+  paymentId: string;
+  cashSessionId: string;
+  purchaseMethod: Exclude<PaymentMethod, 'gift_card'>;
+  soldByReceptionistId: string;
+  soldByReceptionistName: string;
+  notes: string;
 }
 
 export interface CashRegisterState {

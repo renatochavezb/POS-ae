@@ -34,6 +34,7 @@ import {
 import AppointmentServiceList from '../serviceDisplay';
 import NumericKeypad from './NumericKeypad';
 import SendToCajaModal from './SendToCajaModal';
+import GiftCardSaleModal from './GiftCardSaleModal';
 
 interface CajaViewProps {
   appointments: Appointment[];
@@ -57,6 +58,7 @@ const EMPTY_SUMMARY = {
   gift_card: 0,
   tips: 0,
   services: 0,
+  giftCardSales: 0,
 };
 
 const amountsMatch = (left: number, right: number) => Math.abs(left - right) < 0.01;
@@ -128,6 +130,7 @@ export default function CajaView({
   const [modalError, setModalError] = useState<string | null>(null);
 
   const [showShiftDateModal, setShowShiftDateModal] = useState(false);
+  const [showGiftCardSaleModal, setShowGiftCardSaleModal] = useState(false);
   const [shiftDateValue, setShiftDateValue] = useState('');
   const [shiftDateReceptionistId, setShiftDateReceptionistId] = useState('');
   const [shiftDatePin, setShiftDatePin] = useState('');
@@ -209,7 +212,7 @@ export default function CajaView({
       .filter((appointment) => {
         if (appointment.date !== todayLabel) return false;
         if (appointment.staffId !== loggedInStaffId) return false;
-        if (appointment.status === 'cancelled') return false;
+        if (!isAppointmentPaid(appointment.status)) return false;
         if (collectedInCajaIds.has(appointment.id)) return false;
         if (ticketAppointmentIds.has(appointment.id)) return false;
         return true;
@@ -793,6 +796,14 @@ export default function CajaView({
               >
                 <CalendarDays className="w-4 h-4 text-secondary" />
                 Cambiar día
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowGiftCardSaleModal(true)}
+                className="px-4 py-2.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-950 font-sans text-xs font-bold uppercase tracking-wider hover:bg-amber-200 transition-colors flex items-center gap-2"
+              >
+                <Gift className="w-4 h-4" />
+                Vender Gift Card
               </button>
               <button
                 type="button"
@@ -1458,6 +1469,17 @@ export default function CajaView({
           )}
         </Modal>
       )}
+
+      {showGiftCardSaleModal && session ? (
+        <GiftCardSaleModal
+          receptionist={loggedInReceptionist}
+          onClose={() => setShowGiftCardSaleModal(false)}
+          onSold={async () => {
+            await loadRegister();
+            await onPaymentComplete();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1524,7 +1546,14 @@ function SummaryCard({
           <p className="font-bold text-primary mt-1">{formatMXN(summary.gift_card ?? 0)}</p>
         </div>
       </div>
-      <p className="text-[10px] text-outline mt-3">{summary.count} servicios · propinas {formatMXN(summary.tips)}</p>
+      <div className="mt-3 pt-3 border-t border-primary/10 flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+        <p className="text-outline">{summary.count} movimientos</p>
+        <p className="text-outline">Servicios {formatMXN(summary.services)}</p>
+        <p className="font-bold text-amber-800">
+          Gift cards vendidas {formatMXN(summary.giftCardSales ?? 0)}
+        </p>
+        <p className="text-outline">Propinas {formatMXN(summary.tips)}</p>
+      </div>
     </div>
   );
 }
@@ -1660,6 +1689,11 @@ function CloseHistoryRow({
             <p className="text-[10px] text-outline mt-1">
               Efe. {formatMXN(session.totalEfectivo)} · Tarj. {formatMXN(session.totalTarjeta)}
             </p>
+            {(session.totalGiftCardSales ?? 0) > 0 ? (
+              <p className="text-[10px] font-bold text-amber-800 mt-1">
+                Gift cards vendidas {formatMXN(session.totalGiftCardSales)}
+              </p>
+            ) : null}
             {isExpanded ? (
               <ChevronUp className="w-4 h-4 text-outline ml-auto mt-2" />
             ) : (

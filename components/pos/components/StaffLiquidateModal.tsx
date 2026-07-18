@@ -346,7 +346,7 @@ export default function StaffLiquidateModal({
           {previewRows.length === 0 ? (
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              No hay citas pagadas en este periodo. Puedes continuar para registrar liquidación en
+              No hay citas terminadas en este periodo. Puedes continuar para registrar liquidación en
               cero o cambiar las fechas.
             </div>
           ) : null}

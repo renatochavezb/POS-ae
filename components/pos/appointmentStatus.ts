@@ -1,32 +1,33 @@
 import { AppointmentStatus } from './types';
 
-export type AppointmentWorkflowStatus = 'agendado' | 'confirmado' | 'pagado';
+export type AppointmentWorkflowStatus = 'agendado' | 'confirmado' | 'terminado';
 
 export const APPOINTMENT_WORKFLOW_STATUSES: AppointmentWorkflowStatus[] = [
   'agendado',
   'confirmado',
-  'pagado',
+  'terminado',
 ];
 
 const STATUS_LABELS: Record<AppointmentWorkflowStatus, string> = {
   agendado: 'Agendado',
   confirmado: 'Confirmado',
-  pagado: 'Pagado',
+  terminado: 'Terminado',
 };
 
 const STATUS_COMPACT_LABELS: Record<AppointmentWorkflowStatus, string> = {
   agendado: 'Agendado',
   confirmado: 'Confirmado',
-  pagado: 'Pagado',
+  terminado: 'Terminado',
 };
 
 export const normalizeAppointmentStatus = (status?: string): AppointmentStatus => {
   if (status === 'pending') return 'agendado';
-  if (status === 'completed') return 'pagado';
+  // Legado: completed / pagado → terminado (el cobro real ocurre en caja)
+  if (status === 'completed' || status === 'pagado') return 'terminado';
   if (
     status === 'agendado' ||
     status === 'confirmado' ||
-    status === 'pagado' ||
+    status === 'terminado' ||
     status === 'cancelled'
   ) {
     return status;
@@ -34,8 +35,12 @@ export const normalizeAppointmentStatus = (status?: string): AppointmentStatus =
   return 'agendado';
 };
 
-export const isAppointmentPaid = (status: AppointmentStatus) =>
-  normalizeAppointmentStatus(status) === 'pagado';
+/** Cita finalizada en agenda (antes «pagado»; el cobro es en caja). */
+export const isAppointmentFinished = (status: AppointmentStatus) =>
+  normalizeAppointmentStatus(status) === 'terminado';
+
+/** @deprecated Usar isAppointmentFinished — el cobro real ocurre en caja. */
+export const isAppointmentPaid = isAppointmentFinished;
 
 export const isAppointmentCancelled = (status: AppointmentStatus) =>
   normalizeAppointmentStatus(status) === 'cancelled';
@@ -61,16 +66,16 @@ export const canCancelAppointment = (status: AppointmentStatus) =>
 export const canEditAppointment = (status: AppointmentStatus) =>
   normalizeAppointmentStatus(status) === 'agendado';
 
-/** Confirmada o pagada: bloqueada para borrar y cancelar. */
+/** Confirmada o terminada: bloqueada para borrar y cancelar. */
 export const isAppointmentLockedOnBoard = (status: AppointmentStatus) => {
   const normalized = normalizeAppointmentStatus(status);
-  return normalized === 'confirmado' || normalized === 'pagado';
+  return normalized === 'confirmado' || normalized === 'terminado';
 };
 
 /** Estatus final: ya no avanza en el tablero. */
 export const isAppointmentStatusFinal = (status: AppointmentStatus) => {
   const normalized = normalizeAppointmentStatus(status);
-  return normalized === 'pagado' || normalized === 'cancelled';
+  return normalized === 'terminado' || normalized === 'cancelled';
 };
 
 export const getAppointmentStatusLabel = (status: AppointmentStatus) => {
@@ -79,12 +84,18 @@ export const getAppointmentStatusLabel = (status: AppointmentStatus) => {
   return STATUS_LABELS[normalized];
 };
 
+export const getAppointmentStatusCompactLabel = (status: AppointmentStatus) => {
+  const normalized = normalizeAppointmentStatus(status);
+  if (normalized === 'cancelled') return 'Cancelada';
+  return STATUS_COMPACT_LABELS[normalized];
+};
+
 export const getNextAppointmentStatus = (
   status: AppointmentStatus
 ): AppointmentWorkflowStatus | null => {
   const normalized = normalizeAppointmentStatus(status);
   if (normalized === 'agendado') return 'confirmado';
-  if (normalized === 'confirmado') return 'pagado';
+  if (normalized === 'confirmado') return 'terminado';
   return null;
 };
 
@@ -98,7 +109,7 @@ export const getAppointmentStatusStyles = (status: AppointmentStatus) => {
     };
   }
 
-  if (normalized === 'pagado') {
+  if (normalized === 'terminado') {
     return {
       activeClass: 'bg-emerald-600 text-white',
       badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200',

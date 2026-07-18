@@ -70,8 +70,10 @@ const posAppointmentSchema = mongoose.Schema(
       enum: [
         "agendado",
         "confirmado",
-        "pagado",
+        "terminado",
         "cancelled",
+        // Legado (se normaliza a terminado / agendado en lectura)
+        "pagado",
         "pending",
         "completed",
       ],

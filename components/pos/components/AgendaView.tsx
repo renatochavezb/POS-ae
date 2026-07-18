@@ -301,7 +301,7 @@ export default function AgendaView({
 
   const handleDeleteAppointment = (appointment: Appointment) => {
     if (!canDeleteAppointment(appointment.status)) {
-      window.alert('No se puede eliminar una cita confirmada o pagada.');
+      window.alert('No se puede eliminar una cita confirmada o terminada.');
       return;
     }
 
@@ -311,7 +311,7 @@ export default function AgendaView({
 
   const handleCancelAppointment = (appointment: Appointment) => {
     if (!canCancelAppointment(appointment.status)) {
-      window.alert('No se puede cancelar una cita confirmada o pagada.');
+      window.alert('No se puede cancelar una cita confirmada o terminada.');
       return;
     }
 
@@ -572,7 +572,7 @@ export default function AgendaView({
                       <p className="text-base lg:text-lg font-display font-extrabold text-emerald-700 leading-none">
                         {dailyStats.pagadas}
                       </p>
-                      <p className="text-[8px] lg:text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Pagadas</p>
+                      <p className="text-[8px] lg:text-[9px] text-outline font-sans uppercase tracking-wider mt-1">Terminadas</p>
                     </div>
                     <div className="px-2 lg:px-3 py-1.5 lg:py-2 rounded-xl border border-red-200 bg-red-50 text-center min-w-[56px] lg:min-w-[76px]">
                       <p className="text-base lg:text-lg font-display font-extrabold text-red-700 leading-none">
@@ -1178,7 +1178,7 @@ export default function AgendaView({
                   </div>
                 </div>
                 )}
-                {readOnly && services.length > 0 && selectedAppointment.status !== 'cancelled' && (
+                {readOnly && services.length > 0 && isAppointmentPaid(selectedAppointment.status) && (
                   <div>
                     {ticketAppointmentIds.includes(selectedAppointment.id) ? (
                       <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">

@@ -8,6 +8,17 @@ const posPaymentSchema = mongoose.Schema(
       unique: true,
       trim: true,
     },
+    transactionType: {
+      type: String,
+      enum: ["appointment", "gift_card_sale"],
+      default: "appointment",
+    },
+    giftCardCode: {
+      type: String,
+      default: "",
+      trim: true,
+      uppercase: true,
+    },
     appointmentCode: {
       type: String,
       required: true,

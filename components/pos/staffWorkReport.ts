@@ -103,7 +103,7 @@ export function openStaffWorkReportPrint(options: {
 
   const tableRows =
     rows.length === 0
-      ? `<tr><td colspan="${isSingleDay ? 5 : 6}" class="empty">Sin trabajos pagados en el periodo seleccionado.</td></tr>`
+      ? `<tr><td colspan="${isSingleDay ? 5 : 6}" class="empty">Sin trabajos terminados en el periodo seleccionado.</td></tr>`
       : rows
           .map((row) => {
             const dateCell = isSingleDay
@@ -305,7 +305,7 @@ export function openStaffWorkReportPrint(options: {
 
     <div class="footer">
       <span>Generado el ${escapeHtml(generatedAt)} a las ${escapeHtml(generatedTime)}</span>
-      <span>Solo citas con estatus pagado</span>
+      <span>Solo citas con estatus terminado</span>
     </div>
   </div>
 </body>

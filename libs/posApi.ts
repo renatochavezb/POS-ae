@@ -7,6 +7,7 @@ import {
   CashSession,
   CashSessionSummary,
   PosPayment,
+  PosGiftCard,
   PaymentMethod,
   PosCashTicket,
   CashTicketLine,
@@ -500,6 +501,18 @@ const posApi = {
     processedByReceptionistName?: string;
   }): Promise<{ payment: PosPayment; appointment: Appointment }> {
     return posClient.post("/pos/payments", data);
+  },
+  sellGiftCard(data: {
+    value: number;
+    method: Exclude<PaymentMethod, "gift_card">;
+    cashAmount?: number;
+    cardAmount?: number;
+    transferAmount?: number;
+    notes?: string;
+    processedByReceptionistId?: string;
+    processedByReceptionistName?: string;
+  }): Promise<{ giftCard: PosGiftCard; payment: PosPayment }> {
+    return posClient.post("/pos/gift-cards", data);
   },
   getExpenseCategories(): Promise<ExpenseCategory[]> {
     return posClient.get("/pos/expense-categories");

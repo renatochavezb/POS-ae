@@ -185,6 +185,8 @@ export function mapPaymentDoc(doc) {
 
   return {
     id: raw.paymentCode,
+    transactionType: raw.transactionType || "appointment",
+    giftCardCode: raw.giftCardCode || "",
     appointmentId: raw.appointmentCode,
     appointmentDate: raw.appointmentDate,
     clientId: raw.clientId || "",
@@ -242,6 +244,7 @@ export function mapCashSessionDoc(doc) {
     totalTarjeta: raw.totalTarjeta ?? 0,
     totalTransferencia: raw.totalTransferencia ?? 0,
     totalGiftCard: raw.totalGiftCard ?? 0,
+    totalGiftCardSales: raw.totalGiftCardSales ?? 0,
     closingNotes: raw.closingNotes || "",
     openedAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
     closedAt: raw.closedAt ? new Date(raw.closedAt).toISOString() : "",

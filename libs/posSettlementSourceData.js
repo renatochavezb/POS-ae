@@ -5,7 +5,7 @@ import { compareSpanishShortDates } from "@/libs/spanishDateUtils";
 import { normalizeAppointmentStatus } from "@/components/pos/appointmentStatus";
 
 function isPaidAppointment(status) {
-  return normalizeAppointmentStatus(status) === "pagado";
+  return normalizeAppointmentStatus(status) === "terminado";
 }
 
 function appointmentInPeriod(appointmentDate, periodMode, startLabel, endLabel) {
@@ -31,12 +31,12 @@ function buildAppointmentSnapshot(appointment, commissionPercent) {
     serviceName: appointment.serviceName || "",
     cost,
     commissionAmount,
-    status: appointment.status || "pagado",
+    status: appointment.status || "terminado",
   };
 }
 
 /**
- * Citas pagadas del periodo + FKs a PosPayment y PosCashSession.
+ * Citas terminadas del periodo + FKs a PosPayment y PosCashSession.
  * Usado en liquidaciones y reportes de contabilidad.
  */
 export async function collectStaffPeriodSourceData({

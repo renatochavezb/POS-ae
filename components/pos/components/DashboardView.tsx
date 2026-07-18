@@ -1,19 +1,54 @@
-import { useMemo, useState } from 'react';
-import { 
-  Plus, 
-  UserPlus, 
-  ShieldAlert, 
-  ArrowRight,
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Calendar,
+  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
-  UserCheck
+  Clock3,
+  FileSpreadsheet,
+  Plus,
+  UserPlus,
 } from 'lucide-react';
-import { Staff, Client, Appointment } from '../types';
-import { formatMXN } from '../data';
+import {
+  Staff,
+  Client,
+  Appointment,
+  AppointmentStatus,
+  PosCashTicket,
+  PosPayment,
+  Service,
+} from '../types';
+import {
+  normalizeAppointmentStatus,
+} from '../appointmentStatus';
+import {
+  addDays,
+  buildWeekDayEntries,
+  formatWeekRangeLabel,
+  getStudioWeekStart,
+  isCurrentWeek,
+} from '../scheduleUtils';
+import { compareSpanishShortDates } from '@/libs/spanishDateUtils';
 import { getBookableStaff } from '@/libs/posStaffAgenda';
+import posApi from '@/libs/posApi';
+import { formatServicePrice } from '../data';
 import WeeklyCompletedAppointmentsCard from './WeeklyCompletedAppointmentsCard';
 import WeeklySalesCard from './WeeklySalesCard';
 import WeeklyCutsCard from './WeeklyCutsCard';
 import CabinOccupancyCard from './CabinOccupancyCard';
+import SendToCajaModal from './SendToCajaModal';
+
+type BoardCard = {
+  id: string;
+  appointmentId: string;
+  date: string;
+  time: string;
+  clientName: string;
+  serviceName: string;
+  staffId: string;
+  staffName: string;
+  amount?: number;
+};
 
 interface DashboardViewProps {
   staffList: Staff[];
@@ -23,50 +58,640 @@ interface DashboardViewProps {
   onOpenNewClient: () => void;
   onSelectClient: (id: string) => void;
   onSelectStaff: (id: string) => void;
+  services: Service[];
+  canManageStatuses?: boolean;
+  onUpdateAppointmentStatus: (
+    appointmentId: string,
+    status: AppointmentStatus
+  ) => Promise<void>;
+  onOpenCaja: () => void;
+}
+
+function matchesStaffFilter(staffId: string, selectedStaffIds: string[]) {
+  return selectedStaffIds.length === 0 || selectedStaffIds.includes(staffId);
+}
+
+function sortBoardCards(a: BoardCard, b: BoardCard) {
+  const byDate = compareSpanishShortDates(a.date, b.date);
+  if (byDate !== 0) return byDate;
+  return a.time.localeCompare(b.time);
 }
 
 export default function DashboardView({
   staffList,
-  clients,
   appointments,
   onOpenNewAppointment,
   onOpenNewClient,
-  onSelectClient,
-  onSelectStaff
+  services,
+  canManageStatuses = false,
+  onUpdateAppointmentStatus,
+  onOpenCaja,
 }: DashboardViewProps) {
-  
-  const [waitingQueue, setWaitingQueue] = useState([
-    { id: 'wq-1', name: 'María González', service: 'Soft gel / Gel X', time: '13:00', status: 'En espera' },
-    { id: 'wq-2', name: 'Ana Lucía Ruiz', service: 'Laminado de ceja', time: '13:30', status: 'En camino' }
-  ]);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
+  const [selectedReportStatusIds, setSelectedReportStatusIds] = useState<string[]>([]);
+  const [weekStart, setWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
+  const [weekTickets, setWeekTickets] = useState<PosCashTicket[]>([]);
+  const [weekPayments, setWeekPayments] = useState<PosPayment[]>([]);
+  const [isLoadingCajaBoard, setIsLoadingCajaBoard] = useState(false);
+  const [updatingAppointmentId, setUpdatingAppointmentId] = useState<string | null>(null);
+  const [sendToCajaAppointment, setSendToCajaAppointment] = useState<Appointment | null>(null);
+  const [cajaRefreshKey, setCajaRefreshKey] = useState(0);
 
   const operationalStaff = useMemo(() => getBookableStaff(staffList), [staffList]);
-  const activeStaff = operationalStaff.filter(
-    (member) => member.status === 'online' || member.status === 'break'
+  const weekDays = useMemo(() => buildWeekDayEntries(weekStart), [weekStart]);
+  const weekDateLabels = useMemo(
+    () => new Set(weekDays.map((day) => day.dateLabel)),
+    [weekDays]
+  );
+  const weekRangeLabel = formatWeekRangeLabel(weekStart);
+  const viewingCurrentWeek = isCurrentWeek(weekStart);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCajaBoard = async () => {
+      setIsLoadingCajaBoard(true);
+      try {
+        const dates = weekDays.map((day) => day.dateLabel);
+        const [ticketResults, paymentResults] = await Promise.all([
+          Promise.all(
+            dates.map((date) => posApi.getCashTickets({ date, status: 'all' }))
+          ),
+          Promise.all(dates.map((date) => posApi.getPayments({ date }))),
+        ]);
+
+        if (cancelled) return;
+
+        const tickets = ticketResults.flatMap((result) => result.tickets || []);
+        const payments = paymentResults.flatMap((result) => result.payments || []);
+        setWeekTickets(tickets);
+        setWeekPayments(payments);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setWeekTickets([]);
+          setWeekPayments([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingCajaBoard(false);
+      }
+    };
+
+    loadCajaBoard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [weekDays, cajaRefreshKey]);
+
+  const appointmentById = useMemo(
+    () => new Map(appointments.map((appointment) => [appointment.id, appointment])),
+    [appointments]
   );
 
-  const handleAttendInQueue = (id: string) => {
-    setWaitingQueue(waitingQueue.filter(item => item.id !== id));
+  const visibleAppointments = useMemo(
+    () =>
+      appointments
+        .filter(
+          (appointment) =>
+            weekDateLabels.has(appointment.date) &&
+            matchesStaffFilter(appointment.staffId, selectedStaffIds)
+        )
+        .sort((a, b) => {
+          const byDate = compareSpanishShortDates(a.date, b.date);
+          if (byDate !== 0) return byDate;
+          return a.time.localeCompare(b.time);
+        }),
+    [appointments, selectedStaffIds, weekDateLabels]
+  );
+
+  const appointmentsByStatus = useMemo(
+    () => ({
+      agendado: visibleAppointments.filter(
+        (appointment) => normalizeAppointmentStatus(appointment.status) === 'agendado'
+      ),
+      confirmado: visibleAppointments.filter(
+        (appointment) => normalizeAppointmentStatus(appointment.status) === 'confirmado'
+      ),
+      terminado: visibleAppointments.filter(
+        (appointment) => normalizeAppointmentStatus(appointment.status) === 'terminado'
+      ),
+    }),
+    [visibleAppointments]
+  );
+
+  const visibleTickets = useMemo(
+    () =>
+      weekTickets.filter(
+        (ticket) =>
+          weekDateLabels.has(ticket.appointmentDate) &&
+          matchesStaffFilter(ticket.staffId, selectedStaffIds)
+      ),
+    [weekTickets, weekDateLabels, selectedStaffIds]
+  );
+
+  const submittedAppointmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    visibleTickets.forEach((ticket) => {
+      if (ticket.status === 'submitted') ids.add(ticket.appointmentId);
+    });
+    return ids;
+  }, [visibleTickets]);
+
+  const chargedAppointmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    visibleTickets.forEach((ticket) => {
+      if (ticket.status === 'charged') ids.add(ticket.appointmentId);
+    });
+    weekPayments.forEach((payment) => {
+      if (
+        payment.transactionType !== 'gift_card_sale' &&
+        weekDateLabels.has(payment.appointmentDate) &&
+        matchesStaffFilter(payment.staffId, selectedStaffIds)
+      ) {
+        ids.add(payment.appointmentId);
+      }
+    });
+    return ids;
+  }, [visibleTickets, weekPayments, weekDateLabels, selectedStaffIds]);
+
+  const cajaBoardColumns = useMemo(() => {
+    const toTicketCard = (ticket: PosCashTicket): BoardCard => {
+      const appointment = appointmentById.get(ticket.appointmentId);
+      return {
+        id: ticket.id,
+        appointmentId: ticket.appointmentId,
+        date: ticket.appointmentDate,
+        time: appointment?.time || '',
+        clientName: ticket.clientName,
+        serviceName:
+          ticket.lines.map((line) => line.name).filter(Boolean).join(', ') ||
+          appointment?.serviceName ||
+          'Servicio',
+        staffId: ticket.staffId,
+        staffName: ticket.staffName,
+        amount: ticket.subtotal,
+      };
+    };
+
+    const pendingToSend: BoardCard[] = appointmentsByStatus.terminado
+      .filter(
+        (appointment) =>
+          !submittedAppointmentIds.has(appointment.id) &&
+          !chargedAppointmentIds.has(appointment.id)
+      )
+      .map((appointment) => ({
+        id: appointment.id,
+        appointmentId: appointment.id,
+        date: appointment.date,
+        time: appointment.time,
+        clientName: appointment.clientName,
+        serviceName: appointment.serviceName,
+        staffId: appointment.staffId,
+        staffName: appointment.staffName,
+        amount: appointment.cost > 0 ? appointment.cost : undefined,
+      }))
+      .sort(sortBoardCards);
+
+    const pendingCharge: BoardCard[] = visibleTickets
+      .filter((ticket) => ticket.status === 'submitted')
+      .map(toTicketCard)
+      .sort(sortBoardCards);
+
+    const chargedTickets = visibleTickets.filter((ticket) => ticket.status === 'charged');
+    const chargedTicketAppointmentIds = new Set(
+      chargedTickets.map((ticket) => ticket.appointmentId)
+    );
+
+    const chargedFromTickets = chargedTickets.map(toTicketCard);
+
+    const chargedFromPaymentsOnly: BoardCard[] = weekPayments
+      .filter(
+        (payment) =>
+          payment.transactionType !== 'gift_card_sale' &&
+          weekDateLabels.has(payment.appointmentDate) &&
+          matchesStaffFilter(payment.staffId, selectedStaffIds) &&
+          !chargedTicketAppointmentIds.has(payment.appointmentId)
+      )
+      .map((payment) => {
+        const appointment = appointmentById.get(payment.appointmentId);
+        return {
+          id: payment.id,
+          appointmentId: payment.appointmentId,
+          date: payment.appointmentDate,
+          time: appointment?.time || '',
+          clientName: payment.clientName,
+          serviceName: payment.serviceName || appointment?.serviceName || 'Servicio',
+          staffId: payment.staffId,
+          staffName: payment.staffName,
+          amount: payment.total || payment.amount,
+        };
+      });
+
+    return {
+      pendingToSend,
+      pendingCharge,
+      charged: [...chargedFromTickets, ...chargedFromPaymentsOnly].sort(sortBoardCards),
+    };
+  }, [
+    appointmentsByStatus.terminado,
+    submittedAppointmentIds,
+    chargedAppointmentIds,
+    visibleTickets,
+    weekPayments,
+    weekDateLabels,
+    selectedStaffIds,
+    appointmentById,
+  ]);
+
+  const toggleStaff = (staffId: string) => {
+    setSelectedStaffIds((current) => {
+      if (current.length === 0) return [staffId];
+      if (current.includes(staffId)) {
+        const next = current.filter((id) => id !== staffId);
+        return next.length === 0 ? [] : next;
+      }
+      return [...current, staffId];
+    });
   };
+
+  const agendaStatusColumns = [
+    {
+      id: 'agendado' as const,
+      label: 'Agendadas',
+      accent: 'bg-amber-500',
+      countClass: 'bg-amber-100 text-amber-900',
+      items: appointmentsByStatus.agendado.map((appointment) => ({
+        id: appointment.id,
+        appointmentId: appointment.id,
+        date: appointment.date,
+        time: appointment.time,
+        clientName: appointment.clientName,
+        serviceName: appointment.serviceName,
+        staffId: appointment.staffId,
+        staffName: appointment.staffName,
+        amount: appointment.cost > 0 ? appointment.cost : undefined,
+      })),
+    },
+    {
+      id: 'confirmado' as const,
+      label: 'Confirmadas',
+      accent: 'bg-sky-500',
+      countClass: 'bg-sky-100 text-sky-900',
+      items: appointmentsByStatus.confirmado.map((appointment) => ({
+        id: appointment.id,
+        appointmentId: appointment.id,
+        date: appointment.date,
+        time: appointment.time,
+        clientName: appointment.clientName,
+        serviceName: appointment.serviceName,
+        staffId: appointment.staffId,
+        staffName: appointment.staffName,
+        amount: appointment.cost > 0 ? appointment.cost : undefined,
+      })),
+    },
+    {
+      id: 'terminado' as const,
+      label: 'Terminadas',
+      accent: 'bg-emerald-500',
+      countClass: 'bg-emerald-100 text-emerald-900',
+      items: appointmentsByStatus.terminado.map((appointment) => ({
+        id: appointment.id,
+        appointmentId: appointment.id,
+        date: appointment.date,
+        time: appointment.time,
+        clientName: appointment.clientName,
+        serviceName: appointment.serviceName,
+        staffId: appointment.staffId,
+        staffName: appointment.staffName,
+        amount: appointment.cost > 0 ? appointment.cost : undefined,
+      })),
+    },
+  ];
+
+  const cajaStatusColumns = [
+    {
+      id: 'pendingToSend',
+      label: 'Pendientes por enviar',
+      accent: 'bg-orange-500',
+      countClass: 'bg-orange-100 text-orange-900',
+      items: cajaBoardColumns.pendingToSend,
+    },
+    {
+      id: 'pendingCharge',
+      label: 'Por cobrar',
+      accent: 'bg-violet-500',
+      countClass: 'bg-violet-100 text-violet-900',
+      items: cajaBoardColumns.pendingCharge,
+    },
+    {
+      id: 'charged',
+      label: 'Cobradas',
+      accent: 'bg-teal-500',
+      countClass: 'bg-teal-100 text-teal-900',
+      items: cajaBoardColumns.charged,
+    },
+  ];
+
+  const reportStatusOptions = useMemo(
+    () =>
+      [...agendaStatusColumns, ...cajaStatusColumns].map((column) => ({
+        id: column.id as string,
+        label: column.label,
+        accent: column.accent,
+        items: column.items,
+      })),
+    [agendaStatusColumns, cajaStatusColumns]
+  );
+
+  const toggleReportStatus = (statusId: string) => {
+    setSelectedReportStatusIds((current) => {
+      if (current.length === 0) return [statusId];
+      if (current.includes(statusId)) {
+        const next = current.filter((id) => id !== statusId);
+        return next.length === 0 ? [] : next;
+      }
+      return [...current, statusId];
+    });
+  };
+
+  const reportRowCount = useMemo(
+    () =>
+      reportStatusOptions
+        .filter(
+          (option) =>
+            selectedReportStatusIds.length === 0 ||
+            selectedReportStatusIds.includes(option.id)
+        )
+        .reduce((sum, option) => sum + option.items.length, 0),
+    [reportStatusOptions, selectedReportStatusIds]
+  );
+
+  const handleGenerateReport = async () => {
+    const selectedColumns = reportStatusOptions.filter(
+      (option) =>
+        selectedReportStatusIds.length === 0 ||
+        selectedReportStatusIds.includes(option.id)
+    );
+
+    const rows = selectedColumns.flatMap((option) =>
+      option.items.map((item) => ({
+        Estatus: option.label,
+        Fecha: item.date,
+        Hora: item.time || '',
+        Cliente: item.clientName,
+        Servicio: item.serviceName,
+        Manicurista: item.staffName,
+        Monto:
+          typeof item.amount === 'number' && item.amount > 0 ? item.amount : '',
+      }))
+    );
+
+    if (rows.length === 0) {
+      window.alert('No hay citas para los estatus seleccionados en esta semana.');
+      return;
+    }
+
+    const staffLabel =
+      selectedStaffIds.length === 0
+        ? 'Todas las manicuristas'
+        : selectedStaffIds
+            .map((id) => staffList.find((staff) => staff.id === id)?.name || id)
+            .join(', ');
+
+    const headers = [
+      'Estatus',
+      'Fecha',
+      'Hora',
+      'Cliente',
+      'Servicio',
+      'Manicurista',
+      'Monto',
+    ];
+
+    const XLSX = await import('xlsx');
+
+    const sheetData = [
+      [`Reporte de citas · ${weekRangeLabel}`],
+      [staffLabel],
+      [],
+      headers,
+      ...rows.map((row) => [
+        row.Estatus,
+        row.Fecha,
+        row.Hora,
+        row.Cliente,
+        row.Servicio,
+        row.Manicurista,
+        row.Monto,
+      ]),
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    worksheet['!cols'] = [
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 8 },
+      { wch: 26 },
+      { wch: 30 },
+      { wch: 18 },
+      { wch: 12 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Citas');
+
+    const [, startDay] = weekRangeLabel.split(' ');
+    XLSX.writeFile(workbook, `reporte-citas-${startDay || 'semana'}.xlsx`);
+  };
+
+  const handleAdvanceAppointment = async (
+    appointmentId: string,
+    status: AppointmentStatus
+  ) => {
+    setUpdatingAppointmentId(appointmentId);
+    try {
+      await onUpdateAppointmentStatus(appointmentId, status);
+    } finally {
+      setUpdatingAppointmentId(null);
+    }
+  };
+
+  const handleSendToCaja = (appointmentId: string) => {
+    const appointment = appointmentById.get(appointmentId);
+    if (appointment) setSendToCajaAppointment(appointment);
+  };
+
+  const renderCardAction = (columnId: string, item: BoardCard) => {
+    if (!canManageStatuses || columnId === 'charged') return null;
+
+    if (columnId === 'agendado') {
+      return (
+        <button
+          type="button"
+          disabled={updatingAppointmentId === item.appointmentId}
+          onClick={() => handleAdvanceAppointment(item.appointmentId, 'confirmado')}
+          className="mt-3 w-full px-3 py-2 rounded-lg bg-sky-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-sky-700 disabled:opacity-50 transition-colors"
+        >
+          {updatingAppointmentId === item.appointmentId ? 'Actualizando…' : 'Confirmar'}
+        </button>
+      );
+    }
+
+    if (columnId === 'confirmado') {
+      return (
+        <button
+          type="button"
+          disabled={updatingAppointmentId === item.appointmentId}
+          onClick={() => handleAdvanceAppointment(item.appointmentId, 'terminado')}
+          className="mt-3 w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+        >
+          {updatingAppointmentId === item.appointmentId ? 'Actualizando…' : 'Terminar'}
+        </button>
+      );
+    }
+
+    if (columnId === 'terminado' || columnId === 'pendingToSend') {
+      return (
+        <button
+          type="button"
+          onClick={() => handleSendToCaja(item.appointmentId)}
+          className="mt-3 w-full px-3 py-2 rounded-lg bg-slate-300 text-slate-950 border border-slate-400 text-[10px] font-bold uppercase tracking-wider shadow-sm hover:bg-slate-400 transition-colors"
+        >
+          Enviar a caja
+        </button>
+      );
+    }
+
+    if (columnId === 'pendingCharge') {
+      return (
+        <button
+          type="button"
+          onClick={onOpenCaja}
+          className="mt-3 w-full px-3 py-2 rounded-lg bg-slate-300 text-slate-950 border border-slate-400 text-[10px] font-bold uppercase tracking-wider shadow-sm hover:bg-slate-400 transition-colors"
+        >
+          Cobrar en caja
+        </button>
+      );
+    }
+
+    return null;
+  };
+
+  const renderColumnGrid = (
+    columns: Array<{
+      id: string;
+      label: string;
+      accent: string;
+      countClass: string;
+      items: BoardCard[];
+    }>
+  ) => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-px bg-primary/5">
+      {columns.map((column) => (
+        <div key={column.id} className="bg-surface-container-lowest min-w-0">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-primary/5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${column.accent}`} />
+              <h4 className="font-display font-bold text-sm text-primary truncate">
+                {column.label}
+              </h4>
+            </div>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${column.countClass}`}
+            >
+              {column.items.length}
+            </span>
+          </div>
+
+          <div className="p-4 space-y-3 max-h-[30rem] overflow-y-auto">
+            {column.items.length === 0 ? (
+              <p className="py-10 text-center text-xs text-outline">
+                {isLoadingCajaBoard &&
+                (column.id === 'pendingToSend' ||
+                  column.id === 'pendingCharge' ||
+                  column.id === 'charged')
+                  ? 'Cargando…'
+                  : `No hay citas ${column.label.toLowerCase()} en esta semana.`}
+              </p>
+            ) : (
+              column.items.map((item) => (
+                <article
+                  key={item.id}
+                  className="p-4 rounded-xl bg-surface-container-low border border-primary/5"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-sans font-bold text-sm text-primary truncate">
+                        {item.clientName}
+                      </p>
+                      <p className="text-xs text-on-surface-variant mt-1 truncate">
+                        {item.serviceName}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 space-y-1">
+                      <p className="font-mono text-[10px] font-bold text-outline">
+                        {item.date}
+                      </p>
+                      {item.time ? (
+                        <span className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-primary">
+                          <Clock3 className="w-3.5 h-3.5 text-secondary" />
+                          {item.time}
+                        </span>
+                      ) : null}
+                      {typeof item.amount === 'number' && item.amount > 0 ? (
+                        <p className="font-display text-[11px] font-bold text-primary">
+                          {formatServicePrice(item.amount)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-primary/5 flex items-center gap-2">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{
+                        backgroundColor: staffList.find(
+                          (staff) => staff.id === item.staffId
+                        )?.color,
+                      }}
+                    />
+                    <span className="text-[10px] font-bold text-outline truncate">
+                      {item.staffName}
+                    </span>
+                  </div>
+                  {renderCardAction(column.id, item)}
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-7xl mx-auto">
-      {/* Header section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">Panel Ejecutivo</span>
-          <h2 className="font-display text-3xl font-bold text-primary mt-1">Gestión Operativa</h2>
-          <p className="text-on-surface-variant text-sm mt-1">Control diario en tiempo real de studio aé premium manicure & spa.</p>
+          <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">
+            Panel Ejecutivo
+          </span>
+          <h2 className="font-display text-3xl font-bold text-primary mt-1">
+            Gestión Operativa
+          </h2>
+          <p className="text-on-surface-variant text-sm mt-1">
+            Control diario en tiempo real de studio aé premium manicure & spa.
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
+          <button
             onClick={onOpenNewClient}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors"
           >
             <UserPlus className="w-4 h-4 text-secondary" />
             <span>Registrar Cliente</span>
           </button>
-          <button 
+          <button
             onClick={onOpenNewAppointment}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-all shadow-sm shadow-primary/10"
           >
@@ -76,7 +701,6 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-2 gap-6 items-stretch">
         <div className="h-full min-h-0">
           <WeeklyCompletedAppointmentsCard
@@ -98,194 +722,160 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* Main Layout Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left 2 Columns: Staff Status & Alerts */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Active Staff List */}
-          <div className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden">
-            <div className="p-6 border-b border-primary/5 flex items-center justify-between">
-              <div>
-                <h3 className="font-display text-lg font-bold text-primary">Personal de Turno Hoy</h3>
-                <p className="text-xs text-outline">Listado activo de artistas de uñas, técnicos y recepcionistas en cabina.</p>
-              </div>
-              <span className="text-[10px] bg-primary-fixed text-primary-fixed-dim px-2.5 py-1 rounded-full font-sans font-bold uppercase tracking-wider">
-                {activeStaff.length} Activos
-              </span>
+      <section className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden">
+        <div className="p-5 md:p-6 border-b border-primary/5 space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div>
+              <h3 className="font-display text-lg font-bold text-primary">
+                Citas de la semana
+              </h3>
+              <p className="text-xs text-outline mt-1">
+                Agenda y caja · sábado a viernes
+              </p>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-surface-container-low/50 text-[10px] text-outline font-bold uppercase tracking-widest border-b border-primary/5">
-                    <th className="py-4 px-6">Staff Artist</th>
-                    <th className="py-4 px-6">Estado</th>
-                    <th className="py-4 px-6">Especialidad</th>
-                    <th className="py-4 px-6 text-center">Progreso</th>
-                    <th className="py-4 px-6 text-right">Detalle</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-primary/5">
-                  {operationalStaff.map((staff) => (
-                    <tr 
-                      key={staff.id} 
-                      className="hover:bg-surface-container-low/30 transition-colors group cursor-pointer"
-                      onClick={() => onSelectStaff(staff.id)}
-                    >
-                      <td className="py-4 px-6 flex items-center gap-3">
-                        <img 
-                          referrerPolicy="no-referrer"
-                          src={staff.image} 
-                          alt={staff.name} 
-                          className="w-10 h-10 rounded-full object-cover border border-primary/10"
-                        />
-                        <div>
-                          <p className="font-sans font-bold text-xs text-primary group-hover:underline">{staff.name}</p>
-                          <p className="text-[10px] text-outline">{staff.role}</p>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-                          staff.status === 'online' 
-                            ? 'bg-emerald-500/10 text-emerald-800' 
-                            : staff.status === 'break'
-                            ? 'bg-secondary-container/30 text-secondary'
-                            : 'bg-surface-container-highest text-outline'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            staff.status === 'online' 
-                              ? 'bg-emerald-500' 
-                              : staff.status === 'break'
-                              ? 'bg-secondary'
-                              : 'bg-outline'
-                          }`} />
-                          {staff.status === 'online' ? 'En Cita' : staff.status === 'break' ? 'Descanso' : 'Ausente'}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-xs text-on-surface-variant font-medium">
-                        {staff.specialty}
-                      </td>
-                      <td className="py-4 px-6 text-center">
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          <span className="text-[10px] font-mono text-primary font-bold">
-                            {staff.completedToday}/{staff.totalToday} citas
-                          </span>
-                          <div className="w-20 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-primary" 
-                              style={{ width: `${staff.totalToday > 0 ? (staff.completedToday / staff.totalToday) * 100 : 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-right">
-                        <button className="text-outline hover:text-primary transition-colors">
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Right 1 Column: Queue status & System Alert Alerts */}
-        <div className="space-y-8">
-          {/* Waiting Queue section */}
-          <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-primary/5">
-              <div>
-                <h4 className="font-display font-bold text-sm text-primary">Clientes en Espera</h4>
-                <p className="text-[10px] text-outline">Fila presencial para atención prioritaria</p>
-              </div>
-              <span className="text-[10px] font-bold text-secondary font-mono bg-secondary/10 px-2 py-0.5 rounded">
-                Live Queue
-              </span>
-            </div>
-
-            {waitingQueue.length === 0 ? (
-              <div className="py-8 text-center text-outline text-xs">
-                No hay clientes en espera actualmente.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {waitingQueue.map((item) => (
-                  <div key={item.id} className="p-3 bg-surface-container-low rounded-xl border border-primary/5 flex items-center justify-between">
-                    <div>
-                      <p className="font-sans font-bold text-xs text-primary">{item.name}</p>
-                      <p className="text-[10px] text-outline">{item.service} (Cita {item.time})</p>
-                      <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded mt-1.5 ${
-                        item.status === 'En espera' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {item.status}
-                      </span>
-                    </div>
-                    {item.status === 'En espera' && (
-                      <button 
-                        onClick={() => handleAttendInQueue(item.id)}
-                        className="flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-container px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors shadow-sm"
-                      >
-                        <UserCheck className="w-3 h-3 text-secondary" />
-                        <span>Atender</span>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Quick VIP Lookup section */}
-          <div className="bg-gradient-to-br from-primary to-primary-container text-on-primary p-6 rounded-2xl border border-primary-container luxury-shadow">
-            <span className="text-[10px] text-on-primary-container font-mono uppercase tracking-widest font-bold">Cliente Destacado</span>
-            <div className="flex items-center gap-3 mt-4">
-              <img 
-                referrerPolicy="no-referrer"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuHW-1-qfdtVzBxWvPpA-OqcaHbLR1_sK9e-e4oMb3OdUFEqW9YMQzFqDNl9t2rp0ekLfel-_kxYikI3SVkqrpBNthi7_u_DQhjCyO2kp2ocsT8TBdtEiFgNr6tpHULi0-sqdQtMu8hpU5Mp4IarqXCeiQjxWxDefBUb_aMlSQPpvEhQKnLA2sdECrsqUfvNUGZgDBMo04FYaWG9Q5hcUfPy9-J9OwrUo3qaW9Wx07Qae9thQ1EcOGIe76Lw2lddDnjFoxccVEgZE" 
-                alt="Elena Valenzuela"
-                className="w-12 h-12 rounded-full object-cover border-2 border-secondary"
-              />
-              <div>
-                <h4 className="font-display font-bold text-sm text-white">Elena Valenzuela</h4>
-                <p className="text-[10px] text-on-primary-container font-sans tracking-wide">Platinum Member (since 2022)</p>
-              </div>
-            </div>
-            <p className="text-xs text-on-primary-container/90 mt-4 leading-relaxed line-clamp-2">
-              Cliente recurrente con especial enfoque en tratamientos de alta gama y diseños minimalistas...
-            </p>
-            <div className="mt-5 pt-4 border-t border-on-primary-container/10 flex justify-between items-center">
-              <span className="text-[10px] text-secondary font-mono font-bold">{formatMXN(3450)} acumulados</span>
-              <button 
-                onClick={() => onSelectClient('SA-2022')}
-                className="text-white hover:text-secondary text-xs font-bold uppercase tracking-widest flex items-center gap-1 transition-colors"
+            <div className="flex items-center gap-1.5 rounded-xl border border-primary/10 bg-surface px-1 py-1 self-start">
+              <button
+                type="button"
+                onClick={() => setWeekStart((prev) => addDays(prev, -7))}
+                title="Semana anterior"
+                className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors"
               >
-                <span>Ver Perfil</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekStart(getStudioWeekStart(new Date()))}
+                disabled={viewingCurrentWeek}
+                className={`px-3 py-1 rounded-lg text-[10px] font-sans font-bold uppercase tracking-wider transition-colors ${
+                  viewingCurrentWeek
+                    ? 'bg-primary text-on-primary cursor-default'
+                    : 'text-primary hover:bg-surface-container-low'
+                }`}
+              >
+                Semana actual
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekStart((prev) => addDays(prev, 7))}
+                title="Semana siguiente"
+                className="p-1.5 rounded-lg hover:bg-surface-container-low text-primary transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Critical medical warning list */}
-          <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200/50">
-            <div className="flex items-center gap-2 text-amber-900 font-bold text-xs uppercase tracking-wider mb-3">
-              <ShieldAlert className="w-4 h-4 text-amber-700" />
-              <span>Alertas Médicas de Hoy</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-primary mr-1">
+              <Calendar className="w-3.5 h-3.5 text-secondary" />
+              {weekRangeLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedStaffIds([])}
+              className={`px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                selectedStaffIds.length === 0
+                  ? 'bg-primary text-on-primary border-primary'
+                  : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
+              }`}
+            >
+              Todas
+            </button>
+            {operationalStaff.map((staff) => {
+              const selected = selectedStaffIds.includes(staff.id);
+              return (
+                <button
+                  key={staff.id}
+                  type="button"
+                  onClick={() => toggleStaff(staff.id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-colors ${
+                    selected
+                      ? 'bg-primary text-on-primary border-primary'
+                      : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
+                  }`}
+                >
+                  {selected ? <CheckCircle2 className="w-3 h-3" /> : null}
+                  {staff.name}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="pt-4 border-t border-primary/5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-secondary" />
+                <h4 className="font-display font-bold text-sm text-primary">
+                  Generar reportes
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={handleGenerateReport}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary font-sans text-[10px] font-bold uppercase tracking-wider hover:bg-primary-container transition-colors shadow-sm shadow-primary/10 self-start sm:self-auto"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-secondary" />
+                Descargar Excel ({reportRowCount})
+              </button>
             </div>
-            <div className="space-y-3">
-              <div className="text-xs">
-                <p className="font-bold text-amber-950">Elena Valenzuela</p>
-                <p className="text-amber-800">Sensibilidad extrema a acetona pura. Usar removedor alternativo.</p>
-              </div>
-              <div className="text-xs pt-2.5 border-t border-amber-200">
-                <p className="font-bold text-amber-950">Sophia Wright</p>
-                <p className="text-amber-800">Uñas quebradizas; evitar limados agresivos en matriz ungueal.</p>
-              </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedReportStatusIds([])}
+                className={`px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  selectedReportStatusIds.length === 0
+                    ? 'bg-primary text-on-primary border-primary'
+                    : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
+                }`}
+              >
+                Todos
+              </button>
+              {reportStatusOptions.map((option) => {
+                const selected = selectedReportStatusIds.includes(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => toggleReportStatus(option.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-colors ${
+                      selected
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${option.accent}`} />
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
-      </div>
+
+        {renderColumnGrid(agendaStatusColumns)}
+
+        <div className="px-5 py-3 border-y border-primary/5 bg-surface-container-low/40">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-outline">
+            Flujo de caja
+          </p>
+        </div>
+
+        {renderColumnGrid(cajaStatusColumns)}
+      </section>
+
+      {sendToCajaAppointment ? (
+        <SendToCajaModal
+          appointment={sendToCajaAppointment}
+          services={services}
+          staffName={sendToCajaAppointment.staffName}
+          onClose={() => setSendToCajaAppointment(null)}
+          onSubmitted={async () => {
+            setCajaRefreshKey((current) => current + 1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -163,7 +163,7 @@ export const MONGO_RELATIONSHIPS = [
     field: "appointmentCode",
     to: "PosPayment",
     targetField: "appointmentCode",
-    description: "Un cobro por cita; al pagar la cita pasa a estado «pagado».",
+    description: "Un cobro por cita; al cobrar en caja la cita pasa a estado «terminado».",
   },
   {
     from: "PosPayment",
@@ -278,7 +278,7 @@ export const MONGO_RELATIONSHIPS = [
     field: "appointmentCodes[]",
     to: "PosAppointment",
     targetField: "appointmentCode",
-    description: "Lista de citas pagadas incluidas en la liquidación.",
+    description: "Lista de citas terminadas incluidas en la liquidación.",
   },
   {
     from: "PosStaffSettlement",
@@ -399,7 +399,7 @@ export const MONGO_DERIVED_FEATURES = [
       "appointmentCodes / paymentCodes / cashSessionCodes",
     ],
     updatesOnMongoChange:
-      "createStaffSettlement recalcula desde citas pagadas; no se actualiza si luego cambian citas.",
+      "createStaffSettlement recalcula desde citas terminadas; no se actualiza si luego cambian citas.",
   },
   {
     id: "accountant-logout-beacon",
@@ -468,7 +468,7 @@ export const MONGO_COLLECTIONS = [
       { name: "completedToday", type: "Number", key: "Citas completadas hoy (métrica UI)." },
       { name: "totalToday", type: "Number", key: "Ingresos del día (métrica UI)." },
       { name: "weeklyRevenue", type: "Number", key: "Ingresos de la semana (métrica UI)." },
-      { name: "commissionPercent", type: "Number", key: "% de comisión sobre citas pagadas (default 40)." },
+      { name: "commissionPercent", type: "Number", key: "% de comisión sobre citas terminadas (default 40)." },
       { name: "bio", type: "String", key: "Biografía en perfil de manicurista." },
       { name: "image", type: "String", key: "Ruta de foto en public/staff/." },
       { name: "color", type: "String", key: "Color principal en columna de agenda." },
@@ -525,7 +525,7 @@ export const MONGO_COLLECTIONS = [
       {
         name: "status",
         type: "enum",
-        key: "agendado | confirmado | pagado | cancelled | pending | completed",
+        key: "agendado | confirmado | terminado | cancelled | pagado | pending | completed",
       },
       { name: "bookedByReceptionistId", type: "String", key: "FK → PosReceptionist.receptionistCode" },
       { name: "bookedByReceptionistName", type: "String", key: "Nombre de quien agendó." },
@@ -689,7 +689,7 @@ export const MONGO_COLLECTIONS = [
       { name: "commissionAmount", type: "Number", key: "Comisión calculada." },
       { name: "paidAmount", type: "Number", key: "Monto pagado (normalmente = commissionAmount)." },
       { name: "commissionPercent", type: "Number", key: "% usado al calcular." },
-      { name: "appointmentCount", type: "Number", key: "Cantidad de citas pagadas incluidas." },
+      { name: "appointmentCount", type: "Number", key: "Cantidad de citas terminadas incluidas." },
       { name: "accountantId", type: "String", key: "FK → PosAccountant.accountantCode" },
       { name: "accountantName", type: "String", key: "Nombre de contadora autorizadora." },
       { name: "notes", type: "String", key: "Notas opcionales." },
@@ -732,7 +732,7 @@ export const MONGO_COLLECTIONS = [
       { name: "date", type: "String", key: "PK lógica — fecha del resumen." },
       { name: "citas", type: "Number", key: "Total de citas ese día." },
       { name: "sinConfirmar", type: "Number", key: "Citas aún sin confirmar." },
-      { name: "pagadas", type: "Number", key: "Citas ya pagadas." },
+      { name: "pagadas", type: "Number", key: "Citas terminadas (campo legado «pagadas»)." },
       { name: "canceladas", type: "Number", key: "Citas canceladas." },
     ]),
     usedBy: ["Barra sticky de agenda"],
@@ -926,7 +926,7 @@ export const FLOW_STEPS = [
     title: "Cobro y corte",
     steps: [
       "PosPayment guarda appointmentCode, clientId, staffId, cashSessionCode y processedByReceptionistId.",
-      "PosAppointment.status pasa a pagado; totales se agregan en PosCashSession.",
+      "PosAppointment.status pasa a terminado; totales se agregan en PosCashSession.",
       "PosClient.lastPaidVisitDate y segmentos CRM se actualizan al cobrar.",
       "Al cerrar turno: conteos, varianzas, isPerfectCut y PosLoginAudit con actionDetails.",
     ],

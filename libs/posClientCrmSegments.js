@@ -191,7 +191,7 @@ function resolveLastPaidVisitDate(client, clientAppointments, today) {
   }
 
   for (const appointment of clientAppointments) {
-    if (normalizeAppointmentStatus(appointment.status) !== "pagado") continue;
+    if (normalizeAppointmentStatus(appointment.status) !== "terminado") continue;
     const appointmentDate = parseSpanishShortDateLabel(appointment.date);
     if (!appointmentDate) continue;
     if (startOfLocalDay(appointmentDate).getTime() > startOfLocalDay(today).getTime()) {

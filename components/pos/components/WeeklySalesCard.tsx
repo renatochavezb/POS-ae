@@ -428,7 +428,7 @@ export default function WeeklySalesCard({
 
           <p className="text-xs text-on-surface-variant">
 
-            Citas pagadas en Mongo · desglose por día y manicurista.
+            Citas terminadas en Mongo · desglose por día y manicurista.
 
           </p>
 
