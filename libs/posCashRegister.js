@@ -182,6 +182,28 @@ export async function getPaymentsForSession(sessionCode) {
   return PosPayment.find({ cashSessionCode: sessionCode }).sort({ createdAt: -1 });
 }
 
+// Cobros de un turno acotados al día operativo (fecha de la cita/venta). Así el
+// turno y el corte solo consideran lo que corresponde a ese día, aunque el turno
+// haya quedado abierto varios días.
+export async function getPaymentsForSessionDay(sessionCode, day) {
+  if (!sessionCode) return [];
+  const query = { cashSessionCode: sessionCode };
+  if (day) query.appointmentDate = day;
+  return PosPayment.find(query).sort({ createdAt: -1 });
+}
+
+export async function computeExpectedCashForSessionDay(session, day) {
+  if (!session) return 0;
+
+  const payments = await getPaymentsForSessionDay(session.sessionCode, day);
+  const cashFromPayments = payments.reduce(
+    (sum, payment) => sum + (payment.cashAmount ?? 0),
+    0
+  );
+
+  return (session.openingFloat ?? 0) + cashFromPayments;
+}
+
 export async function computeExpectedCashForSession(session) {
   if (!session) return 0;
 

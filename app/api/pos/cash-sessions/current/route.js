@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { isMasterSessionRequest, requirePosSession } from "@/libs/posAuth";
 import { mapCashSessionDoc, mapPaymentDoc } from "@/libs/posMappers";
 import {
   getOpenCashSession,
   getPaymentsForDate,
-  getPaymentsForSession,
+  getPaymentsForSessionDay,
   summarizePayments,
 } from "@/libs/posCashRegister";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
@@ -21,10 +21,17 @@ export async function GET() {
 
     const today = getTodaySpanishShortDate();
     const openSession = await getOpenCashSession();
-    const cashDay = openSession?.shiftDate || today;
+    const cashDay = isMasterSessionRequest(req)
+      ? openSession?.shiftDate || today
+      : today;
 
+    // El turno se acota al día operativo: solo cuentan los cobros cuya fecha de
+    // cita/venta coincide con el día de caja. Evita mezclar cobros de otros días
+    // cuando el turno permanece abierto varias jornadas.
     const [shiftPayments, dayPayments] = await Promise.all([
-      openSession ? getPaymentsForSession(openSession.sessionCode) : Promise.resolve([]),
+      openSession
+        ? getPaymentsForSessionDay(openSession.sessionCode, cashDay)
+        : Promise.resolve([]),
       getPaymentsForDate(cashDay),
     ]);
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { isMasterSessionRequest, requirePosSession } from "@/libs/posAuth";
 import PosPayment from "@/models/PosPayment";
 import PosAppointment from "@/models/PosAppointment";
 import PosCashTicket from "@/models/PosCashTicket";
@@ -94,6 +94,23 @@ export async function POST(req) {
     const appointment = await PosAppointment.findOne({ appointmentCode });
     if (!appointment) {
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
+    }
+
+    // El cobro se registra en el día que le corresponde a la cita, no en el día
+    // de caja abierto por descuido. Si la fecha de la cita no coincide con el día
+    // operativo de la caja, se bloquea el cobro para evitar cruzar días.
+    const cashDay = (
+      isMasterSessionRequest(req)
+        ? openSession.shiftDate || getTodaySpanishShortDate()
+        : getTodaySpanishShortDate()
+    ).trim();
+    if (appointment.date && appointment.date !== cashDay) {
+      return NextResponse.json(
+        {
+          error: `Esta cita es del ${appointment.date}, pero la caja opera el día ${cashDay}. Cambia el día de caja a ${appointment.date} (botón "Cambiar día") para cobrarla; así el cobro queda registrado en la fecha correcta.`,
+        },
+        { status: 409 }
+      );
     }
 
     let ticket = null;

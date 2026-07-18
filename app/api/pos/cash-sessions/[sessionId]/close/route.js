@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { isMasterSessionRequest, requirePosSession } from "@/libs/posAuth";
 import PosCashSession from "@/models/PosCashSession";
+import PosPayment from "@/models/PosPayment";
 import { mapCashSessionDoc } from "@/libs/posMappers";
 import {
-  computeExpectedCashForSession,
+  computeExpectedCashForSessionDay,
+  getPaymentsForSessionDay,
   refreshCashSessionTotals,
+  summarizePayments,
 } from "@/libs/posCashRegister";
 import {
   logCashRegisterAudit,
   verifyReceptionistPin,
 } from "@/libs/posReceptionistAuth";
+import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -68,12 +72,17 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: authError.message }, { status: 401 });
     }
 
-    await refreshCashSessionTotals(session.sessionCode);
-    const refreshed = await PosCashSession.findOne({ sessionCode: sessionId });
+    // El corte se cierra solo sobre el día operativo del turno. Los cobros de
+    // otros días (por turnos que quedaron abiertos) no entran a este corte.
+    const cashDay = isMasterSessionRequest(req)
+      ? session.shiftDate
+      : getTodaySpanishShortDate();
+    const dayPayments = await getPaymentsForSessionDay(session.sessionCode, cashDay);
+    const daySummary = summarizePayments(dayPayments);
 
-    const expectedCash = await computeExpectedCashForSession(refreshed);
-    const expectedCard = refreshed.totalTarjeta ?? 0;
-    const expectedTransfer = refreshed.totalTransferencia ?? 0;
+    const expectedCash = await computeExpectedCashForSessionDay(session, cashDay);
+    const expectedCard = daySummary.tarjeta ?? 0;
+    const expectedTransfer = daySummary.transferencia ?? 0;
 
     const variance = closingCountedCash - expectedCash;
     const cardVariance = closingCountedCard - expectedCard;
@@ -88,6 +97,14 @@ export async function POST(req, { params }) {
       {
         $set: {
           status: "closed",
+          shiftDate: cashDay,
+          paymentsCount: daySummary.count,
+          totalAmount: daySummary.total,
+          totalEfectivo: daySummary.efectivo,
+          totalTarjeta: daySummary.tarjeta,
+          totalTransferencia: daySummary.transferencia,
+          totalGiftCard: daySummary.gift_card,
+          totalGiftCardSales: daySummary.giftCardSales,
           closingCountedCash,
           closingCountedCard,
           closingCountedTransfer,
@@ -108,6 +125,51 @@ export async function POST(req, { params }) {
       { new: true }
     );
 
+    // Reajuste: los cobros de otros días que quedaron en este turno se pasan a un
+    // turno nuevo abierto para que se corten en el día que les corresponde y no
+    // se pierdan al cerrar este.
+    const strayPayments = await PosPayment.find({
+      cashSessionCode: session.sessionCode,
+      appointmentDate: { $ne: cashDay },
+    });
+
+    if (strayPayments.length > 0) {
+      const carrySessionCode = `CS-${Date.now()}`;
+      const strayDays = [...new Set(strayPayments.map((p) => p.appointmentDate).filter(Boolean))];
+
+      await PosCashSession.create({
+        sessionCode: carrySessionCode,
+        status: "open",
+        shiftDate: strayDays[0] || cashDay,
+        openedByReceptionistId: verified.receptionistId,
+        openedByReceptionistName: verified.receptionistName,
+        openingFloat: 0,
+        openedWithMasterPin: verified.isMaster,
+      });
+
+      await PosPayment.updateMany(
+        { cashSessionCode: session.sessionCode, appointmentDate: { $ne: cashDay } },
+        { $set: { cashSessionCode: carrySessionCode } }
+      );
+
+      await refreshCashSessionTotals(carrySessionCode);
+
+      await logCashRegisterAudit({
+        action: "caja_open",
+        receptionistId: verified.receptionistId,
+        receptionistName: verified.receptionistName,
+        success: true,
+        isMaster: verified.isMaster,
+        cashSessionCode: carrySessionCode,
+        actionDetails: {
+          reason: "reajuste_cobros_otro_dia",
+          fromSession: session.sessionCode,
+          movedPayments: strayPayments.length,
+          days: strayDays,
+        },
+      });
+    }
+
     await logCashRegisterAudit({
       action: "caja_close",
       receptionistId: verified.receptionistId,
@@ -116,10 +178,10 @@ export async function POST(req, { params }) {
       isMaster: verified.isMaster,
       cashSessionCode: sessionId,
       actionDetails: {
-        shiftDate: refreshed.shiftDate,
-        openingFloat: refreshed.openingFloat ?? 0,
-        paymentsCount: refreshed.paymentsCount ?? 0,
-        totalAmount: refreshed.totalAmount ?? 0,
+        shiftDate: cashDay,
+        openingFloat: session.openingFloat ?? 0,
+        paymentsCount: daySummary.count,
+        totalAmount: daySummary.total,
         expectedCash,
         expectedCard,
         expectedTransfer,

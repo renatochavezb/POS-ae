@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
 import { rejectUnauthorizedAdmin } from "@/libs/posAdminAuth";
+import { isMasterSessionRequest } from "@/libs/posAuth";
 import PosGiftCard from "@/models/PosGiftCard";
 import PosPayment from "@/models/PosPayment";
 import {
@@ -10,6 +11,7 @@ import {
   resolvePaymentBreakdown,
 } from "@/libs/posCashRegister";
 import { mapPaymentDoc } from "@/libs/posMappers";
+import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +112,10 @@ export async function POST(req) {
       );
     }
 
+    const cashDay = isMasterSessionRequest(req)
+      ? openSession.shiftDate || getTodaySpanishShortDate()
+      : getTodaySpanishShortDate();
+
     let giftCardCode = createGiftCardCode();
     while (await PosGiftCard.exists({ giftCardCode })) {
       giftCardCode = createGiftCardCode();
@@ -132,7 +138,7 @@ export async function POST(req) {
       initialValue: value,
       balance: value,
       status: "active",
-      soldDate: openSession.shiftDate,
+      soldDate: cashDay,
       soldAt: new Date(),
       paymentCode,
       cashSessionCode: openSession.sessionCode,
@@ -147,7 +153,7 @@ export async function POST(req) {
       transactionType: "gift_card_sale",
       giftCardCode,
       appointmentCode: saleCode,
-      appointmentDate: openSession.shiftDate,
+      appointmentDate: cashDay,
       clientId: "",
       clientName: "Venta directa",
       staffId: "",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession } from "@/libs/posAuth";
+import { requireMasterSession, requirePosSession } from "@/libs/posAuth";
 import PosCashSession from "@/models/PosCashSession";
 import { mapCashSessionDoc } from "@/libs/posMappers";
 import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
@@ -15,6 +15,14 @@ export async function PATCH(req, { params }) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
+
+    const masterResult = requireMasterSession(req);
+    if (masterResult.error) {
+      return NextResponse.json(
+        { error: "Solo el administrador puede cambiar el día operativo de caja." },
+        { status: 403 }
+      );
+    }
 
     const { sessionId } = await params;
     const body = await req.json();

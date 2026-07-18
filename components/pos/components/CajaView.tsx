@@ -47,6 +47,7 @@ interface CajaViewProps {
   services?: Service[];
   onTicketSubmitted?: () => void | Promise<void>;
   liveSyncAt?: number;
+  isMasterSession?: boolean;
 }
 
 const EMPTY_SUMMARY = {
@@ -90,6 +91,7 @@ export default function CajaView({
   services = [],
   onTicketSubmitted,
   liveSyncAt = 0,
+  isMasterSession = false,
 }: CajaViewProps) {
   const [registerState, setRegisterState] = useState<CashRegisterState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -789,14 +791,16 @@ export default function CajaView({
                 Turno abierto
                 {session.openedByReceptionistName ? ` · ${session.openedByReceptionistName}` : ''}
               </div>
-              <button
-                type="button"
-                onClick={openShiftDateModal}
-                className="px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors flex items-center gap-2"
-              >
-                <CalendarDays className="w-4 h-4 text-secondary" />
-                Cambiar día
-              </button>
+              {isMasterSession && (
+                <button
+                  type="button"
+                  onClick={openShiftDateModal}
+                  className="px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors flex items-center gap-2"
+                >
+                  <CalendarDays className="w-4 h-4 text-secondary" />
+                  Cambiar día
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowGiftCardSaleModal(true)}
@@ -1215,7 +1219,7 @@ export default function CajaView({
         </div>
       </section>
 
-      {showShiftDateModal && session && (
+      {showShiftDateModal && session && isMasterSession && (
         <Modal
           title="Cambiar día de caja"
           onClose={() => {

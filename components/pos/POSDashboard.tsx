@@ -1581,6 +1581,7 @@ export default function POSDashboard() {
               receptionists.find((member) => member.id === loggedInReceptionistId) || null
             }
             isManicuristaSession={isManicuristaSession}
+            isMasterSession={isMasterSession}
             loggedInStaffId={loggedInStaffId}
             services={services}
             onPaymentComplete={() => loadPosData({ silent: true })}
