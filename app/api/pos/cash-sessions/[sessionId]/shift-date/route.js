@@ -4,6 +4,7 @@ import { requireMasterSession, requirePosSession } from "@/libs/posAuth";
 import PosCashSession from "@/models/PosCashSession";
 import { mapCashSessionDoc } from "@/libs/posMappers";
 import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
+import { formatSpanishShortDate } from "@/components/pos/scheduleUtils";
 import {
   logCashRegisterAudit,
   verifyReceptionistPin,
@@ -26,25 +27,31 @@ export async function PATCH(req, { params }) {
 
     const { sessionId } = await params;
     const body = await req.json();
-    const shiftDate = String(body?.shiftDate || "").trim();
+    const shiftDateInput = String(body?.shiftDate || "").trim();
     const receptionistId = String(
       body?.receptionistId || body?.changedByReceptionistId || ""
     ).trim();
     const pin = String(body?.pin || "").trim();
 
-    if (!shiftDate) {
+    if (!shiftDateInput) {
       return NextResponse.json(
         { error: "Selecciona el día operativo de caja." },
         { status: 400 }
       );
     }
 
-    if (!parseSpanishShortDateLabel(shiftDate)) {
+    const parsedShiftDate = parseSpanishShortDateLabel(shiftDateInput);
+    if (!parsedShiftDate) {
       return NextResponse.json(
         { error: 'Formato de fecha inválido. Usa el formato "4 Jul, 2026".' },
         { status: 400 }
       );
     }
+
+    // Se normaliza al formato canónico ("14 Jul, 2026") para que el día de caja
+    // siempre coincida con las fechas de citas y no se creen días duplicados por
+    // variantes como "14 julio 2026".
+    const shiftDate = formatSpanishShortDate(parsedShiftDate);
 
     await connectMongo();
 
