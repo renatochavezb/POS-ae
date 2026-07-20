@@ -1,111 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, Scissors } from "lucide-react";
-import posApi from "@/libs/posApi";
-import { CashSession } from "../types";
 import { formatMXN } from "../data";
-import {
-  addDays,
-  buildWeekDayEntries,
-  formatWeekRangeLabel,
-  getStudioWeekStart,
-  isCurrentWeek,
-} from "../scheduleUtils";
+import { addDays, getStudioWeekStart } from "../scheduleUtils";
+import { useWeeklySnapshot } from "../useWeeklySnapshot";
 
 export default function WeeklyCutsCard() {
   const [weekStart, setWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [showDetails, setShowDetails] = useState(false);
-  const [cashSessions, setCashSessions] = useState<CashSession[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { snapshot, isLoading, weekRangeLabel, viewingCurrentWeek } = useWeeklySnapshot(weekStart);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadCashSessions = async () => {
-      setIsLoading(true);
-      try {
-        const result = await posApi.getCashSessionHistory({ scope: "all", limit: 100 });
-        if (!cancelled) {
-          setCashSessions(result.sessions);
-        }
-      } catch (error) {
-        console.error(error);
-        if (!cancelled) {
-          setCashSessions([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadCashSessions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [weekStart]);
-
-  const weekDays = useMemo(() => buildWeekDayEntries(weekStart), [weekStart]);
-  const weekDateLabels = useMemo(
-    () => new Set(weekDays.map((day) => day.dateLabel)),
-    [weekDays]
-  );
-
-  const weekCashSessions = useMemo(
-    () => cashSessions.filter((session) => weekDateLabels.has(session.shiftDate)),
-    [cashSessions, weekDateLabels]
-  );
-
-  const cutsByTurn = useMemo(
-    () =>
-      [...weekCashSessions].sort(
-        (a, b) =>
-          new Date(b.closedAt || b.openedAt).getTime() -
-          new Date(a.closedAt || a.openedAt).getTime()
-      ),
-    [weekCashSessions]
-  );
-
-  const cutsByReceptionist = useMemo(() => {
-    const totals = new Map<
-      string,
-      { receptionistId: string; name: string; count: number; total: number }
-    >();
-
-    weekCashSessions.forEach((session) => {
-      const receptionistId = session.closedByReceptionistId || session.openedByReceptionistId;
-      const name =
-        session.closedByReceptionistName ||
-        session.openedByReceptionistName ||
-        receptionistId ||
-        "Sin recepcionista";
-
-      if (!receptionistId) return;
-
-      const current = totals.get(receptionistId) ?? {
-        receptionistId,
-        name,
-        count: 0,
-        total: 0,
-      };
-
-      totals.set(receptionistId, {
-        ...current,
-        count: current.count + 1,
-        total: current.total + (session.totalAmount || 0),
-      });
-    });
-
-    return [...totals.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-  }, [weekCashSessions]);
-
-  const weekCutsCount = cutsByTurn.length;
-  const weekCutsTotal = cutsByTurn.reduce((sum, session) => sum + (session.totalAmount || 0), 0);
-  const weekRangeLabel = formatWeekRangeLabel(weekStart);
-  const viewingCurrentWeek = isCurrentWeek(weekStart);
+  const cutsByTurn = snapshot?.cutsByTurn ?? [];
+  const cutsByReceptionist = snapshot?.cutsByReceptionist ?? [];
+  const weekCutsCount = snapshot?.cutsCount ?? 0;
+  const weekCutsTotal = snapshot?.cutsTotal ?? 0;
 
   return (
     <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow h-full flex flex-col">
@@ -192,7 +101,7 @@ export default function WeeklyCutsCard() {
           </div>
 
           <p className="text-xs text-on-surface-variant">
-            Turnos cerrados en Mongo · desglose por turno y recepcionista.
+            Turnos cerrados · KPI semanal en Mongo.
           </p>
 
           <button
@@ -221,7 +130,7 @@ export default function WeeklyCutsCard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 w-full">
                 {cutsByTurn.map((session) => (
                   <div
-                    key={session.id}
+                    key={session.sessionCode}
                     className="flex items-center justify-between gap-3 text-xs px-3 py-2.5 rounded-lg bg-surface-container-low/30"
                   >
                     <div className="min-w-0">
@@ -229,9 +138,7 @@ export default function WeeklyCutsCard() {
                         {session.shiftDate}
                       </p>
                       <p className="text-[10px] text-outline truncate">
-                        {session.closedByReceptionistName ||
-                          session.openedByReceptionistName ||
-                          "Recepción"}
+                        {session.receptionistName}
                         {session.paymentsCount > 0
                           ? ` · ${session.paymentsCount} cobro${session.paymentsCount === 1 ? "" : "s"}`
                           : ""}

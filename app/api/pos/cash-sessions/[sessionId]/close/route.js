@@ -15,6 +15,7 @@ import {
   verifyReceptionistPin,
 } from "@/libs/posReceptionistAuth";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
+import { refreshWeeklySnapshotsForDates } from "@/libs/posWeeklyStats";
 
 export const dynamic = "force-dynamic";
 
@@ -195,6 +196,14 @@ export async function POST(req, { params }) {
         closingNotes: (body.closingNotes || "").trim(),
       },
     });
+
+    const weeklyDatesToRefresh = [cashDay];
+    if (strayPayments.length > 0) {
+      weeklyDatesToRefresh.push(
+        ...new Set(strayPayments.map((payment) => payment.appointmentDate).filter(Boolean))
+      );
+    }
+    await refreshWeeklySnapshotsForDates(weeklyDatesToRefresh);
 
     return NextResponse.json(mapCashSessionDoc(updated));
   } catch (error) {

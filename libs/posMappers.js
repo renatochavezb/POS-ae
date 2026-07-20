@@ -466,3 +466,68 @@ export function mapPayableDoc(doc) {
     createdAt: raw.createdAt ? new Date(raw.createdAt).toISOString() : "",
   };
 }
+
+function mapWeeklyBreakdownDay(raw = {}) {
+  return {
+    dateLabel: raw.dateLabel || "",
+    dayLabel: raw.dayLabel || "",
+    count: raw.count ?? 0,
+    sales: raw.sales ?? 0,
+    commission: raw.commission ?? 0,
+  };
+}
+
+function mapWeeklyStaffBreakdown(raw = {}) {
+  return {
+    staffId: raw.staffId || "",
+    staffName: raw.staffName || "",
+    count: raw.count ?? 0,
+    sales: raw.sales ?? 0,
+    commission: raw.commission ?? 0,
+    commissionPercent: raw.commissionPercent ?? 40,
+  };
+}
+
+export function mapWeeklySnapshotDoc(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    weekStartDate: raw.weekStartDate,
+    weekEndDate: raw.weekEndDate,
+    weekRangeLabel: raw.weekRangeLabel || "",
+    completedAppointmentsCount: raw.completedAppointmentsCount ?? 0,
+    completedByDay: (raw.completedByDay || []).map(mapWeeklyBreakdownDay),
+    completedByStaff: (raw.completedByStaff || []).map(mapWeeklyStaffBreakdown),
+    previousWeekCompletedCount: raw.previousWeekCompletedCount ?? 0,
+    completedWeekDeltaPercent: raw.completedWeekDeltaPercent ?? null,
+    grossSales: raw.grossSales ?? 0,
+    estimatedCommission: raw.estimatedCommission ?? 0,
+    tips: raw.tips ?? 0,
+    salonNet: raw.salonNet ?? 0,
+    salesByDay: (raw.salesByDay || []).map(mapWeeklyBreakdownDay),
+    salesByStaff: (raw.salesByStaff || []).map(mapWeeklyStaffBreakdown),
+    previousWeekGrossSales: raw.previousWeekGrossSales ?? 0,
+    grossSalesWeekDeltaPercent: raw.grossSalesWeekDeltaPercent ?? null,
+    cutsCount: raw.cutsCount ?? 0,
+    cutsTotal: raw.cutsTotal ?? 0,
+    cutsTotalEfectivo: raw.cutsTotalEfectivo ?? 0,
+    cutsTotalTarjeta: raw.cutsTotalTarjeta ?? 0,
+    cutsTotalTransferencia: raw.cutsTotalTransferencia ?? 0,
+    cutsByTurn: (raw.cutsByTurn || []).map((entry) => ({
+      sessionCode: entry.sessionCode || "",
+      shiftDate: entry.shiftDate || "",
+      totalAmount: entry.totalAmount ?? 0,
+      paymentsCount: entry.paymentsCount ?? 0,
+      receptionistName: entry.receptionistName || "",
+      closedAt: entry.closedAt ? new Date(entry.closedAt).toISOString() : "",
+    })),
+    cutsByReceptionist: (raw.cutsByReceptionist || []).map((entry) => ({
+      receptionistId: entry.receptionistId || "",
+      name: entry.name || "",
+      count: entry.count ?? 0,
+      total: entry.total ?? 0,
+    })),
+    computedAt: raw.computedAt ? new Date(raw.computedAt).toISOString() : "",
+    updatedAt: raw.updatedAt ? new Date(raw.updatedAt).toISOString() : "",
+  };
+}

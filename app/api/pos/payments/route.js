@@ -18,6 +18,7 @@ import {
   summarizePayments,
 } from "@/libs/posCashRegister";
 import { upsertDailySnapshot } from "@/libs/posDailyStats";
+import { refreshWeeklySnapshotsForDates } from "@/libs/posWeeklyStats";
 import {
   isAppointmentPaid,
   normalizeAppointmentStatus,
@@ -311,6 +312,7 @@ export async function POST(req) {
 
     await refreshCashSessionTotals(openSession.sessionCode);
     await upsertDailySnapshot(appointment.date);
+    await refreshWeeklySnapshotsForDates([appointment.date]);
 
     return NextResponse.json(
       {

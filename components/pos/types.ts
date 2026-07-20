@@ -239,6 +239,67 @@ export interface DailyStats {
   canceladas: number;
 }
 
+export interface WeeklyBreakdownDay {
+  dateLabel: string;
+  dayLabel: string;
+  count: number;
+  sales: number;
+  commission: number;
+}
+
+export interface WeeklyStaffBreakdown {
+  staffId: string;
+  staffName: string;
+  count: number;
+  sales: number;
+  commission: number;
+  commissionPercent: number;
+}
+
+export interface WeeklyCutTurn {
+  sessionCode: string;
+  shiftDate: string;
+  totalAmount: number;
+  paymentsCount: number;
+  receptionistName: string;
+  closedAt: string;
+}
+
+export interface WeeklyCutReceptionist {
+  receptionistId: string;
+  name: string;
+  count: number;
+  total: number;
+}
+
+export interface WeeklyStats {
+  weekStartDate: string;
+  weekEndDate: string;
+  weekRangeLabel: string;
+  completedAppointmentsCount: number;
+  completedByDay: WeeklyBreakdownDay[];
+  completedByStaff: WeeklyStaffBreakdown[];
+  previousWeekCompletedCount: number;
+  completedWeekDeltaPercent: number | null;
+  grossSales: number;
+  estimatedCommission: number;
+  tips: number;
+  salonNet: number;
+  salesByDay: WeeklyBreakdownDay[];
+  salesByStaff: WeeklyStaffBreakdown[];
+  previousWeekGrossSales: number;
+  grossSalesWeekDeltaPercent: number | null;
+  cutsCount: number;
+  cutsTotal: number;
+  cutsTotalEfectivo: number;
+  cutsTotalTarjeta: number;
+  cutsTotalTransferencia: number;
+  cutsByTurn: WeeklyCutTurn[];
+  cutsByReceptionist: WeeklyCutReceptionist[];
+  computedAt: string;
+  updatedAt: string;
+}
+
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'gift_card' | 'mixto';
 
 export interface CashTicketLine {

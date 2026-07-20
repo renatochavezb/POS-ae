@@ -11,6 +11,7 @@ import { mapReceptionistDoc } from "@/libs/posMappers";
 import { seedPosReceptionistsIfEmpty, refreshReceptionistDailyCounts } from "@/libs/posSeed";
 import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
 import { upsertDailySnapshot } from "@/libs/posDailyStats";
+import { refreshWeeklySnapshotsForDates } from "@/libs/posWeeklyStats";
 import { syncClientCrmSegmentsForClients } from "@/libs/posClientCrmSegments";
 
 export const dynamic = "force-dynamic";
@@ -153,6 +154,7 @@ export async function POST(req) {
     }
 
     await upsertDailySnapshot(body.date);
+    await refreshWeeklySnapshotsForDates([body.date]);
 
     await syncClientCrmSegmentsForClients([body.clientId]);
 

@@ -75,6 +75,13 @@ type OverviewData = {
   live: {
     openCashSession: Record<string, unknown> | null;
     appointmentsOnOpenShiftDate: number;
+    latestWeeklySnapshot?: Record<string, unknown> | null;
+  };
+  catalogStats?: {
+    documentedCollections: number;
+    liveCountModels: number;
+    missingFromCatalog: string[];
+    missingFromRegistry: string[];
   };
 };
 
@@ -310,7 +317,27 @@ export default function InternoExplorer() {
           </div>
         )}
 
-        {isLoadingOverview && !overview ? (
+            {overview.catalogStats &&
+              (overview.catalogStats.missingFromCatalog.length > 0 ||
+                overview.catalogStats.missingFromRegistry.length > 0) && (
+                <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-100 text-sm">
+                  <p className="font-bold mb-1">Catálogo desincronizado</p>
+                  {overview.catalogStats.missingFromCatalog.length > 0 && (
+                    <p className="text-xs">
+                      En Mongo sin documentar:{" "}
+                      {overview.catalogStats.missingFromCatalog.join(", ")}
+                    </p>
+                  )}
+                  {overview.catalogStats.missingFromRegistry.length > 0 && (
+                    <p className="text-xs mt-1">
+                      Documentadas sin conteo en vivo:{" "}
+                      {overview.catalogStats.missingFromRegistry.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
+
+            {isLoadingOverview && !overview ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
           </div>

@@ -1,94 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
-import { Appointment, Staff } from "../types";
-import { isAppointmentPaid } from "../appointmentStatus";
-import {
-  addDays,
-  buildWeekDayEntries,
-  formatWeekRangeLabel,
-  getStudioWeekStart,
-  isCurrentWeek,
-} from "../scheduleUtils";
+import { addDays, getStudioWeekStart } from "../scheduleUtils";
+import { useWeeklySnapshot } from "../useWeeklySnapshot";
 
-type WeeklyCompletedAppointmentsCardProps = {
-  appointments: Appointment[];
-  staffList: Staff[];
-};
-
-export default function WeeklyCompletedAppointmentsCard({
-  appointments,
-  staffList,
-}: WeeklyCompletedAppointmentsCardProps) {
+export default function WeeklyCompletedAppointmentsCard() {
   const [weekStart, setWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [showDetails, setShowDetails] = useState(false);
+  const { snapshot, isLoading, weekRangeLabel, viewingCurrentWeek } = useWeeklySnapshot(weekStart);
 
-  const weekDays = useMemo(() => buildWeekDayEntries(weekStart), [weekStart]);
-  const weekDateLabels = useMemo(
-    () => new Set(weekDays.map((day) => day.dateLabel)),
-    [weekDays]
-  );
-
-  const weekCompleted = useMemo(
-    () =>
-      appointments.filter(
-        (appointment) =>
-          isAppointmentPaid(appointment.status) && weekDateLabels.has(appointment.date)
-      ),
-    [appointments, weekDateLabels]
-  );
-
-  const byDay = useMemo(
-    () =>
-      weekDays.map((day) => ({
-        ...day,
-        count: weekCompleted.filter((appointment) => appointment.date === day.dateLabel)
-          .length,
-      })),
-    [weekDays, weekCompleted]
-  );
-
-  const byStaff = useMemo(() => {
-    const staffNameById = new Map(staffList.map((member) => [member.id, member.name]));
-    const counts = new Map<string, number>();
-
-    weekCompleted.forEach((appointment) => {
-      counts.set(appointment.staffId, (counts.get(appointment.staffId) ?? 0) + 1);
-    });
-
-    return [...counts.entries()]
-      .map(([staffId, count]) => ({
-        staffId,
-        name: staffNameById.get(staffId) || appointmentStaffName(weekCompleted, staffId),
-        count,
-      }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [weekCompleted, staffList]);
-
-  const weekTotal = weekCompleted.length;
-  const weekRangeLabel = formatWeekRangeLabel(weekStart);
-  const viewingCurrentWeek = isCurrentWeek(weekStart);
-
-  const previousWeekLabels = useMemo(() => {
-    const prevStart = addDays(weekStart, -7);
-    return new Set(buildWeekDayEntries(prevStart).map((day) => day.dateLabel));
-  }, [weekStart]);
-
-  const previousWeekTotal = useMemo(
-    () =>
-      appointments.filter(
-        (appointment) =>
-          isAppointmentPaid(appointment.status) &&
-          previousWeekLabels.has(appointment.date)
-      ).length,
-    [appointments, previousWeekLabels]
-  );
-
-  const weekDeltaPercent =
-    previousWeekTotal > 0
-      ? Math.round(((weekTotal - previousWeekTotal) / previousWeekTotal) * 100)
-      : null;
+  const weekTotal = snapshot?.completedAppointmentsCount ?? 0;
+  const weekDeltaPercent = snapshot?.completedWeekDeltaPercent ?? null;
+  const byDay = snapshot?.completedByDay ?? [];
+  const byStaff = snapshot?.completedByStaff ?? [];
 
   return (
     <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow h-full flex flex-col">
@@ -135,8 +60,10 @@ export default function WeeklyCompletedAppointmentsCard({
           )}
 
           <div className="flex items-baseline gap-2">
-            <span className="font-display text-4xl font-extrabold text-primary">{weekTotal}</span>
-            {weekDeltaPercent !== null && (
+            <span className="font-display text-4xl font-extrabold text-primary">
+              {isLoading ? "—" : weekTotal}
+            </span>
+            {!isLoading && weekDeltaPercent !== null && (
               <span
                 className={`text-xs font-bold font-sans ${
                   weekDeltaPercent >= 0 ? "text-emerald-700" : "text-red-700"
@@ -149,7 +76,7 @@ export default function WeeklyCompletedAppointmentsCard({
           </div>
 
           <p className="text-xs text-on-surface-variant">
-            Citas terminadas · total semanal.
+            Citas terminadas · KPI semanal en Mongo.
           </p>
 
           <button
@@ -200,7 +127,7 @@ export default function WeeklyCompletedAppointmentsCard({
                     key={member.staffId}
                     className="flex items-center justify-between gap-3 text-xs px-2 py-1.5 rounded-lg bg-surface-container-low/30"
                   >
-                    <span className="font-sans font-bold text-primary truncate">{member.name}</span>
+                    <span className="font-sans font-bold text-primary truncate">{member.staffName}</span>
                     <span className="font-mono font-bold text-primary shrink-0">{member.count}</span>
                   </div>
                 ))}
@@ -215,11 +142,5 @@ export default function WeeklyCompletedAppointmentsCard({
         </div>
       )}
     </div>
-  );
-}
-
-function appointmentStaffName(appointments: Appointment[], staffId: string) {
-  return (
-    appointments.find((appointment) => appointment.staffId === staffId)?.staffName || staffId
   );
 }

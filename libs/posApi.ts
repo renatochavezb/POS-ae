@@ -3,6 +3,7 @@ import {
   Appointment,
   Client,
   DailyStats,
+  WeeklyStats,
   CashRegisterState,
   CashSession,
   CashSessionSummary,
@@ -358,6 +359,26 @@ const posApi = {
   getAppointmentDailyStats(date: string): Promise<DailyStats> {
     return posClient.get("/pos/appointments/daily-stats", {
       params: { date },
+    });
+  },
+  getWeeklyStats(params?: {
+    weekStart?: string;
+    refresh?: boolean;
+  }): Promise<{ scope: string; weekStartDate: string; snapshot: WeeklyStats }> {
+    return posClient.get("/pos/weekly-stats", {
+      params: {
+        weekStart: params?.weekStart,
+        refresh: params?.refresh ? "1" : undefined,
+      },
+    });
+  },
+  refreshAllWeeklyStats(): Promise<{
+    scope: string;
+    count: number;
+    snapshots: WeeklyStats[];
+  }> {
+    return posClient.get("/pos/weekly-stats", {
+      params: { refresh: "all" },
     });
   },
   createAppointment(

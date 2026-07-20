@@ -703,14 +703,11 @@ export default function DashboardView({
 
       <div className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-2 gap-6 items-stretch">
         <div className="h-full min-h-0">
-          <WeeklyCompletedAppointmentsCard
-            appointments={appointments}
-            staffList={staffList}
-          />
+          <WeeklyCompletedAppointmentsCard />
         </div>
 
         <div className="md:col-span-2 h-full min-h-0">
-          <WeeklySalesCard appointments={appointments} staffList={staffList} />
+          <WeeklySalesCard />
         </div>
 
         <div className="h-full min-h-0">
