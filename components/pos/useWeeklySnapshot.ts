@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import posApi from "@/libs/posApi";
 import { WeeklyStats } from "./types";
 import {
-  formatSpanishShortDateInTimeZone,
+  formatSpanishShortDate,
   formatWeekRangeLabel,
   isCurrentWeek,
 } from "./scheduleUtils";
@@ -14,7 +14,7 @@ export function useWeeklySnapshot(weekStart: Date) {
   const [isLoading, setIsLoading] = useState(true);
 
   const weekStartLabel = useMemo(
-    () => formatSpanishShortDateInTimeZone(weekStart),
+    () => formatSpanishShortDate(weekStart),
     [weekStart]
   );
 

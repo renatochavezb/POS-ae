@@ -74,30 +74,65 @@ export const getMexicoTimeMinutes = (date: Date = new Date()): number => {
   return hours * 60 + minutes;
 };
 
-/** Convierte YYYY-MM-DD a Date local (medianoche). */
+/** Convierte YYYY-MM-DD a Date de calendario (partes locales = ese día civil). */
 export const dateFromMexicoYmd = (ymd: string): Date => {
   const [year, month, day] = ymd.split('-').map(Number);
   return new Date(year, month - 1, day);
 };
 
-/** Etiqueta corta en español a partir de YYYY-MM-DD. */
-export const formatSpanishShortDateFromYmd = (ymd: string): string =>
-  formatSpanishShortDateInTimeZone(dateFromMexicoYmd(ymd));
+/** Etiqueta corta desde YYYY-MM-DD sin pasar por zona horaria (evita desfase UTC↔México). */
+export const formatSpanishShortDateFromYmd = (ymd: string): string => {
+  const [year, month, day] = ymd.split('-').map(Number);
+  if (!year || !month || !day) return ymd;
+  return `${day} ${SHORT_MONTHS[month - 1]}, ${year}`;
+};
 
-/** Sábado de la semana operativa del studio (sábado a viernes). */
+/** YYYY-MM-DD a partir de las partes de calendario de un Date (no del instante en México). */
+export const calendarDateToYmd = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/** Suma días a un YYYY-MM-DD usando aritmética civil UTC (sin cambios de DST). */
+export const ymdAddDays = (ymd: string, days: number): string => {
+  const [year, month, day] = ymd.split('-').map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day + days));
+  return utc.toISOString().slice(0, 10);
+};
+
+/** Día de la semana civil de un YYYY-MM-DD: 0=dom … 6=sáb. */
+export const ymdWeekday = (ymd: string): number => {
+  const [year, month, day] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+};
+
+/** Sábado (YYYY-MM-DD) de la semana operativa que contiene `ymd`. */
+export const getStudioWeekStartYmd = (ymd: string): string => {
+  const daysSinceSaturday = (ymdWeekday(ymd) + 1) % 7;
+  return ymdAddDays(ymd, -daysSinceSaturday);
+};
+
+/** Etiqueta «11 Jul, 2026» → YYYY-MM-DD del día civil del label. */
+export const spanishShortDateToYmd = (label: string): string | null => {
+  const parsed = parseSpanishShortDateLabel(label);
+  if (!parsed) return null;
+  return calendarDateToYmd(parsed);
+};
+
+/** Sábado de la semana operativa del studio (sábado a viernes), en calendario México. */
 export const getStudioWeekStart = (date: Date): Date => {
-  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const daysSinceSaturday = (normalized.getDay() + 1) % 7;
-  return addDays(normalized, -daysSinceSaturday);
+  const startYmd = getStudioWeekStartYmd(getMexicoDateYMD(date));
+  return dateFromMexicoYmd(startYmd);
 };
 
 /** @deprecated Usar getStudioWeekStart. Se mantiene como alias para imports existentes. */
 export const getMonday = getStudioWeekStart;
 
 export const addDays = (date: Date, days: number): Date => {
-  const next = new Date(date);
-  next.setDate(date.getDate() + days);
-  return next;
+  const nextYmd = ymdAddDays(calendarDateToYmd(date), days);
+  return dateFromMexicoYmd(nextYmd);
 };
 
 export const WEEK_DAY_LABELS = ['Sáb', 'Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'] as const;
@@ -110,21 +145,23 @@ export type WeekDayEntry = {
 
 /** Sábado a viernes de la semana operativa que empieza en weekStart. */
 export function buildWeekDayEntries(weekStart: Date): WeekDayEntry[] {
+  const startYmd = calendarDateToYmd(weekStart);
   return WEEK_DAY_LABELS.map((dayLabel, index) => {
-    const date = addDays(weekStart, index);
+    const ymd = ymdAddDays(startYmd, index);
     return {
       dayLabel,
-      dateLabel: formatSpanishShortDateInTimeZone(date),
-      date,
+      dateLabel: formatSpanishShortDateFromYmd(ymd),
+      date: dateFromMexicoYmd(ymd),
     };
   });
 }
 
-/** Rango legible: "29 Jun – 5 Jul, 2026" */
+/** Rango legible: "11 Jul – 17 Jul, 2026" (siempre sáb–vie civil). */
 export function formatWeekRangeLabel(weekStart: Date): string {
-  const weekEnd = addDays(weekStart, 6);
-  const startLabel = formatSpanishShortDateInTimeZone(weekStart);
-  const endLabel = formatSpanishShortDateInTimeZone(weekEnd);
+  const startYmd = calendarDateToYmd(weekStart);
+  const endYmd = ymdAddDays(startYmd, 6);
+  const startLabel = formatSpanishShortDateFromYmd(startYmd);
+  const endLabel = formatSpanishShortDateFromYmd(endYmd);
 
   const startMatch = startLabel.match(/^(\d{1,2})\s+([A-Za-záéíóú]+)/i);
   const endMatch = endLabel.match(/^(\d{1,2})\s+([A-Za-záéíóú]+),?\s*(\d{4})/i);
@@ -137,7 +174,9 @@ export function formatWeekRangeLabel(weekStart: Date): string {
 }
 
 export function isCurrentWeek(weekStart: Date): boolean {
-  return getStudioWeekStart(new Date()).getTime() === weekStart.getTime();
+  return (
+    calendarDateToYmd(getStudioWeekStart(new Date())) === calendarDateToYmd(weekStart)
+  );
 }
 
 /** Hourly rows shown in the agenda grid (9:00 – 21:00). */

@@ -7,9 +7,11 @@ import { isAppointmentPaid } from "@/components/pos/appointmentStatus";
 import {
   addDays,
   buildWeekDayEntries,
-  formatSpanishShortDateInTimeZone,
+  formatSpanishShortDateFromYmd,
   formatWeekRangeLabel,
-  getStudioWeekStart,
+  getMexicoDateYMD,
+  getStudioWeekStartYmd,
+  spanishShortDateToYmd,
 } from "@/components/pos/scheduleUtils";
 import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
 
@@ -21,22 +23,20 @@ function roundPercent(current, previous) {
 }
 
 export function getWeekStartDateLabelFromDateLabel(dateLabel) {
-  const parsed = parseSpanishShortDateLabel(dateLabel);
-  if (!parsed) return null;
-
-  const weekStart = getStudioWeekStart(parsed);
-  return formatSpanishShortDateInTimeZone(weekStart);
+  const ymd = spanishShortDateToYmd(dateLabel);
+  if (!ymd) return null;
+  return formatSpanishShortDateFromYmd(getStudioWeekStartYmd(ymd));
 }
 
 export function resolveWeekStartDateLabel(weekStartInput) {
   const trimmed = String(weekStartInput || "").trim();
   if (trimmed) {
-    const parsed = parseSpanishShortDateLabel(trimmed);
-    if (!parsed) return null;
-    return formatSpanishShortDateInTimeZone(getStudioWeekStart(parsed));
+    const ymd = spanishShortDateToYmd(trimmed);
+    if (!ymd) return null;
+    return formatSpanishShortDateFromYmd(getStudioWeekStartYmd(ymd));
   }
 
-  return formatSpanishShortDateInTimeZone(getStudioWeekStart(new Date()));
+  return formatSpanishShortDateFromYmd(getStudioWeekStartYmd(getMexicoDateYMD(new Date())));
 }
 
 function buildCommissionMap(staffMembers = []) {
