@@ -55,6 +55,31 @@ const posServiceSchema = mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    /** fixed = precio cerrado; per_nail = precio unitario × cantidad de uñas */
+    pricingMode: {
+      type: String,
+      enum: ["fixed", "per_nail"],
+      default: "fixed",
+    },
+    /** Tope de multiplicador (típicamente 10 manos / 20 manos+pies). */
+    nailMax: {
+      type: Number,
+      default: 1,
+      min: 1,
+      max: 40,
+    },
+    /** Orden de visualización: lista de precios primero (1..N), legacy después. */
+    sortOrder: {
+      type: Number,
+      default: 1000,
+      min: 0,
+    },
+    /** price_list = lista oficial; legacy = catálogo previo. */
+    source: {
+      type: String,
+      enum: ["price_list", "legacy"],
+      default: "legacy",
+    },
   },
   {
     timestamps: true,
@@ -62,6 +87,8 @@ const posServiceSchema = mongoose.Schema(
 );
 
 posServiceSchema.index({ category: 1, isActive: 1 });
+posServiceSchema.index({ sortOrder: 1, name: 1 });
+posServiceSchema.index({ source: 1, sortOrder: 1 });
 
 if (mongoose.models.PosService) {
   delete mongoose.models.PosService;

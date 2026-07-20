@@ -64,6 +64,7 @@ import CajaView from './components/CajaView';
 import InventarioView from './components/InventarioView';
 import MasterReceptionLogView from './components/MasterReceptionLogView';
 import AdminGastosView from './admin/AdminGastosView';
+import AdminPreciosView from './admin/AdminPreciosView';
 import AdminProveedoresView from './admin/AdminProveedoresView';
 import AdminComprasView from './admin/AdminComprasView';
 import AdminCuentasPagarView from './admin/AdminCuentasPagarView';
@@ -104,6 +105,8 @@ type BookingServiceLine = {
   key: string;
   serviceId: string;
   customName: string;
+  quantity: number;
+  nailScope: 'manos' | 'manos_pies' | '';
 };
 
 const createBookingServiceKey = () =>
@@ -112,11 +115,18 @@ const createBookingServiceKey = () =>
 const createBookingServiceLine = (
   services: Service[],
   serviceId?: string
-): BookingServiceLine => ({
-  key: createBookingServiceKey(),
-  serviceId: serviceId || (services[0]?.id ?? ''),
-  customName: '',
-});
+): BookingServiceLine => {
+  const id = serviceId || (services[0]?.id ?? '');
+  const catalog = services.find((service) => service.id === id);
+  const isPerNail = catalog?.pricingMode === 'per_nail';
+  return {
+    key: createBookingServiceKey(),
+    serviceId: id,
+    customName: '',
+    quantity: isPerNail ? 10 : 1,
+    nailScope: isPerNail ? 'manos' : '',
+  };
+};
 
 const getStaffForServiceIds = (serviceIds: string[], staffList: Staff[]) => {
   const ids = serviceIds.filter(Boolean);
@@ -148,13 +158,40 @@ const resolveBookingServices = (
     }
 
     const catalog = services.find((service) => service.id === line.serviceId);
+    if (!catalog) {
+      return {
+        name: '',
+        subtitle: '',
+        image: '',
+        cost: 0,
+        duration: 60,
+        isValid: false,
+      };
+    }
+
+    const isPerNail = catalog.pricingMode === 'per_nail';
+    const quantity = isPerNail
+      ? Math.max(1, Math.min(line.quantity || 1, catalog.nailMax || 20))
+      : 1;
+    const cost =
+      isPerNail ? (catalog.price || 0) * quantity : catalog.price || 0;
+    const name = isPerNail
+      ? `${catalog.name} × ${quantity}${
+          line.nailScope === 'manos_pies'
+            ? ' (manos y pies)'
+            : line.nailScope === 'manos'
+              ? ' (manos)'
+              : ''
+        }`
+      : catalog.name;
+
     return {
-      name: catalog?.name ?? '',
-      subtitle: catalog?.subtitle ?? '',
-      image: catalog?.image ?? '',
-      cost: catalog?.price ?? 0,
-      duration: catalog?.duration ?? 60,
-      isValid: Boolean(catalog),
+      name,
+      subtitle: catalog.subtitle ?? '',
+      image: catalog.image ?? '',
+      cost,
+      duration: catalog.duration ?? 60,
+      isValid: true,
     };
   });
 
@@ -1680,6 +1717,8 @@ export default function POSDashboard() {
             isMasterSession={isMasterSession}
           />
         );
+      case 'admin-precios':
+        return isMasterSession ? <AdminPreciosView /> : null;
       case 'admin-gastos':
         return (
           <AdminGastosView
@@ -2177,7 +2216,8 @@ export default function POSDashboard() {
                     const isLastLine = index === bookingServices.length - 1;
 
                     return (
-                    <div key={line.key} className="flex items-center gap-2">
+                    <div key={line.key} className="space-y-2">
+                    <div className="flex items-center gap-2">
                       {bookingServiceMode === 'custom' ? (
                         <input
                           type="text"
@@ -2206,11 +2246,18 @@ export default function POSDashboard() {
                           value={line.serviceId}
                           onChange={(e) => {
                             const nextServiceId = e.target.value;
+                            const nextCatalog = services.find((s) => s.id === nextServiceId);
+                            const isPerNail = nextCatalog?.pricingMode === 'per_nail';
                             updateBookingServices(
                               (prev) =>
                                 prev.map((item) =>
                                   item.key === line.key
-                                    ? { ...item, serviceId: nextServiceId }
+                                    ? {
+                                        ...item,
+                                        serviceId: nextServiceId,
+                                        quantity: isPerNail ? 10 : 1,
+                                        nailScope: isPerNail ? 'manos' : '',
+                                      }
                                     : item
                                 ),
                               'catalog'
@@ -2241,6 +2288,7 @@ export default function POSDashboard() {
                           ).map((service) => (
                             <option key={service.id} value={service.id}>
                               {service.name} — {formatServicePrice(service.price)}
+                              {service.pricingMode === 'per_nail' ? '/uña' : ''}
                             </option>
                           ))}
                         </select>
@@ -2285,6 +2333,88 @@ export default function POSDashboard() {
                           <Plus className="w-4 h-4" strokeWidth={2.5} />
                         </button>
                       )}
+                    </div>
+
+                      {bookingServiceMode === 'catalog' &&
+                        (() => {
+                          const catalog = services.find((s) => s.id === line.serviceId);
+                          if (catalog?.pricingMode !== 'per_nail') return null;
+                          const nailMax = catalog.nailMax || 20;
+                          return (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateBookingServices(
+                                    (prev) =>
+                                      prev.map((item) =>
+                                        item.key === line.key
+                                          ? { ...item, quantity: 10, nailScope: 'manos' }
+                                          : item
+                                      ),
+                                    'catalog'
+                                  )
+                                }
+                                className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
+                                  line.nailScope === 'manos'
+                                    ? 'bg-primary text-on-primary border-primary'
+                                    : 'border-primary/10 text-outline'
+                                }`}
+                              >
+                                Manos ×10
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateBookingServices(
+                                    (prev) =>
+                                      prev.map((item) =>
+                                        item.key === line.key
+                                          ? {
+                                              ...item,
+                                              quantity: 20,
+                                              nailScope: 'manos_pies',
+                                            }
+                                          : item
+                                      ),
+                                    'catalog'
+                                  )
+                                }
+                                className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
+                                  line.nailScope === 'manos_pies'
+                                    ? 'bg-primary text-on-primary border-primary'
+                                    : 'border-primary/10 text-outline'
+                                }`}
+                              >
+                                Manos+pies ×20
+                              </button>
+                              <select
+                                value={line.quantity || 1}
+                                onChange={(e) =>
+                                  updateBookingServices(
+                                    (prev) =>
+                                      prev.map((item) =>
+                                        item.key === line.key
+                                          ? {
+                                              ...item,
+                                              quantity: Number(e.target.value) || 1,
+                                            }
+                                          : item
+                                      ),
+                                    'catalog'
+                                  )
+                                }
+                                className="px-2 py-1 rounded-md border border-primary/10 text-[10px] font-bold text-primary bg-surface"
+                              >
+                                {Array.from({ length: nailMax }, (_, i) => i + 1).map((n) => (
+                                  <option key={n} value={n}>
+                                    ×{n} = {formatServicePrice((catalog.price || 0) * n)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })()}
                     </div>
                     );
                   })}

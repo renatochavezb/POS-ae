@@ -113,6 +113,9 @@ export default function ServicesView({
                     </h3>
                     <p className={`font-display font-black text-lg shrink-0 ${service.price > 0 ? 'text-primary' : 'text-outline'}`}>
                       {formatServicePrice(service.price)}
+                      {service.pricingMode === 'per_nail' ? (
+                        <span className="text-[10px] font-sans font-bold text-outline ml-1">/uña</span>
+                      ) : null}
                     </p>
                   </div>
                   <p className="text-[10px] text-outline font-bold uppercase tracking-widest">{service.subtitle}</p>

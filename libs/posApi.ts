@@ -476,6 +476,30 @@ const posApi = {
   getServices(): Promise<Service[]> {
     return posClient.get("/pos/services");
   },
+  getAdminServices(): Promise<{ services: Service[] }> {
+    return posClient.get("/pos/admin/services");
+  },
+  updateAdminService(data: {
+    serviceCode: string;
+    price?: number;
+    pricingMode?: Service["pricingMode"];
+    nailMax?: number;
+    name?: string;
+    isActive?: boolean;
+  }): Promise<{ service: Service }> {
+    return posClient.patch("/pos/admin/services", data);
+  },
+  importAdminServicesExcel(file: File): Promise<{
+    success: boolean;
+    updated: number;
+    created: number;
+    total: number;
+    services: Service[];
+  }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return posClient.post("/pos/admin/services/import", formData);
+  },
   getCashTickets(params?: {
     date?: string;
     status?: "submitted" | "charged" | "cancelled" | "all";

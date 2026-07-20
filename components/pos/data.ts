@@ -506,13 +506,28 @@ export const getServicesForStaff = (
 ): Service[] => {
   const staff = staffList.find((member) => member.id === staffId);
 
+  // Lista oficial / servicios sin asignación: visibles para todo el equipo
+  const openCatalog = services.filter(
+    (service) =>
+      service.source === 'price_list' ||
+      !service.staffIds?.length
+  );
+
+  const mergeUnique = (primary: Service[]) => {
+    const seen = new Set(primary.map((s) => s.id));
+    return [
+      ...primary,
+      ...openCatalog.filter((s) => !seen.has(s.id)),
+    ].sort((a, b) => (a.sortOrder ?? 1000) - (b.sortOrder ?? 1000));
+  };
+
   if (staff?.allowedServiceIds?.length) {
     const allowed = new Set(staff.allowedServiceIds);
-    return services.filter((service) => allowed.has(service.id));
+    return mergeUnique(services.filter((service) => allowed.has(service.id)));
   }
 
-  const direct = services.filter((service) => service.staffIds.includes(staffId));
-  if (direct.length > 0) return direct;
+  const direct = services.filter((service) => service.staffIds?.includes(staffId));
+  if (direct.length > 0) return mergeUnique(direct);
 
   if (!staff) return services;
 
@@ -521,7 +536,7 @@ export const getServicesForStaff = (
     (staff.name.toLowerCase() === 'vanny' ? 'CA' : undefined);
 
   if (templateId) {
-    return services.filter((service) => service.staffIds.includes(templateId));
+    return mergeUnique(services.filter((service) => service.staffIds?.includes(templateId)));
   }
 
   return services;

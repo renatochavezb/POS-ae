@@ -3,7 +3,10 @@ import connectMongo from "@/libs/mongoose";
 import { requirePosSession } from "@/libs/posAuth";
 import PosService from "@/models/PosService";
 import { mapServiceDoc } from "@/libs/posMappers";
-import { buildServiceSeedDocs } from "@/libs/posServiceSeed";
+import {
+  buildLegacyServiceSeedDocs,
+  ensurePriceListServices,
+} from "@/libs/posServiceSeed";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +17,17 @@ export async function GET() {
 
     await connectMongo();
 
-    let services = await PosService.find({ isActive: { $ne: false } }).sort({
-      category: 1,
+    let count = await PosService.countDocuments();
+    if (count === 0) {
+      await PosService.insertMany(buildLegacyServiceSeedDocs());
+    }
+
+    await ensurePriceListServices(PosService);
+
+    const services = await PosService.find({ isActive: { $ne: false } }).sort({
+      sortOrder: 1,
       name: 1,
     });
-
-    if (services.length === 0) {
-      const seedDocs = buildServiceSeedDocs();
-      await PosService.insertMany(seedDocs);
-      services = await PosService.find({ isActive: { $ne: false } }).sort({
-        category: 1,
-        name: 1,
-      });
-    }
 
     return NextResponse.json(services.map(mapServiceDoc));
   } catch (error) {

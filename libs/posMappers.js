@@ -57,6 +57,7 @@ export function mapReceptionistDoc(doc) {
 
 export function mapServiceDoc(doc) {
   const raw = doc.toObject ? doc.toObject() : doc;
+  const pricingMode = raw.pricingMode === "per_nail" ? "per_nail" : "fixed";
 
   return {
     id: raw.serviceCode,
@@ -70,6 +71,10 @@ export function mapServiceDoc(doc) {
     staffIds: raw.staffIds || [],
     exclusive: Boolean(raw.exclusive),
     isActive: raw.isActive !== false,
+    pricingMode,
+    nailMax: pricingMode === "per_nail" ? Math.max(1, Number(raw.nailMax) || 20) : 1,
+    sortOrder: Number(raw.sortOrder) || (raw.source === "price_list" ? 0 : 1000),
+    source: raw.source === "price_list" ? "price_list" : "legacy",
   };
 }
 

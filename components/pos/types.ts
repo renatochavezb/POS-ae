@@ -194,17 +194,25 @@ export type ServiceCategory =
   | 'Cejas y mirada'
   | 'Cabello, estética y cuerpo';
 
+export type ServicePricingMode = 'fixed' | 'per_nail';
+
 export interface Service {
   id: string;
   name: string;
   category: ServiceCategory;
   subtitle: string;
-  price: number; // 0 = precio pendiente de definir
+  price: number; // 0 = precio pendiente de definir; si per_nail = precio unitario
   duration: number; // in minutes
   image: string;
   description: string;
   staffIds: string[];
   exclusive?: boolean;
+  isActive?: boolean;
+  pricingMode?: ServicePricingMode;
+  /** Tope de uñas (10 manos / 20 manos+pies). */
+  nailMax?: number;
+  sortOrder?: number;
+  source?: 'price_list' | 'legacy';
 }
 
 export interface WeeklyHoursSlot {

@@ -1,6 +1,11 @@
 import { INITIAL_SERVICES } from "@/components/pos/data";
+import {
+  buildPriceListSeedDocs,
+  LEGACY_SOURCE,
+  PRICE_LIST_SOURCE,
+} from "@/libs/posPriceList";
 
-/** Precios base en MXN para el catálogo (editables después en Mongo). */
+/** Precios base en MXN para el catálogo legacy (editables después en Mongo). */
 export const DEFAULT_SERVICE_PRICES = {
   "SRV-SGEL": 220,
   "SRV-RUBBER": 250,
@@ -29,8 +34,8 @@ export const DEFAULT_SERVICE_PRICES = {
   "SRV-WAX": 150,
 };
 
-export function buildServiceSeedDocs() {
-  return INITIAL_SERVICES.map((service) => ({
+export function buildLegacyServiceSeedDocs() {
+  return INITIAL_SERVICES.map((service, index) => ({
     serviceCode: service.id,
     name: service.name,
     category: service.category,
@@ -42,5 +47,82 @@ export function buildServiceSeedDocs() {
     staffIds: service.staffIds || [],
     exclusive: Boolean(service.exclusive),
     isActive: true,
+    pricingMode: "fixed",
+    nailMax: 1,
+    sortOrder: 1000 + index,
+    source: LEGACY_SOURCE,
   }));
+}
+
+/** @deprecated Usar buildLegacyServiceSeedDocs + ensurePriceListServices */
+export function buildServiceSeedDocs() {
+  return [...buildPriceListSeedDocs(), ...buildLegacyServiceSeedDocs()];
+}
+
+/**
+ * Inserta/actualiza la lista oficial sin borrar servicios legacy.
+ * @param {import("mongoose").Model} PosService
+ */
+export async function ensurePriceListServices(PosService) {
+  const docs = buildPriceListSeedDocs();
+  let upserted = 0;
+
+  for (const doc of docs) {
+    const result = await PosService.updateOne(
+      { serviceCode: doc.serviceCode },
+      {
+        $set: {
+          name: doc.name,
+          category: doc.category,
+          subtitle: doc.subtitle,
+          duration: doc.duration,
+          image: doc.image,
+          description: doc.description,
+          pricingMode: doc.pricingMode,
+          nailMax: doc.nailMax,
+          sortOrder: doc.sortOrder,
+          source: PRICE_LIST_SOURCE,
+          isActive: true,
+        },
+        $setOnInsert: {
+          serviceCode: doc.serviceCode,
+          price: doc.price,
+          staffIds: doc.staffIds,
+          exclusive: doc.exclusive,
+        },
+      },
+      { upsert: true }
+    );
+
+    if (result.upsertedCount > 0 || result.modifiedCount > 0) {
+      upserted += 1;
+    }
+  }
+
+  await PosService.updateMany(
+    { $or: [{ source: { $exists: false } }, { source: null }] },
+    {
+      $set: {
+        source: LEGACY_SOURCE,
+        pricingMode: "fixed",
+        nailMax: 1,
+      },
+    }
+  );
+
+  const needsSort = await PosService.find({
+    source: { $ne: PRICE_LIST_SOURCE },
+    $or: [{ sortOrder: { $exists: false } }, { sortOrder: { $lt: 1000 } }],
+  }).select("_id sortOrder");
+
+  await Promise.all(
+    needsSort.map((row, index) =>
+      PosService.updateOne(
+        { _id: row._id },
+        { $set: { sortOrder: 1000 + index, source: LEGACY_SOURCE } }
+      )
+    )
+  );
+
+  return { upserted, priceListCount: docs.length };
 }

@@ -4,6 +4,7 @@ import {
   ShoppingCart,
   CreditCard,
   Building2,
+  Tags,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,6 +19,13 @@ export type AdminNavItem = {
 };
 
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
+  {
+    id: "admin-precios",
+    label: "Lista de precios",
+    icon: Tags,
+    roles: ["master"],
+    description: "Precios oficiales del salón: editar o importar Excel.",
+  },
   {
     id: "admin-gastos",
     label: "Gastos",

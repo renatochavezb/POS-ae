@@ -3,11 +3,19 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Camera, Loader2, Plus, Send, Trash2, X } from "lucide-react";
 import { Appointment, CashTicketLine, Service } from "../types";
-import { formatMXN } from "../data";
+import { formatMXN, formatServicePrice } from "../data";
 import { splitAppointmentServices } from "../serviceDisplay";
 import posApi from "@/libs/posApi";
+import {
+  formatPerNailLabel,
+  resolveServiceLinePrice,
+} from "@/libs/posPriceList";
 
-type TicketLine = CashTicketLine & { key: string };
+type TicketLine = CashTicketLine & {
+  key: string;
+  quantity?: number;
+  nailScope?: "manos" | "manos_pies" | "";
+};
 
 type PhotoDraft = {
   id: string;
@@ -81,20 +89,31 @@ function buildInitialLines(appointment: Appointment, services: Service[]): Ticke
         serviceId: "",
         name: appointment.serviceName || "",
         price: appointment.cost || 0,
+        quantity: 1,
+        nailScope: "",
       },
     ];
   }
 
   return names.map((name) => {
     const catalog = findCatalogByName(services, name);
+    const isPerNail = catalog?.pricingMode === "per_nail";
+    const quantity = isPerNail ? 10 : 1;
+    const unitPrice = catalog?.price ?? 0;
     const fallbackPrice =
-      names.length === 1 && appointment.cost > 0 ? appointment.cost : catalog?.price ?? 0;
+      names.length === 1 && appointment.cost > 0 ? appointment.cost : unitPrice;
 
     return {
       key: createLineKey(),
       serviceId: catalog?.id || "",
       name: catalog?.name || name,
-      price: catalog?.price && catalog.price > 0 ? catalog.price : fallbackPrice,
+      price: isPerNail
+        ? resolveServiceLinePrice(catalog, quantity)
+        : unitPrice > 0
+          ? unitPrice
+          : fallbackPrice,
+      quantity,
+      nailScope: isPerNail ? "manos" : "",
     };
   });
 }
@@ -147,25 +166,61 @@ export default function SendToCajaModal({
     );
   };
 
+  const applyPerNail = (
+    key: string,
+    catalog: Service,
+    quantity: number,
+    scope: TicketLine["nailScope"]
+  ) => {
+    const max = catalog.nailMax || 20;
+    const qty = Math.max(1, Math.min(quantity, max));
+    updateLine(key, {
+      serviceId: catalog.id,
+      name: formatPerNailLabel(catalog.name, qty, scope || ""),
+      quantity: qty,
+      nailScope: scope || "",
+      price: resolveServiceLinePrice(catalog, qty),
+    });
+  };
+
   const handleServicePick = (key: string, serviceId: string) => {
     const catalog = services.find((service) => service.id === serviceId);
-    if (!catalog) return;
+    if (!catalog) {
+      updateLine(key, { serviceId: "", quantity: 1, nailScope: "" });
+      return;
+    }
+
+    if (catalog.pricingMode === "per_nail") {
+      applyPerNail(key, catalog, 10, "manos");
+      return;
+    }
+
     updateLine(key, {
       serviceId: catalog.id,
       name: catalog.name,
       price: catalog.price > 0 ? catalog.price : 0,
+      quantity: 1,
+      nailScope: "",
     });
   };
 
   const addLine = () => {
     const defaultService = staffServices[0];
+    const isPerNail = defaultService?.pricingMode === "per_nail";
+    const quantity = isPerNail ? 10 : 1;
     setLines((prev) => [
       ...prev,
       {
         key: createLineKey(),
         serviceId: defaultService?.id || "",
-        name: defaultService?.name || "",
-        price: defaultService?.price || 0,
+        name: defaultService
+          ? isPerNail
+            ? formatPerNailLabel(defaultService.name, quantity, "manos")
+            : defaultService.name
+          : "",
+        price: defaultService ? resolveServiceLinePrice(defaultService, quantity) : 0,
+        quantity,
+        nailScope: isPerNail ? "manos" : "",
       },
     ]);
   };
@@ -280,8 +335,8 @@ export default function SendToCajaModal({
 
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           <p className="text-xs text-outline">
-            Arma la ficha como en el grupo de WhatsApp: servicios, precios y fotos del trabajo.
-            La recepción la cobra en caja.
+            Arma la ficha: servicios, precios y fotos. Puedes ajustar cualquier precio. Los de
+            «por uña» se multiplican (manos ×10 o manos y pies ×20).
           </p>
 
           <div className="space-y-2">
@@ -340,59 +395,125 @@ export default function SendToCajaModal({
           </div>
 
           <div className="space-y-3">
-            {lines.map((line) => (
-              <div
-                key={line.key}
-                className="rounded-xl border border-primary/10 bg-surface-container-low/50 p-3 space-y-2"
-              >
-                <div className="flex items-center gap-2">
-                  <select
-                    value={line.serviceId}
-                    onChange={(e) => handleServicePick(line.key, e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-primary/10 bg-surface text-xs font-bold text-primary"
-                  >
-                    <option value="">Otro servicio…</option>
-                    {staffServices.map((service) => (
-                      <option key={service.id} value={service.id}>
-                        {service.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => removeLine(line.key)}
-                    className="p-2 rounded-lg text-outline hover:text-red-700 hover:bg-red-50 transition-colors"
-                    title="Quitar línea"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+            {lines.map((line) => {
+              const catalog = services.find((s) => s.id === line.serviceId);
+              const isPerNail = catalog?.pricingMode === "per_nail";
+              const nailMax = catalog?.nailMax || 20;
 
-                <input
-                  type="text"
-                  value={line.name}
-                  onChange={(e) => updateLine(line.key, { name: e.target.value })}
-                  placeholder="Nombre del servicio"
-                  className="w-full px-3 py-2 rounded-lg border border-primary/10 bg-surface text-sm font-bold text-primary"
-                />
+              return (
+                <div
+                  key={line.key}
+                  className="rounded-xl border border-primary/10 bg-surface-container-low/50 p-3 space-y-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={line.serviceId}
+                      onChange={(e) => handleServicePick(line.key, e.target.value)}
+                      className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-primary/10 bg-surface text-xs font-bold text-primary"
+                    >
+                      <option value="">Otro servicio…</option>
+                      {staffServices.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name}
+                          {service.price > 0
+                            ? ` — ${formatServicePrice(service.price)}${
+                                service.pricingMode === "per_nail" ? "/uña" : ""
+                              }`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeLine(line.key)}
+                      className="p-2 rounded-lg text-outline hover:text-red-700 hover:bg-red-50 transition-colors"
+                      title="Quitar línea"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-outline">
-                    Precio
-                  </span>
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={line.price || ""}
-                    onChange={(e) =>
-                      updateLine(line.key, { price: Number(e.target.value) || 0 })
-                    }
-                    className="flex-1 px-3 py-2 rounded-lg border border-primary/10 bg-surface text-sm font-bold text-primary text-right"
+                    type="text"
+                    value={line.name}
+                    onChange={(e) => updateLine(line.key, { name: e.target.value })}
+                    placeholder="Nombre del servicio"
+                    className="w-full px-3 py-2 rounded-lg border border-primary/10 bg-surface text-sm font-bold text-primary"
                   />
+
+                  {isPerNail && catalog && (
+                    <div className="space-y-2 rounded-lg bg-surface p-2 border border-primary/5">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => applyPerNail(line.key, catalog, 10, "manos")}
+                          className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
+                            line.nailScope === "manos"
+                              ? "bg-primary text-on-primary border-primary"
+                              : "border-primary/10 text-outline"
+                          }`}
+                        >
+                          Solo manos (×10)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyPerNail(line.key, catalog, 20, "manos_pies")}
+                          className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
+                            line.nailScope === "manos_pies"
+                              ? "bg-primary text-on-primary border-primary"
+                              : "border-primary/10 text-outline"
+                          }`}
+                        >
+                          Manos y pies (×20)
+                        </button>
+                      </div>
+                      <label className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-outline shrink-0">
+                          Uñas
+                        </span>
+                        <select
+                          value={line.quantity || 1}
+                          onChange={(e) =>
+                            applyPerNail(
+                              line.key,
+                              catalog,
+                              Number(e.target.value),
+                              line.nailScope || ""
+                            )
+                          }
+                          className="flex-1 px-2 py-1.5 rounded-lg border border-primary/10 bg-surface text-xs font-bold text-primary"
+                        >
+                          {Array.from({ length: nailMax }, (_, i) => i + 1).map((n) => (
+                            <option key={n} value={n}>
+                              × {n} ({formatMXN(resolveServiceLinePrice(catalog, n))})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <p className="text-[10px] text-outline">
+                        Unitario {formatMXN(catalog.price)} · total editable abajo
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-outline">
+                      Precio
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={line.price || ""}
+                      onChange={(e) =>
+                        updateLine(line.key, { price: Number(e.target.value) || 0 })
+                      }
+                      className="flex-1 px-3 py-2 rounded-lg border border-primary/10 bg-surface text-sm font-bold text-primary text-right"
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <button
