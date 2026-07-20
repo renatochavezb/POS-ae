@@ -2,9 +2,11 @@
 
 
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ChevronLeft, ChevronRight, TrendingUp } from "lucide-react";
+
+import posApi from "@/libs/posApi";
 
 import { Appointment, Staff } from "../types";
 
@@ -54,6 +56,8 @@ export default function WeeklySalesCard({
 
   const [showDetails, setShowDetails] = useState(false);
 
+  const [weekTips, setWeekTips] = useState(0);
+
 
 
   const commissionByStaffId = useMemo(
@@ -91,6 +95,60 @@ export default function WeeklySalesCard({
     [weekDays]
 
   );
+
+
+
+  useEffect(() => {
+
+    let cancelled = false;
+
+
+
+    const loadTips = async () => {
+
+      try {
+
+        const results = await Promise.all(
+
+          weekDays.map((day) => posApi.getPayments({ date: day.dateLabel }))
+
+        );
+
+        if (cancelled) return;
+
+
+
+        const tips = results
+
+          .flatMap((result) => result.payments || [])
+
+          .reduce((sum, payment) => sum + (payment.tip || 0), 0);
+
+        setWeekTips(tips);
+
+      } catch (error) {
+
+        console.error(error);
+
+        if (!cancelled) setWeekTips(0);
+
+      }
+
+    };
+
+
+
+    void loadTips();
+
+
+
+    return () => {
+
+      cancelled = true;
+
+    };
+
+  }, [weekDays]);
 
 
 
@@ -234,6 +292,8 @@ export default function WeeklySalesCard({
 
   );
 
+  const weekSalonNet = weekTotalSales - weekTotalCommission - weekTips;
+
 
 
   const weekRangeLabel = formatWeekRangeLabel(weekStart);
@@ -374,51 +434,87 @@ export default function WeeklySalesCard({
 
 
 
-          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+          <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
 
-            <div className="flex items-baseline gap-2">
+            <div>
 
-              <span className="font-display text-4xl font-extrabold text-primary">
+              <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">
 
-                {formatMXN(weekTotalSales)}
+                Ventas brutas
 
-              </span>
+              </p>
 
-              {weekDeltaPercent !== null && (
+              <div className="flex items-baseline gap-2">
 
-                <span
+                <span className="font-display text-4xl font-extrabold text-primary leading-none">
 
-                  className={`text-xs font-bold font-sans ${
-
-                    weekDeltaPercent >= 0 ? "text-emerald-700" : "text-red-700"
-
-                  }`}
-
-                >
-
-                  {weekDeltaPercent >= 0 ? "+" : ""}
-
-                  {weekDeltaPercent}% vs sem. ant.
+                  {formatMXN(weekTotalSales)}
 
                 </span>
 
-              )}
+                {weekDeltaPercent !== null && (
+
+                  <span
+
+                    className={`text-xs font-bold font-sans ${
+
+                      weekDeltaPercent >= 0 ? "text-emerald-700" : "text-red-700"
+
+                    }`}
+
+                  >
+
+                    {weekDeltaPercent >= 0 ? "+" : ""}
+
+                    {weekDeltaPercent}% vs sem. ant.
+
+                  </span>
+
+                )}
+
+              </div>
 
             </div>
 
-            <div className="pb-1">
+            <div>
 
-              <p className="text-[10px] text-outline font-bold uppercase tracking-wider">
+              <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">
 
                 Comisión estimada
 
               </p>
 
-              <p className="font-display text-2xl font-extrabold text-secondary">
+              <p className="font-display text-2xl font-extrabold text-secondary leading-none">
 
                 {formatMXN(weekTotalCommission)}
 
               </p>
+
+            </div>
+
+            <div>
+
+              <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-1">
+
+                Neto para el salón
+
+              </p>
+
+              <p className="font-display text-4xl font-extrabold text-blue-600 leading-none">
+
+                {formatMXN(weekSalonNet)}
+
+              </p>
+
+              {weekTips > 0 && (
+
+                <p className="text-[9px] text-outline mt-1">
+
+                  − propinas {formatMXN(weekTips)}
+
+                </p>
+
+              )}
 
             </div>
 
@@ -428,7 +524,7 @@ export default function WeeklySalesCard({
 
           <p className="text-xs text-on-surface-variant">
 
-            Citas terminadas en Mongo · desglose por día y manicurista.
+            Citas terminadas · ventas − comisión − propinas.
 
           </p>
 
@@ -572,7 +668,7 @@ export default function WeeklySalesCard({
 
 
 
-          <div className="pt-2 border-t border-primary/5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs w-full">
+          <div className="pt-2 border-t border-primary/5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs w-full">
 
             <div className="flex items-center justify-between sm:justify-start sm:gap-4 rounded-lg bg-surface-container-low/30 px-3 py-2">
 
@@ -597,6 +693,34 @@ export default function WeeklySalesCard({
               <span className="font-display font-extrabold text-secondary">
 
                 {formatMXN(weekTotalCommission)}
+
+              </span>
+
+            </div>
+
+            <div className="flex items-center justify-between sm:justify-start sm:gap-4 rounded-lg bg-surface-container-low/30 px-3 py-2">
+
+              <span className="text-outline font-bold uppercase tracking-wider">Propinas</span>
+
+              <span className="font-display font-extrabold text-outline">
+
+                {formatMXN(weekTips)}
+
+              </span>
+
+            </div>
+
+            <div className="flex items-center justify-between sm:justify-start sm:gap-4 rounded-lg bg-surface-container-low/30 px-3 py-2">
+
+              <span className="text-outline font-bold uppercase tracking-wider">
+
+                Neto salón
+
+              </span>
+
+              <span className="font-display font-extrabold text-primary">
+
+                {formatMXN(weekSalonNet)}
 
               </span>
 
