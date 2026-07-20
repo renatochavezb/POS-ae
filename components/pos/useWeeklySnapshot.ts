@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import posApi from "@/libs/posApi";
-import { WeeklyStats } from "../types";
+import { WeeklyStats } from "./types";
 import {
   formatSpanishShortDateInTimeZone,
   formatWeekRangeLabel,
   isCurrentWeek,
-} from "../scheduleUtils";
+} from "./scheduleUtils";
 
 export function useWeeklySnapshot(weekStart: Date) {
   const [snapshot, setSnapshot] = useState<WeeklyStats | null>(null);

@@ -153,8 +153,6 @@ const posWeeklySnapshotSchema = mongoose.Schema(
   }
 );
 
-posWeeklySnapshotSchema.index({ weekStartDate: 1 });
-
 if (mongoose.models.PosWeeklySnapshot) {
   delete mongoose.models.PosWeeklySnapshot;
 }
