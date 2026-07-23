@@ -7,7 +7,9 @@ import {
   buildBookingTimeOptions,
   buildDayScheduleConfigForLabel,
   formatDuration,
+  formatTimeLabel,
   getDurationOptionsFromConfig,
+  parseTimeToMinutes,
   resolveScheduleForDateLabel,
 } from "../scheduleUtils";
 
@@ -75,9 +77,17 @@ export default function AppointmentEditModal({
   );
 
   useEffect(() => {
-    if (timeOptions.length > 0 && !timeOptions.includes(time)) {
-      setTime(timeOptions[0]);
+    if (timeOptions.length === 0) return;
+
+    const normalized = formatTimeLabel(time);
+    if (timeOptions.includes(normalized)) {
+      if (normalized !== time) setTime(normalized);
+      return;
     }
+
+    const minutes = parseTimeToMinutes(time);
+    const match = timeOptions.find((option) => parseTimeToMinutes(option) === minutes);
+    setTime(match || timeOptions[0]);
   }, [timeOptions, time]);
 
   const handleSubmit = (event: FormEvent) => {

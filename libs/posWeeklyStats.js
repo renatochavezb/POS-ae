@@ -136,6 +136,8 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
       .length,
     sales: 0,
     commission: 0,
+    tips: 0,
+    net: 0,
   }));
 
   const completedByStaffMap = new Map();
@@ -168,6 +170,10 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
       (sum, appointment) => sum + appointmentCommission(appointment, commissionByStaffId),
       0
     );
+    const dayTips = payments
+      .filter((payment) => payment.appointmentDate === day.dateLabel)
+      .reduce((sum, payment) => sum + (payment.tip || 0), 0);
+    const net = sales - commission - dayTips;
 
     return {
       dateLabel: day.dateLabel,
@@ -175,7 +181,19 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
       count: dayAppointments.length,
       sales,
       commission,
+      tips: dayTips,
+      net,
     };
+  });
+
+  // Mantener completedByDay alineado con ventas (incluye tips/net)
+  salesByDay.forEach((day, index) => {
+    if (completedByDay[index]) {
+      completedByDay[index].sales = day.sales;
+      completedByDay[index].commission = day.commission;
+      completedByDay[index].tips = day.tips;
+      completedByDay[index].net = day.net;
+    }
   });
 
   const salesByStaffMap = new Map();

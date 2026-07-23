@@ -179,19 +179,37 @@ export function isCurrentWeek(weekStart: Date): boolean {
   );
 }
 
-/** Hourly rows shown in the agenda grid (9:00 – 21:00). */
+/** Formatea minutos desde medianoche como "10:00 AM" / "6:30 PM". */
+export const formatMinutesAsTime = (totalMinutes: number): string => {
+  const normalized = ((Math.floor(totalMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);
+  const hours24 = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+  let hours12 = hours24 % 12;
+  if (hours12 === 0) hours12 = 12;
+  return `${hours12}:${String(minutes).padStart(2, '0')} ${meridiem}`;
+};
+
+/** Normaliza cualquier hora guardada (24h o AM/PM) al formato AM/PM. */
+export const formatTimeLabel = (time: string): string => {
+  const minutes = parseTimeToMinutes(time);
+  if (minutes < 0) return time;
+  return formatMinutesAsTime(minutes);
+};
+
+/** Hourly rows shown in the agenda grid (9:00 AM – 9:00 PM). */
 export const CALENDAR_HOUR_SLOTS = Array.from(
   { length: SCHEDULE_END_HOUR - SCHEDULE_START_HOUR + 1 },
-  (_, i) => `${String(SCHEDULE_START_HOUR + i).padStart(2, '0')}:00`
+  (_, i) => formatMinutesAsTime((SCHEDULE_START_HOUR + i) * 60)
 );
 
-/** Bookable times every 30 minutes within business hours. */
+/** Bookable times every 30 minutes within business hours (AM/PM). */
 export const BOOKING_TIME_OPTIONS = (() => {
   const options: string[] = [];
   for (let hour = SCHEDULE_START_HOUR; hour <= SCHEDULE_END_HOUR; hour++) {
-    options.push(`${String(hour).padStart(2, '0')}:00`);
+    options.push(formatMinutesAsTime(hour * 60));
     if (hour < SCHEDULE_END_HOUR) {
-      options.push(`${String(hour).padStart(2, '0')}:30`);
+      options.push(formatMinutesAsTime(hour * 60 + 30));
     }
   }
   return options;
@@ -265,7 +283,7 @@ export function resolveScheduleForDate(
     closed: slot.closed,
     hoursLabel: slot.closed
       ? 'Cerrado'
-      : `${String(slot.startHour).padStart(2, '0')}:00 – ${String(slot.endHour).padStart(2, '0')}:00`,
+      : `${formatMinutesAsTime(slot.startHour * 60)} – ${formatMinutesAsTime(slot.endHour * 60)}`,
   };
 }
 
@@ -329,7 +347,7 @@ export const buildCalendarHourSlots = (
 ): string[] =>
   Array.from(
     { length: config.endHour - config.startHour + 1 },
-    (_, i) => `${String(config.startHour + i).padStart(2, '0')}:00`
+    (_, i) => formatMinutesAsTime((config.startHour + i) * 60)
   );
 
 export const buildBookingTimeOptions = (
@@ -338,9 +356,9 @@ export const buildBookingTimeOptions = (
   const options: string[] = [];
 
   for (let hour = config.startHour; hour <= config.endHour; hour++) {
-    options.push(`${String(hour).padStart(2, '0')}:00`);
+    options.push(formatMinutesAsTime(hour * 60));
     if (hour < config.endHour) {
-      options.push(`${String(hour).padStart(2, '0')}:30`);
+      options.push(formatMinutesAsTime(hour * 60 + 30));
     }
   }
 
@@ -372,17 +390,11 @@ export const formatDuration = (minutes: number): string => {
   return `${hours} h ${mins} min`;
 };
 
-export const formatMinutesAsTime = (totalMinutes: number): string => {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-};
-
 export const formatAppointmentTimeRange = (time: string, durationMinutes: number): string => {
   const startMinutes = parseTimeToMinutes(time);
   if (startMinutes < 0) return time;
   const endMinutes = startMinutes + durationMinutes;
-  return `${time} – ${formatMinutesAsTime(endMinutes)}`;
+  return `${formatMinutesAsTime(startMinutes)} – ${formatMinutesAsTime(endMinutes)}`;
 };
 
 export const appointmentStartsInHourSlot = (
@@ -428,8 +440,7 @@ export const parseTimeToMinutes = (timeStr: string): number => {
 };
 
 export const getHourSlotStartMinutes = (hourSlot: string): number => {
-  const [hours, minutes] = hourSlot.split(':').map(Number);
-  return hours * 60 + (minutes || 0);
+  return parseTimeToMinutes(hourSlot);
 };
 
 export const getDurationOptions = (serviceDuration?: number): number[] => {

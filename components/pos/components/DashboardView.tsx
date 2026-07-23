@@ -35,6 +35,7 @@ import { formatServicePrice } from '../data';
 import WeeklyCompletedAppointmentsCard from './WeeklyCompletedAppointmentsCard';
 import WeeklySalesCard from './WeeklySalesCard';
 import WeeklyCutsCard from './WeeklyCutsCard';
+import WeeklyWeekComparisonCard from './WeeklyWeekComparisonCard';
 import CabinOccupancyCard from './CabinOccupancyCard';
 import SendToCajaModal from './SendToCajaModal';
 
@@ -861,6 +862,8 @@ export default function DashboardView({
 
         {renderColumnGrid(cajaStatusColumns)}
       </section>
+
+      <WeeklyWeekComparisonCard weekStart={weekStart} />
 
       {sendToCajaAppointment ? (
         <SendToCajaModal

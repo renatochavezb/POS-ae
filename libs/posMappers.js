@@ -473,12 +473,22 @@ export function mapPayableDoc(doc) {
 }
 
 function mapWeeklyBreakdownDay(raw = {}) {
+  const sales = raw.sales ?? 0;
+  const commission = raw.commission ?? 0;
+  const tips = raw.tips ?? 0;
+  const net =
+    raw.net != null && Number.isFinite(Number(raw.net))
+      ? Number(raw.net)
+      : sales - commission - tips;
+
   return {
     dateLabel: raw.dateLabel || "",
     dayLabel: raw.dayLabel || "",
     count: raw.count ?? 0,
-    sales: raw.sales ?? 0,
-    commission: raw.commission ?? 0,
+    sales,
+    commission,
+    tips,
+    net,
   };
 }
 

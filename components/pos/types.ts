@@ -171,7 +171,7 @@ export interface StaffBlockedSlot {
 export interface Appointment {
   id: string;
   date: string; // e.g., "24 Oct, 2023"
-  time: string; // e.g., "10:30 AM" or "10:00"
+  time: string; // e.g., "10:30 AM"
   serviceName: string;
   serviceSubtitle: string;
   serviceImage: string;
@@ -253,6 +253,9 @@ export interface WeeklyBreakdownDay {
   count: number;
   sales: number;
   commission: number;
+  tips?: number;
+  /** Neto salón del día: ventas − comisión − propinas */
+  net?: number;
 }
 
 export interface WeeklyStaffBreakdown {

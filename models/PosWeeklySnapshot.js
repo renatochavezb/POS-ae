@@ -7,6 +7,8 @@ const dayBreakdownSchema = mongoose.Schema(
     count: { type: Number, default: 0 },
     sales: { type: Number, default: 0 },
     commission: { type: Number, default: 0 },
+    tips: { type: Number, default: 0 },
+    net: { type: Number, default: 0 },
   },
   { _id: false }
 );

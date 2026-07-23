@@ -264,7 +264,7 @@ export default function POSDashboard() {
   const [bookingStaffId, setBookingStaffId] = useState('');
   const [bookingStaffLocked, setBookingStaffLocked] = useState(false);
   const [bookingDate, setBookingDate] = useState(getTodaySpanishShortDate());
-  const [bookingTime, setBookingTime] = useState('10:00');
+  const [bookingTime, setBookingTime] = useState('10:00 AM');
   const [bookingDuration, setBookingDuration] = useState(60);
 
   const bookingDaySchedule = useMemo(
@@ -815,7 +815,7 @@ export default function POSDashboard() {
     setBookingServices([initialServiceLine]);
     setBookingStaffId(lockedStaff?.id ?? '');
     setBookingStaffLocked(Boolean(lockedStaff));
-    setBookingTime(defaultTime || '10:00');
+    setBookingTime(defaultTime || '10:00 AM');
 
     const selectedService = services.find((service) => service.id === defaultServiceId);
     setBookingDuration(selectedService?.duration ?? 60);

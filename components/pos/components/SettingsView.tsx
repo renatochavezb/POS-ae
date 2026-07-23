@@ -40,7 +40,10 @@ function cloneWeeklyHours(config?: ScheduleConfig): WeeklyHoursConfig {
 }
 
 function formatHourLabel(hour: number) {
-  return `${String(hour).padStart(2, "0")}:00`;
+  const meridiem = hour >= 12 ? "PM" : "AM";
+  let hours12 = hour % 12;
+  if (hours12 === 0) hours12 = 12;
+  return `${hours12}:00 ${meridiem}`;
 }
 
 function formatSlotLabel(slot: WeeklyHoursSlot) {
