@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Ban,
   Calendar,
@@ -630,7 +630,7 @@ export default function DashboardView({
       return renderAdminActions(item);
     }
 
-    let primary: JSX.Element | null = null;
+    let primary: ReactNode = null;
 
     if (columnId === 'agendado') {
       primary = (
