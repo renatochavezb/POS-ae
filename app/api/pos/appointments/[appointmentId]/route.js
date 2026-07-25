@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
-import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
+import {
+  requirePosSession,
+  rejectManicuristaAgendaMutation,
+  isMasterSessionRequest,
+} from "@/libs/posAuth";
 import { mapAppointmentDoc } from "@/libs/posMappers";
 import PosAppointment from "@/models/PosAppointment";
 import PosStaff from "@/models/PosStaff";
 import PosClient from "@/models/PosClient";
+import PosPayment from "@/models/PosPayment";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
 import { refreshReceptionistDailyCounts } from "@/libs/posSeed";
@@ -14,12 +19,25 @@ import { syncClientCrmSegmentsForClients } from "@/libs/posClientCrmSegments";
 import {
   canDeleteAppointment,
   getNextAppointmentStatus,
+  getPreviousAppointmentStatus,
   isAppointmentLockedOnBoard,
   normalizeAppointmentStatus,
 } from "@/components/pos/appointmentStatus";
 import { authorizeReceptionistAction } from "@/libs/posReceptionistAuth";
 
 export const dynamic = "force-dynamic";
+
+function isAdminOverride(req, body) {
+  return Boolean(body?.adminOverride) && isMasterSessionRequest(req);
+}
+
+async function appointmentHasPayment(appointmentCode) {
+  const payment = await PosPayment.findOne({
+    appointmentCode,
+    transactionType: { $ne: "gift_card_sale" },
+  }).select("paymentCode total amount");
+  return payment;
+}
 
 export async function PATCH(req, { params }) {
   try {
@@ -31,6 +49,7 @@ export async function PATCH(req, { params }) {
 
     const { appointmentId } = await params;
     const body = await req.json();
+    const adminOverride = isAdminOverride(req, body);
 
     await connectMongo();
 
@@ -63,7 +82,7 @@ export async function PATCH(req, { params }) {
       );
     }
 
-    if (isFieldUpdate && isAppointmentLockedOnBoard(currentStatus)) {
+    if (isFieldUpdate && isAppointmentLockedOnBoard(currentStatus) && !adminOverride) {
       return NextResponse.json(
         { error: "No se puede modificar una cita confirmada o terminada." },
         { status: 403 }
@@ -73,7 +92,20 @@ export async function PATCH(req, { params }) {
     if (body.status) {
       const nextStatus = normalizeAppointmentStatus(body.status);
 
-      if (nextStatus === "cancelled") {
+      if (adminOverride) {
+        const allowed =
+          nextStatus === currentStatus ||
+          nextStatus === "cancelled" ||
+          nextStatus === getNextAppointmentStatus(currentStatus) ||
+          nextStatus === getPreviousAppointmentStatus(currentStatus);
+
+        if (!allowed) {
+          return NextResponse.json(
+            { error: "Transición de estatus no permitida." },
+            { status: 403 }
+          );
+        }
+      } else if (nextStatus === "cancelled") {
         if (currentStatus !== "agendado") {
           return NextResponse.json(
             { error: "Solo se pueden cancelar citas agendadas." },
@@ -98,7 +130,7 @@ export async function PATCH(req, { params }) {
       }
     }
 
-    if (isAppointmentLockedOnBoard(currentStatus) && !body.status) {
+    if (isAppointmentLockedOnBoard(currentStatus) && !body.status && !adminOverride) {
       return NextResponse.json(
         { error: "No se puede modificar una cita confirmada o terminada." },
         { status: 403 }
@@ -129,6 +161,8 @@ export async function PATCH(req, { params }) {
         );
       }
     }
+
+    const payment = body.status ? await appointmentHasPayment(appointmentId) : null;
 
     const updated = await PosAppointment.findOneAndUpdate(
       { appointmentCode: appointmentId },
@@ -178,7 +212,11 @@ export async function PATCH(req, { params }) {
       updated.clientId !== existing.clientId ? updated.clientId : null,
     ]);
 
-    return NextResponse.json(mapAppointmentDoc(updated));
+    return NextResponse.json({
+      ...mapAppointmentDoc(updated),
+      isPaid: Boolean(payment),
+      paymentId: payment?.paymentCode || "",
+    });
   } catch (error) {
     console.error("PATCH /api/pos/appointments/[appointmentId]", error);
     return NextResponse.json(
@@ -198,6 +236,7 @@ export async function DELETE(req, { params }) {
 
     const { appointmentId } = await params;
     const body = await req.json().catch(() => ({}));
+    const adminOverride = isAdminOverride(req, body);
 
     await connectMongo();
 
@@ -209,18 +248,22 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: "Cita no encontrada" }, { status: 404 });
     }
 
-    if (!canDeleteAppointment(existing.status)) {
+    if (!adminOverride && !canDeleteAppointment(existing.status)) {
       return NextResponse.json(
         { error: "No se puede eliminar una cita confirmada o terminada." },
         { status: 403 }
       );
     }
 
-    try {
-      await authorizeReceptionistAction(body, "appointment_delete");
-    } catch (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 401 });
+    if (!adminOverride) {
+      try {
+        await authorizeReceptionistAction(body, "appointment_delete");
+      } catch (authError) {
+        return NextResponse.json({ error: authError.message }, { status: 401 });
+      }
     }
+
+    const payment = await appointmentHasPayment(appointmentId);
 
     const deleted = await PosAppointment.findOneAndDelete({
       appointmentCode: appointmentId,
@@ -278,6 +321,8 @@ export async function DELETE(req, { params }) {
       success: true,
       deletedId: deleted.appointmentCode,
       hardDelete: true,
+      isPaid: Boolean(payment),
+      paymentId: payment?.paymentCode || "",
     });
   } catch (error) {
     console.error("DELETE /api/pos/appointments/[appointmentId]", error);

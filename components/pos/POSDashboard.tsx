@@ -99,7 +99,7 @@ const ACCOUNTANT_TAB_IDS = ['staff', 'inventario', ...ACCOUNTANT_ADMIN_TAB_IDS];
 const AGENDA_POLL_INTERVAL_MS = 30_000;
 
 const isReceptionSupervisorRole = (role?: string) => /supervis/i.test(role || '');
-import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus } from './appointmentStatus';
+import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus, getPreviousAppointmentStatus } from './appointmentStatus';
 
 type BookingServiceLine = {
   key: string;
@@ -1336,6 +1336,118 @@ export default function POSDashboard() {
     }
   };
 
+  const applyAdminStatusChange = async (
+    appointmentId: string,
+    nextStatus: AppointmentStatus
+  ) => {
+    if (!isMasterSession) {
+      throw new Error('Solo el administrador puede realizar esta acción.');
+    }
+
+    const appointment = appointments.find((item) => item.id === appointmentId);
+    if (!appointment || appointment.status === nextStatus) return;
+
+    const staffObj = staffList.find((staff) => staff.id === appointment.staffId);
+    const wasFinished = isAppointmentPaid(appointment.status);
+    const willBeFinished = isAppointmentPaid(nextStatus);
+    const nextCompletedToday = staffObj
+      ? Math.max(
+          0,
+          staffObj.completedToday +
+            (willBeFinished && !wasFinished ? 1 : 0) -
+            (!willBeFinished && wasFinished ? 1 : 0)
+        )
+      : 0;
+
+    await posApi.updateAppointment(appointmentId, {
+      status: nextStatus,
+      adminOverride: true,
+      staffStats: staffObj
+        ? {
+            staffId: staffObj.id,
+            completedToday: nextCompletedToday,
+          }
+        : undefined,
+    });
+
+    setAppointments((prev) =>
+      prev.map((item) =>
+        item.id === appointmentId ? { ...item, status: nextStatus } : item
+      )
+    );
+
+    if (staffObj) {
+      setStaffList((prev) =>
+        prev.map((staff) =>
+          staff.id === staffObj.id
+            ? { ...staff, completedToday: nextCompletedToday }
+            : staff
+        )
+      );
+    }
+
+    await loadPosData({ silent: true });
+  };
+
+  const handleAdminRevertAppointmentStatus = async (appointmentId: string) => {
+    const appointment = appointments.find((item) => item.id === appointmentId);
+    if (!appointment) throw new Error('Cita no encontrada.');
+
+    const previous = getPreviousAppointmentStatus(appointment.status);
+    if (!previous) throw new Error('Esta cita no se puede retroceder más.');
+
+    await applyAdminStatusChange(appointmentId, previous);
+  };
+
+  const handleAdminCancelAppointment = async (appointmentId: string) => {
+    await applyAdminStatusChange(appointmentId, 'cancelled');
+  };
+
+  const handleAdminDeleteAppointment = async (appointmentId: string) => {
+    if (!isMasterSession) {
+      throw new Error('Solo el administrador puede eliminar desde el dashboard.');
+    }
+
+    const appointment = appointments.find((item) => item.id === appointmentId);
+    if (!appointment) throw new Error('Cita no encontrada.');
+
+    const staffObj = staffList.find((staff) => staff.id === appointment.staffId);
+    const nextStaffStats = staffObj
+      ? {
+          staffId: staffObj.id,
+          totalToday: Math.max(0, staffObj.totalToday - 1),
+          completedToday: isAppointmentPaid(appointment.status)
+            ? Math.max(0, staffObj.completedToday - 1)
+            : staffObj.completedToday,
+          weeklyRevenue: Math.max(0, staffObj.weeklyRevenue - appointment.cost),
+        }
+      : null;
+
+    const clientObj = clients.find((client) => client.id === appointment.clientId);
+    const nextClientStats = clientObj
+      ? {
+          clientId: clientObj.id,
+          visitsCount: Math.max(0, clientObj.visitsCount - 1),
+          totalSpent: Math.max(0, clientObj.totalSpent - appointment.cost),
+          averageTicket: 0,
+        }
+      : null;
+
+    if (nextClientStats && nextClientStats.visitsCount > 0) {
+      nextClientStats.averageTicket =
+        nextClientStats.totalSpent / nextClientStats.visitsCount;
+    }
+
+    await posApi.deleteAppointment(appointmentId, {
+      adminOverride: true,
+      staffStats: nextStaffStats || undefined,
+      clientStats: nextClientStats || undefined,
+    });
+
+    setAppointments((prev) => prev.filter((item) => item.id !== appointmentId));
+    await loadPosData({ silent: true });
+  };
+
   const handleCloseStaffSlot = async (slot: Omit<StaffBlockedSlot, 'id'>) => {
     if (isManicuristaProfile) return;
 
@@ -1563,6 +1675,15 @@ export default function POSDashboard() {
             services={services}
             canManageStatuses={isMasterSession}
             onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
+            onAdminRevertAppointmentStatus={
+              isMasterSession ? handleAdminRevertAppointmentStatus : undefined
+            }
+            onAdminCancelAppointment={
+              isMasterSession ? handleAdminCancelAppointment : undefined
+            }
+            onAdminDeleteAppointment={
+              isMasterSession ? handleAdminDeleteAppointment : undefined
+            }
             onOpenCaja={() => setCurrentTab('caja')}
             onOpenNewAppointment={() => handleOpenAppointmentModal()}
             onOpenNewClient={() => setIsClientModalOpen(true)}
@@ -1748,6 +1869,15 @@ export default function POSDashboard() {
           services={services}
           canManageStatuses={isMasterSession}
           onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
+          onAdminRevertAppointmentStatus={
+            isMasterSession ? handleAdminRevertAppointmentStatus : undefined
+          }
+          onAdminCancelAppointment={
+            isMasterSession ? handleAdminCancelAppointment : undefined
+          }
+          onAdminDeleteAppointment={
+            isMasterSession ? handleAdminDeleteAppointment : undefined
+          }
           onOpenCaja={() => setCurrentTab('caja')}
           onOpenNewAppointment={() => handleOpenAppointmentModal()}
           onOpenNewClient={() => setIsClientModalOpen(true)}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Ban,
   Calendar,
   CheckCircle2,
   ChevronLeft,
@@ -7,6 +8,8 @@ import {
   Clock3,
   FileSpreadsheet,
   Plus,
+  RotateCcw,
+  Trash2,
   UserPlus,
 } from 'lucide-react';
 import {
@@ -19,6 +22,7 @@ import {
   Service,
 } from '../types';
 import {
+  getPreviousAppointmentStatus,
   normalizeAppointmentStatus,
 } from '../appointmentStatus';
 import {
@@ -38,6 +42,9 @@ import WeeklyCutsCard from './WeeklyCutsCard';
 import WeeklyWeekComparisonCard from './WeeklyWeekComparisonCard';
 import CabinOccupancyCard from './CabinOccupancyCard';
 import SendToCajaModal from './SendToCajaModal';
+import AdminAppointmentConfirmModal, {
+  AdminAppointmentAction,
+} from './AdminAppointmentConfirmModal';
 
 type BoardCard = {
   id: string;
@@ -65,6 +72,9 @@ interface DashboardViewProps {
     appointmentId: string,
     status: AppointmentStatus
   ) => Promise<void>;
+  onAdminRevertAppointmentStatus?: (appointmentId: string) => Promise<void>;
+  onAdminCancelAppointment?: (appointmentId: string) => Promise<void>;
+  onAdminDeleteAppointment?: (appointmentId: string) => Promise<void>;
   onOpenCaja: () => void;
 }
 
@@ -86,6 +96,9 @@ export default function DashboardView({
   services,
   canManageStatuses = false,
   onUpdateAppointmentStatus,
+  onAdminRevertAppointmentStatus,
+  onAdminCancelAppointment,
+  onAdminDeleteAppointment,
   onOpenCaja,
 }: DashboardViewProps) {
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
@@ -97,6 +110,11 @@ export default function DashboardView({
   const [updatingAppointmentId, setUpdatingAppointmentId] = useState<string | null>(null);
   const [sendToCajaAppointment, setSendToCajaAppointment] = useState<Appointment | null>(null);
   const [cajaRefreshKey, setCajaRefreshKey] = useState(0);
+  const [adminAction, setAdminAction] = useState<{
+    type: AdminAppointmentAction;
+    appointment: Appointment;
+  } | null>(null);
+  const [isAdminSubmitting, setIsAdminSubmitting] = useState(false);
 
   const operationalStaff = useMemo(() => getBookableStaff(staffList), [staffList]);
   const weekDays = useMemo(() => buildWeekDayEntries(weekStart), [weekStart]);
@@ -523,11 +541,99 @@ export default function DashboardView({
     if (appointment) setSendToCajaAppointment(appointment);
   };
 
+  const openAdminAction = (type: AdminAppointmentAction, appointmentId: string) => {
+    const appointment = appointmentById.get(appointmentId);
+    if (!appointment) return;
+    setAdminAction({ type, appointment });
+  };
+
+  const handleConfirmAdminAction = async () => {
+    if (!adminAction) return;
+    const { type, appointment } = adminAction;
+    setIsAdminSubmitting(true);
+    try {
+      if (type === 'revert' && onAdminRevertAppointmentStatus) {
+        await onAdminRevertAppointmentStatus(appointment.id);
+      } else if (type === 'cancel' && onAdminCancelAppointment) {
+        await onAdminCancelAppointment(appointment.id);
+      } else if (type === 'delete' && onAdminDeleteAppointment) {
+        await onAdminDeleteAppointment(appointment.id);
+      }
+      setAdminAction(null);
+      setCajaRefreshKey((current) => current + 1);
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : 'No se pudo completar la acción de administrador.'
+      );
+    } finally {
+      setIsAdminSubmitting(false);
+    }
+  };
+
+  const renderAdminActions = (item: BoardCard) => {
+    if (!canManageStatuses) return null;
+    const appointment = appointmentById.get(item.appointmentId);
+    if (!appointment) return null;
+
+    const previous = getPreviousAppointmentStatus(appointment.status);
+    const canRevert = Boolean(previous) && Boolean(onAdminRevertAppointmentStatus);
+    const canCancel =
+      normalizeAppointmentStatus(appointment.status) !== 'cancelled' &&
+      Boolean(onAdminCancelAppointment);
+    const canDelete = Boolean(onAdminDeleteAppointment);
+
+    if (!canRevert && !canCancel && !canDelete) return null;
+
+    return (
+      <div className="mt-2 pt-2 border-t border-dashed border-primary/10 space-y-1.5">
+        <p className="text-[9px] font-bold uppercase tracking-wider text-outline">
+          Admin
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {canRevert ? (
+            <button
+              type="button"
+              onClick={() => openAdminAction('revert', item.appointmentId)}
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-primary/15 text-[9px] font-bold uppercase tracking-wider text-primary hover:bg-surface transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Retroceder
+            </button>
+          ) : null}
+          {canCancel ? (
+            <button
+              type="button"
+              onClick={() => openAdminAction('cancel', item.appointmentId)}
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-200 text-[9px] font-bold uppercase tracking-wider text-amber-800 hover:bg-amber-50 transition-colors"
+            >
+              <Ban className="w-3 h-3" />
+              Cancelar
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={() => openAdminAction('delete', item.appointmentId)}
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-red-200 text-[9px] font-bold uppercase tracking-wider text-red-700 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-3 h-3" />
+              Eliminar
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
   const renderCardAction = (columnId: string, item: BoardCard) => {
-    if (!canManageStatuses || columnId === 'charged') return null;
+    if (!canManageStatuses || columnId === 'charged') {
+      return renderAdminActions(item);
+    }
+
+    let primary: JSX.Element | null = null;
 
     if (columnId === 'agendado') {
-      return (
+      primary = (
         <button
           type="button"
           disabled={updatingAppointmentId === item.appointmentId}
@@ -537,10 +643,8 @@ export default function DashboardView({
           {updatingAppointmentId === item.appointmentId ? 'Actualizando…' : 'Confirmar'}
         </button>
       );
-    }
-
-    if (columnId === 'confirmado') {
-      return (
+    } else if (columnId === 'confirmado') {
+      primary = (
         <button
           type="button"
           disabled={updatingAppointmentId === item.appointmentId}
@@ -550,10 +654,8 @@ export default function DashboardView({
           {updatingAppointmentId === item.appointmentId ? 'Actualizando…' : 'Terminar'}
         </button>
       );
-    }
-
-    if (columnId === 'terminado' || columnId === 'pendingToSend') {
-      return (
+    } else if (columnId === 'terminado' || columnId === 'pendingToSend') {
+      primary = (
         <button
           type="button"
           onClick={() => handleSendToCaja(item.appointmentId)}
@@ -562,10 +664,8 @@ export default function DashboardView({
           Enviar a caja
         </button>
       );
-    }
-
-    if (columnId === 'pendingCharge') {
-      return (
+    } else if (columnId === 'pendingCharge') {
+      primary = (
         <button
           type="button"
           onClick={onOpenCaja}
@@ -576,7 +676,12 @@ export default function DashboardView({
       );
     }
 
-    return null;
+    return (
+      <>
+        {primary}
+        {renderAdminActions(item)}
+      </>
+    );
   };
 
   const renderColumnGrid = (
@@ -873,6 +978,23 @@ export default function DashboardView({
           onClose={() => setSendToCajaAppointment(null)}
           onSubmitted={async () => {
             setCajaRefreshKey((current) => current + 1);
+          }}
+        />
+      ) : null}
+
+      {adminAction ? (
+        <AdminAppointmentConfirmModal
+          action={adminAction.type}
+          clientName={adminAction.appointment.clientName}
+          date={adminAction.appointment.date}
+          time={adminAction.appointment.time}
+          staffName={adminAction.appointment.staffName}
+          status={adminAction.appointment.status}
+          isPaid={chargedAppointmentIds.has(adminAction.appointment.id)}
+          isSubmitting={isAdminSubmitting}
+          onConfirm={handleConfirmAdminAction}
+          onClose={() => {
+            if (!isAdminSubmitting) setAdminAction(null);
           }}
         />
       ) : null}

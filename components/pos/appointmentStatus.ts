@@ -99,6 +99,17 @@ export const getNextAppointmentStatus = (
   return null;
 };
 
+/** Retroceso de estatus (solo administrador). */
+export const getPreviousAppointmentStatus = (
+  status: AppointmentStatus
+): AppointmentWorkflowStatus | null => {
+  const normalized = normalizeAppointmentStatus(status);
+  if (normalized === 'terminado') return 'confirmado';
+  if (normalized === 'confirmado') return 'agendado';
+  if (normalized === 'cancelled') return 'agendado';
+  return null;
+};
+
 export const getAppointmentStatusStyles = (status: AppointmentStatus) => {
   const normalized = normalizeAppointmentStatus(status);
 

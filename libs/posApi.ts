@@ -163,6 +163,7 @@ type AppointmentMutationPayload = {
   receptionistStats?: ReceptionistStatsPayload | null;
   receptionistId?: string;
   pin?: string;
+  adminOverride?: boolean;
 };
 
 const posApi = {
@@ -399,6 +400,7 @@ const posApi = {
       staffStats?: StaffStatsPayload;
       receptionistId?: string;
       pin?: string;
+      adminOverride?: boolean;
     }
   ): Promise<Appointment> {
     return posClient.patch(`/pos/appointments/${appointmentId}`, data);
