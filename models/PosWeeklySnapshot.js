@@ -20,6 +20,7 @@ const staffBreakdownSchema = mongoose.Schema(
     count: { type: Number, default: 0 },
     sales: { type: Number, default: 0 },
     commission: { type: Number, default: 0 },
+    tips: { type: Number, default: 0 },
     commissionPercent: { type: Number, default: 40 },
   },
   { _id: false }

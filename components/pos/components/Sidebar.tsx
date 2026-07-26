@@ -19,6 +19,10 @@ import {
   AdminNavItem,
   isAdminTab,
 } from '../admin/adminNav';
+import {
+  DASHBOARD_NAV_ITEMS,
+  DashboardSectionId,
+} from '../dashboardNav';
 
 interface SidebarProps {
   currentTab: string;
@@ -33,6 +37,8 @@ interface SidebarProps {
   onOpenMasterPanel?: () => void;
   allowedTabIds?: string[];
   adminNavItems?: AdminNavItem[];
+  activeDashboardSection?: DashboardSectionId | null;
+  onDashboardSection?: (sectionId: DashboardSectionId) => void;
 }
 
 export default function Sidebar({
@@ -44,14 +50,23 @@ export default function Sidebar({
   onOpenMasterPanel,
   allowedTabIds,
   adminNavItems = [],
+  activeDashboardSection = null,
+  onDashboardSection,
 }: SidebarProps) {
   const { data: session } = useSession();
   const [logoClicks, setLogoClicks] = useState(0);
   const [adminExpanded, setAdminExpanded] = useState(isAdminTab(currentTab));
+  const [dashboardExpanded, setDashboardExpanded] = useState(currentTab === 'dashboard');
 
   useEffect(() => {
     if (isAdminTab(currentTab)) {
       setAdminExpanded(true);
+    }
+  }, [currentTab]);
+
+  useEffect(() => {
+    if (currentTab === 'dashboard') {
+      setDashboardExpanded(true);
     }
   }, [currentTab]);
 
@@ -92,8 +107,12 @@ export default function Sidebar({
     { id: 'settings', label: 'Configuración', icon: Settings },
   ].filter((item) => !allowedTabIds || allowedTabIds.includes(item.id));
 
+  const showDashboardSubmenu =
+    !allowedTabIds || allowedTabIds.includes('dashboard');
+
   const AdminSectionIcon = ADMIN_SECTION_ICON;
   const adminSectionActive = isAdminTab(currentTab);
+  const dashboardActive = currentTab === 'dashboard';
 
   return (
     <aside className="w-[4.25rem] lg:w-64 h-full min-h-0 bg-surface border-r border-primary/10 flex flex-col shrink-0 transition-[width] duration-200">
@@ -117,6 +136,75 @@ export default function Sidebar({
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
+
+            if (item.id === 'dashboard' && showDashboardSubmenu) {
+              return (
+                <div key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (dashboardActive) {
+                        setDashboardExpanded((prev) => !prev);
+                      } else {
+                        setCurrentTab('dashboard');
+                        setDashboardExpanded(true);
+                      }
+                    }}
+                    title={item.label}
+                    className={`w-full flex items-center justify-center lg:justify-between gap-0 lg:gap-3 px-0 lg:px-4 py-3 rounded-lg font-sans text-xs tracking-widest font-bold uppercase transition-all duration-300 ${
+                      dashboardActive
+                        ? 'bg-primary/5 text-primary lg:border-l-2 border-secondary'
+                        : 'text-outline hover:bg-surface-container-low hover:text-primary'
+                    }`}
+                  >
+                    <span className="flex items-center justify-center lg:justify-start gap-0 lg:gap-4">
+                      <Icon
+                        className={`w-4 h-4 shrink-0 ${dashboardActive ? 'text-secondary' : 'text-outline'}`}
+                      />
+                      <span className="hidden lg:inline">{item.label}</span>
+                    </span>
+                    <ChevronDown
+                      className={`hidden lg:block w-4 h-4 transition-transform ${
+                        dashboardExpanded ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {dashboardExpanded ? (
+                    <div className="mt-1 space-y-1 lg:ml-3 lg:pl-3 lg:border-l lg:border-primary/10">
+                      {DASHBOARD_NAV_ITEMS.map((section) => {
+                        const SectionIcon = section.icon;
+                        const sectionActive =
+                          dashboardActive && activeDashboardSection === section.id;
+                        return (
+                          <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => onDashboardSection?.(section.id)}
+                            title={section.label}
+                            className={`w-full flex items-center justify-center lg:justify-start gap-0 lg:gap-3 px-0 lg:px-3 py-2.5 rounded-lg font-sans text-[10px] tracking-wider font-bold uppercase transition-all ${
+                              sectionActive
+                                ? 'bg-secondary/10 text-primary'
+                                : 'text-outline hover:bg-surface-container-low hover:text-primary'
+                            }`}
+                          >
+                            <SectionIcon
+                              className={`w-3.5 h-3.5 shrink-0 ${
+                                sectionActive ? 'text-secondary' : 'text-outline'
+                              }`}
+                            />
+                            <span className="hidden lg:inline text-left leading-tight">
+                              {section.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+
             return (
               <button
                 key={item.id}

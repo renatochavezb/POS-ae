@@ -5,25 +5,31 @@ import { Clock } from "lucide-react";
 import { Staff } from "../types";
 import { getBookableStaff } from "@/libs/posStaffAgenda";
 
-/** Lugares físicos de cabina en el salón. */
-export const CABIN_CAPACITY = 12;
+/** Fallback si aún no llega la config desde Mongo. */
+export const DEFAULT_CABIN_CAPACITY = 12;
 
 type CabinOccupancyCardProps = {
   staffList: Staff[];
+  /** Capacidad física de cabinas (PosScheduleConfig.cabinCapacity en Mongo). */
+  cabinCapacity?: number;
 };
 
-export default function CabinOccupancyCard({ staffList }: CabinOccupancyCardProps) {
+export default function CabinOccupancyCard({
+  staffList,
+  cabinCapacity = DEFAULT_CABIN_CAPACITY,
+}: CabinOccupancyCardProps) {
+  const capacity = Math.max(1, Math.round(Number(cabinCapacity) || DEFAULT_CABIN_CAPACITY));
   const registeredCount = useMemo(() => getBookableStaff(staffList).length, [staffList]);
 
-  const occupancyPercent = Math.round((registeredCount / CABIN_CAPACITY) * 100);
-  const availableSlots = Math.max(0, CABIN_CAPACITY - registeredCount);
+  const occupancyPercent = Math.round((registeredCount / capacity) * 100);
+  const availableSlots = Math.max(0, capacity - registeredCount);
 
   const footerMessage =
-    registeredCount >= CABIN_CAPACITY
-      ? "Capacidad de manicuristas al máximo (12 lugares cubiertos)."
+    registeredCount >= capacity
+      ? `Capacidad de manicuristas al máximo (${capacity} lugares cubiertos).`
       : availableSlots === 1
-        ? "1 lugar disponible para cubrir de 12 en el salón."
-        : `${availableSlots} lugares disponibles para cubrir de 12 en el salón.`;
+        ? `1 lugar disponible para cubrir de ${capacity} en el salón.`
+        : `${availableSlots} lugares disponibles para cubrir de ${capacity} en el salón.`;
 
   return (
     <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow h-full flex items-start justify-between">
@@ -34,7 +40,7 @@ export default function CabinOccupancyCard({ staffList }: CabinOccupancyCardProp
 
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-display text-4xl font-extrabold text-primary">
-            {registeredCount}/{CABIN_CAPACITY}
+            {registeredCount}/{capacity}
           </span>
           <span className="text-sky-700 text-xs font-bold font-sans">
             {occupancyPercent}% ocupación

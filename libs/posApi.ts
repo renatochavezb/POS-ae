@@ -4,6 +4,7 @@ import {
   Client,
   DailyStats,
   WeeklyStats,
+  StaffPerformanceHistory,
   CashRegisterState,
   CashSession,
   CashSessionSummary,
@@ -197,6 +198,7 @@ const posApi = {
   updateScheduleConfig(payload: {
     pin: string;
     weeklyHours: ScheduleConfig["weeklyHours"];
+    cabinCapacity?: number;
   }): Promise<ScheduleConfig> {
     return posClient.patch("/pos/schedule-config", payload);
   },
@@ -380,6 +382,20 @@ const posApi = {
   }> {
     return posClient.get("/pos/weekly-stats", {
       params: { refresh: "all" },
+    });
+  },
+  getWeeklyHistory(): Promise<{
+    scope: string;
+    count: number;
+    snapshots: WeeklyStats[];
+  }> {
+    return posClient.get("/pos/weekly-stats", {
+      params: { scope: "history" },
+    });
+  },
+  getStaffPerformanceHistory(): Promise<StaffPerformanceHistory> {
+    return posClient.get("/pos/weekly-stats", {
+      params: { scope: "staff-performance" },
     });
   },
   createAppointment(

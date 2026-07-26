@@ -3,6 +3,8 @@ import connectMongo from "@/libs/mongoose";
 import { requirePosSession } from "@/libs/posAuth";
 import { mapWeeklySnapshotDoc } from "@/libs/posMappers";
 import {
+  buildStaffPerformanceHistory,
+  getAllWeeklySnapshots,
   getWeeklySnapshotForWeekStart,
   refreshAllWeeklySnapshots,
   resolveWeekStartDateLabel,
@@ -19,7 +21,33 @@ export async function GET(req) {
     await connectMongo();
 
     const refreshParam = (req.nextUrl.searchParams.get("refresh") || "").trim();
+    const scopeParam = (req.nextUrl.searchParams.get("scope") || "").trim();
     const weekStartParam = (req.nextUrl.searchParams.get("weekStart") || "").trim();
+
+    if (scopeParam === "history") {
+      // Refresca la semana en curso para que el último punto de la curva sea real.
+      const currentWeekStart = resolveWeekStartDateLabel("");
+      if (currentWeekStart) {
+        await upsertWeeklySnapshot(currentWeekStart);
+      }
+
+      const snapshots = await getAllWeeklySnapshots();
+      return NextResponse.json({
+        scope: "history",
+        count: snapshots.length,
+        snapshots: snapshots.map(mapWeeklySnapshotDoc),
+      });
+    }
+
+    if (scopeParam === "staff-performance") {
+      const result = await buildStaffPerformanceHistory();
+      return NextResponse.json({
+        scope: "staff-performance",
+        weekCount: result.weeks.length,
+        staffCount: result.staff.length,
+        ...result,
+      });
+    }
 
     if (refreshParam === "all") {
       const snapshots = await refreshAllWeeklySnapshots();

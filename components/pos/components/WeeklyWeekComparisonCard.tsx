@@ -1,14 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Loader2 } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { formatMXN } from "../data";
-import { addDays } from "../scheduleUtils";
+import { addDays, getStudioWeekStart, isCurrentWeek } from "../scheduleUtils";
 import { useWeeklySnapshot } from "../useWeeklySnapshot";
 import { WeeklyBreakdownDay, WeeklyStats } from "../types";
+import { dashboardSectionDomId } from "../dashboardNav";
 
 type WeeklyWeekComparisonCardProps = {
-  weekStart: Date;
+  /** Semana inicial opcional; el card maneja su propia navegación. */
+  initialWeekStart?: Date;
 };
 
 type MetricId = "citas" | "bruta" | "comision" | "neta";
@@ -160,9 +162,15 @@ function DualBars({
   );
 }
 
-export default function WeeklyWeekComparisonCard({ weekStart }: WeeklyWeekComparisonCardProps) {
+export default function WeeklyWeekComparisonCard({
+  initialWeekStart,
+}: WeeklyWeekComparisonCardProps) {
+  const [weekStart, setWeekStart] = useState<Date>(
+    () => initialWeekStart || getStudioWeekStart(new Date())
+  );
   const [metric, setMetric] = useState<MetricId>("bruta");
   const previousWeekStart = useMemo(() => addDays(weekStart, -7), [weekStart]);
+  const viewingCurrentWeek = isCurrentWeek(weekStart);
   const {
     snapshot: current,
     isLoading: loadingCurrent,
@@ -227,10 +235,13 @@ export default function WeeklyWeekComparisonCard({ weekStart }: WeeklyWeekCompar
   }, [rows, activeMetric]);
 
   return (
-    <section className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden">
+    <section
+      id={dashboardSectionDomId("comparativo-semanal")}
+      className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden scroll-mt-4"
+    >
       <div className="p-5 md:p-6 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div className="min-w-0">
             <h3 className="font-display text-lg font-bold text-primary">
               Comparativo semanal
             </h3>
@@ -238,16 +249,53 @@ export default function WeeklyWeekComparisonCard({ weekStart }: WeeklyWeekCompar
               Semana anterior frente a la semana seleccionada
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-[11px]">
-            <span className="inline-flex items-center gap-1.5 text-outline">
-              <span className="w-3 h-1.5 rounded-full bg-outline/35" />
-              Ant. {previousRange}
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-primary font-bold">
-              <span className="w-3 h-2 rounded-full bg-primary" />
-              Act. {currentRange}
-            </span>
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-outline" /> : null}
+
+          <div className="flex flex-col items-stretch sm:items-end gap-2">
+            <div className="flex items-center justify-between gap-2 w-full sm:w-auto sm:min-w-[16rem]">
+              <button
+                type="button"
+                onClick={() => setWeekStart((prev) => addDays(prev, -7))}
+                className="p-1.5 rounded-lg border border-primary/10 text-outline hover:text-primary hover:bg-surface-container-low transition-colors shrink-0"
+                title="Semana anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="min-w-0 text-center flex-1 px-1">
+                <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate">
+                  {viewingCurrentWeek ? "Semana en curso" : "Semana operativa"}
+                </p>
+                <p className="text-[11px] text-outline truncate">{currentRange}</p>
+                <p className="text-[9px] text-outline/80 mt-0.5">Sábado a viernes</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWeekStart((prev) => addDays(prev, 7))}
+                className="p-1.5 rounded-lg border border-primary/10 text-outline hover:text-primary hover:bg-surface-container-low transition-colors shrink-0"
+                title="Semana siguiente"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            {!viewingCurrentWeek ? (
+              <button
+                type="button"
+                onClick={() => setWeekStart(getStudioWeekStart(new Date()))}
+                className="text-[10px] font-sans font-bold uppercase tracking-wider text-secondary hover:text-primary transition-colors self-center sm:self-end"
+              >
+                Volver a semana actual
+              </button>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3 text-[11px]">
+              <span className="inline-flex items-center gap-1.5 text-outline">
+                <span className="w-3 h-1.5 rounded-full bg-outline/35" />
+                Ant. {previousRange}
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-primary font-bold">
+                <span className="w-3 h-2 rounded-full bg-primary" />
+                Act. {currentRange}
+              </span>
+              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-outline" /> : null}
+            </div>
           </div>
         </div>
 

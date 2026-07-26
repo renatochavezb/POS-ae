@@ -43,6 +43,13 @@ const posScheduleConfigSchema = mongoose.Schema(
       default: "0000",
       trim: true,
     },
+    /** Lugares físicos de cabina disponibles en el salón. */
+    cabinCapacity: {
+      type: Number,
+      default: 12,
+      min: 1,
+      max: 100,
+    },
     weeklyHours: {
       weekday: {
         startHour: { type: Number, default: 9 },

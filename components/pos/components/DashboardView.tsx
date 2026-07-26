@@ -20,6 +20,7 @@ import {
   PosCashTicket,
   PosPayment,
   Service,
+  ScheduleConfig,
 } from '../types';
 import {
   getPreviousAppointmentStatus,
@@ -39,12 +40,16 @@ import { formatServicePrice } from '../data';
 import WeeklyCompletedAppointmentsCard from './WeeklyCompletedAppointmentsCard';
 import WeeklySalesCard from './WeeklySalesCard';
 import WeeklyCutsCard from './WeeklyCutsCard';
+import WeeklyTipsCard from './WeeklyTipsCard';
 import WeeklyWeekComparisonCard from './WeeklyWeekComparisonCard';
+import WeeklyHistoryTrendCard from './WeeklyHistoryTrendCard';
+import StaffPerformanceBoard from './StaffPerformanceBoard';
 import CabinOccupancyCard from './CabinOccupancyCard';
 import SendToCajaModal from './SendToCajaModal';
 import AdminAppointmentConfirmModal, {
   AdminAppointmentAction,
 } from './AdminAppointmentConfirmModal';
+import { dashboardSectionDomId } from '../dashboardNav';
 
 type BoardCard = {
   id: string;
@@ -76,6 +81,9 @@ interface DashboardViewProps {
   onAdminCancelAppointment?: (appointmentId: string) => Promise<void>;
   onAdminDeleteAppointment?: (appointmentId: string) => Promise<void>;
   onOpenCaja: () => void;
+  scheduleConfig?: ScheduleConfig;
+  scrollToSection?: string | null;
+  scrollToken?: number;
 }
 
 function matchesStaffFilter(staffId: string, selectedStaffIds: string[]) {
@@ -100,6 +108,9 @@ export default function DashboardView({
   onAdminCancelAppointment,
   onAdminDeleteAppointment,
   onOpenCaja,
+  scheduleConfig,
+  scrollToSection = null,
+  scrollToken = 0,
 }: DashboardViewProps) {
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [selectedReportStatusIds, setSelectedReportStatusIds] = useState<string[]>([]);
@@ -124,6 +135,17 @@ export default function DashboardView({
   );
   const weekRangeLabel = formatWeekRangeLabel(weekStart);
   const viewingCurrentWeek = isCurrentWeek(weekStart);
+
+  useEffect(() => {
+    if (!scrollToSection) return;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(dashboardSectionDomId(scrollToSection));
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [scrollToSection, scrollToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -808,24 +830,49 @@ export default function DashboardView({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-2 gap-6 items-stretch">
-        <div className="h-full min-h-0">
+        <div
+          id={dashboardSectionDomId('citas-finalizadas')}
+          className="h-full min-h-0 scroll-mt-4"
+        >
           <WeeklyCompletedAppointmentsCard />
         </div>
 
-        <div className="md:col-span-2 h-full min-h-0">
+        <div
+          id={dashboardSectionDomId('ventas-totales')}
+          className="md:col-span-2 h-full min-h-0 scroll-mt-4"
+        >
           <WeeklySalesCard />
         </div>
 
-        <div className="h-full min-h-0">
-          <CabinOccupancyCard staffList={staffList} />
+        <div
+          id={dashboardSectionDomId('ocupacion-cabinas')}
+          className="h-full min-h-0 scroll-mt-4"
+        >
+          <CabinOccupancyCard
+            staffList={staffList}
+            cabinCapacity={scheduleConfig?.cabinCapacity}
+          />
         </div>
 
-        <div className="md:col-span-2 h-full min-h-0">
+        <div
+          id={dashboardSectionDomId('cortes-caja')}
+          className="md:col-span-2 h-full min-h-0 scroll-mt-4"
+        >
           <WeeklyCutsCard />
+        </div>
+
+        <div
+          id={dashboardSectionDomId('propinas-semana')}
+          className="md:col-span-3 h-full min-h-0 scroll-mt-4"
+        >
+          <WeeklyTipsCard />
         </div>
       </div>
 
-      <section className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden">
+      <section
+        id={dashboardSectionDomId('citas-semana')}
+        className="bg-surface-container-lowest rounded-2xl border border-primary/5 luxury-shadow overflow-hidden scroll-mt-4"
+      >
         <div className="p-5 md:p-6 border-b border-primary/5 space-y-4">
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
             <div>
@@ -968,7 +1015,11 @@ export default function DashboardView({
         {renderColumnGrid(cajaStatusColumns)}
       </section>
 
-      <WeeklyWeekComparisonCard weekStart={weekStart} />
+      <WeeklyWeekComparisonCard />
+
+      <WeeklyHistoryTrendCard />
+
+      <StaffPerformanceBoard />
 
       {sendToCajaAppointment ? (
         <SendToCajaModal

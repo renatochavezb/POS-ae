@@ -69,6 +69,9 @@ export default function SettingsView({
   const [weeklyHours, setWeeklyHours] = useState<WeeklyHoursConfig>(() =>
     cloneWeeklyHours(scheduleConfig)
   );
+  const [cabinCapacity, setCabinCapacity] = useState<number>(
+    () => scheduleConfig.cabinCapacity ?? DEFAULT_SCHEDULE_CONFIG.cabinCapacity ?? 12
+  );
   const [hoursSaved, setHoursSaved] = useState(false);
   const [hoursError, setHoursError] = useState<string | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
@@ -77,12 +80,20 @@ export default function SettingsView({
 
   useEffect(() => {
     setWeeklyHours(cloneWeeklyHours(scheduleConfig));
+    setCabinCapacity(
+      scheduleConfig.cabinCapacity ?? DEFAULT_SCHEDULE_CONFIG.cabinCapacity ?? 12
+    );
   }, [scheduleConfig]);
 
   const hasHourChanges = useMemo(() => {
     const baseline = cloneWeeklyHours(scheduleConfig);
-    return JSON.stringify(baseline) !== JSON.stringify(weeklyHours);
-  }, [scheduleConfig, weeklyHours]);
+    const baselineCabin =
+      scheduleConfig.cabinCapacity ?? DEFAULT_SCHEDULE_CONFIG.cabinCapacity ?? 12;
+    return (
+      JSON.stringify(baseline) !== JSON.stringify(weeklyHours) ||
+      baselineCabin !== cabinCapacity
+    );
+  }, [scheduleConfig, weeklyHours, cabinCapacity]);
 
   const handleSave = (event: FormEvent) => {
     event.preventDefault();
@@ -105,6 +116,11 @@ export default function SettingsView({
   const handleSaveHoursClick = () => {
     setHoursError(null);
     setPinError(null);
+
+    if (!Number.isFinite(cabinCapacity) || cabinCapacity < 1 || cabinCapacity > 100) {
+      setHoursError("La capacidad de cabinas debe ser entre 1 y 100.");
+      return;
+    }
 
     for (const row of SCHEDULE_ROWS) {
       const slot = weeklyHours[row.key];
@@ -129,9 +145,13 @@ export default function SettingsView({
       const updated = await posApi.updateScheduleConfig({
         pin,
         weeklyHours,
+        cabinCapacity,
       });
       onScheduleConfigUpdated?.(updated);
       setWeeklyHours(cloneWeeklyHours(updated));
+      setCabinCapacity(
+        updated.cabinCapacity ?? DEFAULT_SCHEDULE_CONFIG.cabinCapacity ?? 12
+      );
       setIsPinModalOpen(false);
       setHoursSaved(true);
       window.setTimeout(() => setHoursSaved(false), 2500);
@@ -384,6 +404,27 @@ export default function SettingsView({
               })}
             </div>
 
+            <div className="pt-2 border-t border-primary/5 space-y-2">
+              <label className="text-[10px] text-outline font-bold uppercase tracking-wider block">
+                Capacidad de cabinas
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={cabinCapacity}
+                onChange={(event) => {
+                  setCabinCapacity(Number(event.target.value));
+                  setHoursSaved(false);
+                  setHoursError(null);
+                }}
+                className="w-full px-3 py-2 border border-primary/10 rounded-lg text-sm font-bold text-primary bg-surface outline-none focus:border-secondary"
+              />
+              <p className="text-[10px] text-outline">
+                Lugares físicos del salón · se guarda en Mongo junto con los horarios.
+              </p>
+            </div>
+
             {hoursError ? (
               <p className="text-[11px] text-red-600 font-medium">{hoursError}</p>
             ) : null}
@@ -391,8 +432,8 @@ export default function SettingsView({
             <div className="pt-1 flex flex-col gap-2">
               {hoursSaved ? (
                 <span className="text-xs font-sans font-bold text-emerald-800 flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Horarios guardados en
-                  MongoDB
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Horarios y cabinas
+                  guardados en MongoDB
                 </span>
               ) : null}
               <button
@@ -401,7 +442,7 @@ export default function SettingsView({
                 disabled={!hasHourChanges || isSavingHours}
                 className="w-full px-4 py-2.5 rounded-lg bg-primary text-on-primary hover:bg-primary-container font-sans text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Guardar horarios
+                Guardar horarios y cabinas
               </button>
             </div>
           </div>
@@ -426,9 +467,9 @@ export default function SettingsView({
 
       {isPinModalOpen ? (
         <MasterPinModal
-          title="Confirmar cambio de horarios"
-          description="Ingresa la clave de administrador para guardar los horarios en MongoDB."
-          confirmLabel="Guardar horarios"
+          title="Confirmar cambios de operación"
+          description="Ingresa la clave de administrador para guardar horarios y capacidad de cabinas en MongoDB."
+          confirmLabel="Guardar en MongoDB"
           isSubmitting={isSavingHours}
           error={pinError}
           onConfirm={handleConfirmMasterPin}

@@ -12,6 +12,8 @@ export const DEFAULT_WEEKLY_HOURS = {
   sundayHoliday: { startHour: 9, endHour: 21, closed: true },
 };
 
+export const DEFAULT_CABIN_CAPACITY = 12;
+
 export const DEFAULT_SCHEDULE_CONFIG = {
   startHour: SCHEDULE_START_HOUR,
   endHour: SCHEDULE_END_HOUR,
@@ -21,8 +23,15 @@ export const DEFAULT_SCHEDULE_CONFIG = {
   closeReasons: ["Descanso", "Comida", "Capacitación", "Personal", "Otro"],
   timeZone: POS_TIME_ZONE,
   masterLoginCode: "0000",
+  cabinCapacity: DEFAULT_CABIN_CAPACITY,
   weeklyHours: DEFAULT_WEEKLY_HOURS,
 };
+
+function normalizeCabinCapacity(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return DEFAULT_CABIN_CAPACITY;
+  return Math.min(100, Math.max(1, Math.round(value)));
+}
 
 function normalizeWeeklyHoursSlot(raw, fallback) {
   return {
@@ -67,6 +76,7 @@ export function mapScheduleConfigDoc(doc) {
     timeZone: raw.timeZone || DEFAULT_SCHEDULE_CONFIG.timeZone,
     masterLoginCode:
       raw.masterLoginCode || DEFAULT_SCHEDULE_CONFIG.masterLoginCode,
+    cabinCapacity: normalizeCabinCapacity(raw.cabinCapacity),
     weeklyHours,
   };
 }
@@ -85,7 +95,17 @@ export async function seedScheduleConfigIfEmpty() {
 
 export async function getScheduleConfig() {
   await seedScheduleConfigIfEmpty();
-  const doc = await PosScheduleConfig.findOne({ configCode: "default" });
+  let doc = await PosScheduleConfig.findOne({ configCode: "default" });
+
+  // Migración suave: docs antiguos sin cabinCapacity.
+  if (doc && (doc.cabinCapacity == null || !Number.isFinite(Number(doc.cabinCapacity)))) {
+    doc = await PosScheduleConfig.findOneAndUpdate(
+      { configCode: "default" },
+      { $set: { cabinCapacity: DEFAULT_CABIN_CAPACITY } },
+      { new: true }
+    );
+  }
+
   return mapScheduleConfigDoc(doc);
 }
 
@@ -125,7 +145,7 @@ export function validateWeeklyHours(weeklyHours) {
   return null;
 }
 
-export async function updateScheduleConfig({ pin, weeklyHours }) {
+export async function updateScheduleConfig({ pin, weeklyHours, cabinCapacity }) {
   const validationError = validateWeeklyHours(weeklyHours);
   if (validationError) {
     throw new Error(validationError);
@@ -141,6 +161,10 @@ export async function updateScheduleConfig({ pin, weeklyHours }) {
   }
 
   const normalizedWeeklyHours = normalizeWeeklyHours(weeklyHours);
+  const nextCabinCapacity =
+    cabinCapacity == null
+      ? current.cabinCapacity
+      : normalizeCabinCapacity(cabinCapacity);
 
   const updated = await PosScheduleConfig.findOneAndUpdate(
     { configCode: "default" },
@@ -149,6 +173,7 @@ export async function updateScheduleConfig({ pin, weeklyHours }) {
         weeklyHours: normalizedWeeklyHours,
         startHour: normalizedWeeklyHours.weekday.startHour,
         endHour: normalizedWeeklyHours.weekday.endHour,
+        cabinCapacity: nextCabinCapacity,
       },
     },
     { new: true }

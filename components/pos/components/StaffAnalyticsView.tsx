@@ -356,7 +356,7 @@ export default function StaffAnalyticsView({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
           <div className="space-y-3">
             <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">
@@ -390,25 +390,32 @@ export default function StaffAnalyticsView({
             <p className="text-xs text-on-surface-variant">
               Calculada sobre citas terminadas de la semana.
             </p>
-            <div className="pt-3 border-t border-primary/10 space-y-2">
-              <div className="flex items-center justify-between gap-4 text-xs">
-                <span className="font-bold text-on-surface-variant">
-                  Propinas de la semana
-                </span>
-                <span className="font-display font-bold text-primary">
-                  {isLoadingTips ? 'Cargando…' : formatMXN(weekTotalTips)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-4 text-xs">
-                <span className="font-bold text-primary">Comisión + propinas</span>
-                <span className="font-display font-black text-secondary">
-                  {isLoadingTips ? '—' : formatMXN(weekTotalCommissionAndTips)}
-                </span>
-              </div>
-            </div>
           </div>
           <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
             <Coins className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow flex items-start justify-between">
+          <div className="space-y-3 min-w-0">
+            <span className="text-[10px] text-outline font-bold tracking-widest uppercase block">
+              Propinas de la semana
+            </span>
+            <div className="flex items-baseline gap-1">
+              <span className="font-display text-3xl font-black text-primary">
+                {isLoadingTips ? '—' : formatMXN(weekTotalTips)}
+              </span>
+            </div>
+            <p className="text-xs text-on-surface-variant">
+              Cobrado en caja · {weekRangeLabel}
+            </p>
+            <p className="text-[11px] font-bold text-secondary pt-2 border-t border-primary/10">
+              Comisión + propinas:{' '}
+              {isLoadingTips ? '—' : formatMXN(weekTotalCommissionAndTips)}
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-primary/5 flex items-center justify-center text-primary shrink-0">
+            <Star className="w-6 h-6 text-secondary" />
           </div>
         </div>
 

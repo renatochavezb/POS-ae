@@ -499,6 +499,7 @@ function mapWeeklyStaffBreakdown(raw = {}) {
     count: raw.count ?? 0,
     sales: raw.sales ?? 0,
     commission: raw.commission ?? 0,
+    tips: raw.tips ?? 0,
     commissionPercent: raw.commissionPercent ?? 40,
   };
 }

@@ -48,6 +48,7 @@ import {
 // Visual Components
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
+import type { DashboardSectionId } from './dashboardNav';
 import AgendaView from './components/AgendaView';
 import { AppointmentEditPayload } from './components/AppointmentEditModal';
 import ClientsView from './components/ClientsView';
@@ -211,6 +212,8 @@ const resolveBookingServices = (
 export default function POSDashboard() {
   // Main Navigation state
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [dashboardSection, setDashboardSection] = useState<DashboardSectionId | null>(null);
+  const [dashboardScrollToken, setDashboardScrollToken] = useState(0);
   const [isSessionValidated, setIsSessionValidated] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
@@ -1695,6 +1698,9 @@ export default function POSDashboard() {
               setSelectedStaffId(id);
               setCurrentTab('staff');
             }}
+            scrollToSection={dashboardSection}
+            scrollToken={dashboardScrollToken}
+            scheduleConfig={scheduleConfig}
           />
         );
       case 'agenda':
@@ -1889,6 +1895,9 @@ export default function POSDashboard() {
             setSelectedStaffId(id);
             setCurrentTab('staff');
           }}
+          scrollToSection={dashboardSection}
+          scrollToken={dashboardScrollToken}
+          scheduleConfig={scheduleConfig}
         />;
     }
   };
@@ -1982,6 +1991,21 @@ export default function POSDashboard() {
         onOpenMasterPanel={() => setCurrentTab('master-log')}
         allowedTabIds={allowedTabIds}
         adminNavItems={adminNavItems}
+        activeDashboardSection={dashboardSection}
+        onDashboardSection={(sectionId) => {
+          if (isAccountantSession && !ACCOUNTANT_TAB_IDS.includes('dashboard')) return;
+          if (isManicuristaSession && !MANICURISTA_TAB_IDS.includes('dashboard')) return;
+          if (isPlainReceptionSession && !RECEPTIONIST_TAB_IDS.includes('dashboard')) return;
+          setCurrentTab('dashboard');
+          setDashboardSection(sectionId);
+          setDashboardScrollToken((prev) => prev + 1);
+          setSelectedClientId(null);
+          if (isManicuristaSession && loggedInStaffId) {
+            setSelectedStaffId(loggedInStaffId);
+          } else {
+            setSelectedStaffId(null);
+          }
+        }}
       />
 
       {/* 2. Main content scrollable canvas shell */}

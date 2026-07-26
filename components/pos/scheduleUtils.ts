@@ -248,6 +248,7 @@ export const DEFAULT_SCHEDULE_CONFIG: ScheduleConfig = {
   closeDurationOptions: BOOKING_DURATION_OPTIONS,
   closeReasons: ['Descanso', 'Comida', 'Capacitación', 'Personal', 'Otro'],
   timeZone: POS_TIME_ZONE,
+  cabinCapacity: 12,
   weeklyHours: DEFAULT_WEEKLY_HOURS,
 };
 

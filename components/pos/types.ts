@@ -236,6 +236,8 @@ export interface ScheduleConfig {
   closeReasons: string[];
   timeZone: string;
   masterLoginCode?: string;
+  /** Lugares físicos de cabina (Mongo: PosScheduleConfig.cabinCapacity). */
+  cabinCapacity?: number;
   weeklyHours?: WeeklyHoursConfig;
 }
 
@@ -264,6 +266,7 @@ export interface WeeklyStaffBreakdown {
   count: number;
   sales: number;
   commission: number;
+  tips?: number;
   commissionPercent: number;
 }
 
@@ -309,6 +312,39 @@ export interface WeeklyStats {
   cutsByReceptionist: WeeklyCutReceptionist[];
   computedAt: string;
   updatedAt: string;
+}
+
+/** Métricas semanales de una manicurista (ranking + histórico). */
+export interface StaffWeekPerformance {
+  staffId: string;
+  staffName: string;
+  citas: number;
+  bruta: number;
+  comision: number;
+  neta: number;
+  tip: number;
+  ticketPromedio: number;
+  cancelled: number;
+  productiveHours: number;
+  availableHours: number;
+  occupancyPct: number | null;
+  recurrentClients: number;
+  newClients: number;
+}
+
+export interface StaffPerformanceWeek {
+  weekStartDate: string;
+  weekEndDate: string;
+  weekRangeLabel: string;
+  staff: StaffWeekPerformance[];
+}
+
+export interface StaffPerformanceHistory {
+  scope: string;
+  weekCount: number;
+  staffCount: number;
+  weeks: StaffPerformanceWeek[];
+  staff: { staffId: string; staffName: string }[];
 }
 
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'gift_card' | 'mixto';

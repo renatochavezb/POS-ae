@@ -47,7 +47,11 @@ export async function PATCH(req) {
     }
 
     await connectMongo();
-    const config = await updateScheduleConfig({ pin, weeklyHours });
+    const config = await updateScheduleConfig({
+      pin,
+      weeklyHours,
+      cabinCapacity: body?.cabinCapacity,
+    });
 
     return NextResponse.json(stripSensitiveConfig(config));
   } catch (error) {
