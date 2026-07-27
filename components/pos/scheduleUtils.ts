@@ -227,6 +227,8 @@ export interface ScheduleConfig {
   closeReasons: string[];
   timeZone: string;
   masterLoginCode?: string;
+  /** Lugares físicos de cabina (Mongo: PosScheduleConfig.cabinCapacity). */
+  cabinCapacity?: number;
   weeklyHours?: {
     weekday: { startHour: number; endHour: number; closed: boolean };
     saturday: { startHour: number; endHour: number; closed: boolean };
