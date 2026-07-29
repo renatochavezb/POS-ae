@@ -356,8 +356,16 @@ const posApi = {
   }> {
     return posClient.delete(`/pos/staff/${staffId}`);
   },
-  getAppointments(): Promise<Appointment[]> {
-    return posClient.get("/pos/appointments");
+  getAppointments(params?: {
+    daysBefore?: number;
+    daysAfter?: number;
+  }): Promise<Appointment[]> {
+    return posClient.get("/pos/appointments", {
+      params: {
+        daysBefore: params?.daysBefore,
+        daysAfter: params?.daysAfter,
+      },
+    });
   },
   getAppointmentDailyStats(date: string): Promise<DailyStats> {
     return posClient.get("/pos/appointments/daily-stats", {
@@ -427,8 +435,16 @@ const posApi = {
   ): Promise<{ success: boolean }> {
     return posClient.delete(`/pos/appointments/${appointmentId}`, { data });
   },
-  getBlockedSlots(): Promise<StaffBlockedSlot[]> {
-    return posClient.get("/pos/blocked-slots");
+  getBlockedSlots(params?: {
+    daysBefore?: number;
+    daysAfter?: number;
+  }): Promise<StaffBlockedSlot[]> {
+    return posClient.get("/pos/blocked-slots", {
+      params: {
+        daysBefore: params?.daysBefore,
+        daysAfter: params?.daysAfter,
+      },
+    });
   },
   createBlockedSlot(data: Record<string, unknown>): Promise<StaffBlockedSlot> {
     return posClient.post("/pos/blocked-slots", data);

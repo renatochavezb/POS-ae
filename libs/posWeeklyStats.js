@@ -45,6 +45,37 @@ export function resolveWeekStartDateLabel(weekStartInput) {
   return formatSpanishShortDateFromYmd(getStudioWeekStartYmd(getMexicoDateYMD(new Date())));
 }
 
+/** True si el label es exactamente el sábado de una semana operativa (sáb–vie). */
+export function isCanonicalStudioWeekStartLabel(weekStartDateLabel) {
+  const ymd = spanishShortDateToYmd(weekStartDateLabel);
+  if (!ymd) return false;
+  return getStudioWeekStartYmd(ymd) === ymd;
+}
+
+function weekStartYmdOrNull(weekStartDateLabel) {
+  const ymd = spanishShortDateToYmd(weekStartDateLabel);
+  if (!ymd) return null;
+  return getStudioWeekStartYmd(ymd);
+}
+
+/** Snapshots huérfanos (no-sábado) o semanas futuras no deben aparecer en histórico/KPIs. */
+function isUsableWeeklySnapshotDoc(doc, currentWeekStartYmd) {
+  if (!doc?.weekStartDate) return false;
+  const ymd = spanishShortDateToYmd(doc.weekStartDate);
+  if (!ymd) return false;
+  if (getStudioWeekStartYmd(ymd) !== ymd) return false;
+  if (currentWeekStartYmd && ymd > currentWeekStartYmd) return false;
+  return true;
+}
+
+function snapshotMissingStaffTips(snapshot) {
+  const tips = Number(snapshot?.tips) || 0;
+  if (tips <= 0) return false;
+  const staff = snapshot?.salesByStaff || [];
+  const staffTips = staff.reduce((sum, row) => sum + (Number(row?.tips) || 0), 0);
+  return staffTips <= 0;
+}
+
 function buildCommissionMap(staffMembers = []) {
   return new Map(
     staffMembers.map((member) => [
@@ -385,22 +416,47 @@ export async function getWeeklySnapshotForWeekStart(weekStartDateLabel, { refres
 
   const snapshot = await PosWeeklySnapshot.findOne({ weekStartDate: resolved });
   if (snapshot) {
-    return snapshot.toObject();
+    const plain = snapshot.toObject();
+    // Recomputar si faltan propinas por manicurista (snapshots viejos) o tip día a día.
+    if (snapshotMissingStaffTips(plain)) {
+      return upsertWeeklySnapshot(resolved);
+    }
+    return plain;
   }
 
   return upsertWeeklySnapshot(resolved);
 }
 
 export async function getAllWeeklySnapshots() {
+  const currentWeekStartYmd = weekStartYmdOrNull(resolveWeekStartDateLabel(""));
   const docs = await PosWeeklySnapshot.find({}).lean();
 
   return docs
-    .filter((doc) => doc && doc.weekStartDate)
+    .filter((doc) => isUsableWeeklySnapshotDoc(doc, currentWeekStartYmd))
     .sort((a, b) => {
       const da = parseSpanishShortDateLabel(a.weekStartDate);
       const db = parseSpanishShortDateLabel(b.weekStartDate);
       return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
     });
+}
+
+/** Elimina semanas no canónicas (p. ej. jue–mié) y semanas futuras vacías. */
+export async function cleanupInvalidWeeklySnapshots() {
+  const currentWeekStartYmd = weekStartYmdOrNull(resolveWeekStartDateLabel(""));
+  const docs = await PosWeeklySnapshot.find({}).select("weekStartDate").lean();
+  const toDelete = [];
+
+  for (const doc of docs) {
+    if (!isUsableWeeklySnapshotDoc(doc, currentWeekStartYmd)) {
+      toDelete.push(doc.weekStartDate);
+    }
+  }
+
+  if (toDelete.length > 0) {
+    await PosWeeklySnapshot.deleteMany({ weekStartDate: { $in: toDelete } });
+  }
+
+  return { deleted: toDelete };
 }
 
 export async function refreshWeeklySnapshotsForDates(dates = []) {
@@ -417,15 +473,24 @@ export async function refreshWeeklySnapshotsForDates(dates = []) {
 }
 
 export async function refreshAllWeeklySnapshots() {
-  const [appointmentDates, sessionDates] = await Promise.all([
+  const cleanup = await cleanupInvalidWeeklySnapshots();
+
+  const [appointmentDates, sessionDates, paymentDates] = await Promise.all([
     PosAppointment.distinct("date"),
     PosCashSession.distinct("shiftDate"),
+    PosPayment.distinct("appointmentDate"),
   ]);
 
+  const currentWeekStartYmd = weekStartYmdOrNull(resolveWeekStartDateLabel(""));
   const weekStarts = new Set();
-  for (const date of [...appointmentDates, ...sessionDates].filter(Boolean)) {
+  for (const date of [...appointmentDates, ...sessionDates, ...paymentDates].filter(Boolean)) {
     const weekStart = getWeekStartDateLabelFromDateLabel(date);
-    if (weekStart) weekStarts.add(weekStart);
+    if (!weekStart) continue;
+    const ymd = spanishShortDateToYmd(weekStart);
+    if (!ymd) continue;
+    // No materializar semanas futuras (distorsionan “última semana” del histórico).
+    if (currentWeekStartYmd && ymd > currentWeekStartYmd) continue;
+    weekStarts.add(weekStart);
   }
 
   const refreshed = [];
@@ -433,7 +498,7 @@ export async function refreshAllWeeklySnapshots() {
     refreshed.push(await upsertWeeklySnapshot(weekStart));
   }
 
-  return refreshed;
+  return { snapshots: refreshed, cleanup };
 }
 
 function emptyStaffWeekMetrics(staffId, staffName) {

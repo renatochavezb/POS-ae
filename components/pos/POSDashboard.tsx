@@ -33,6 +33,7 @@ import {
   DEFAULT_SCHEDULE_CONFIG,
   buildBookingTimeOptions,
   buildDayScheduleConfigForLabel,
+  buildSpanishDateLabelsAroundToday,
   formatSpanishShortDate,
   getTodaySpanishShortDate,
   getDurationOptionsFromConfig,
@@ -97,7 +98,10 @@ const RECEPTIONIST_TAB_IDS = [
   ...RECEPTIONIST_ADMIN_TAB_IDS,
 ];
 const ACCOUNTANT_TAB_IDS = ['staff', 'inventario', ...ACCOUNTANT_ADMIN_TAB_IDS];
-const AGENDA_POLL_INTERVAL_MS = 30_000;
+const AGENDA_POLL_INTERVAL_MS = 120_000;
+/** Ventana del poll en vivo: 7 días atrás + 14 adelante (no todo el histórico). */
+const LIVE_AGENDA_DAYS_BEFORE = 7;
+const LIVE_AGENDA_DAYS_AFTER = 14;
 
 const isReceptionSupervisorRole = (role?: string) => /supervis/i.test(role || '');
 import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus, getPreviousAppointmentStatus } from './appointmentStatus';
@@ -600,17 +604,33 @@ export default function POSDashboard() {
   };
 
   const refreshLiveAgendaData = async () => {
+    const liveWindow = {
+      daysBefore: LIVE_AGENDA_DAYS_BEFORE,
+      daysAfter: LIVE_AGENDA_DAYS_AFTER,
+    };
+    const liveDateLabels = new Set(
+      buildSpanishDateLabelsAroundToday(LIVE_AGENDA_DAYS_BEFORE, LIVE_AGENDA_DAYS_AFTER)
+    );
+
     const [appointmentsResult, blockedSlotsResult] = await Promise.allSettled([
-      posApi.getAppointments(),
-      posApi.getBlockedSlots(),
+      posApi.getAppointments(liveWindow),
+      posApi.getBlockedSlots(liveWindow),
     ]);
 
     if (appointmentsResult.status === 'fulfilled') {
-      setAppointments(appointmentsResult.value);
+      const fresh = appointmentsResult.value;
+      setAppointments((prev) => {
+        const kept = prev.filter((appointment) => !liveDateLabels.has(appointment.date));
+        return [...kept, ...fresh];
+      });
     }
 
     if (blockedSlotsResult.status === 'fulfilled') {
-      setBlockedSlots(blockedSlotsResult.value);
+      const fresh = blockedSlotsResult.value;
+      setBlockedSlots((prev) => {
+        const kept = prev.filter((slot) => !liveDateLabels.has(slot.date));
+        return [...kept, ...fresh];
+      });
     }
 
     await refreshTicketAppointmentIds();

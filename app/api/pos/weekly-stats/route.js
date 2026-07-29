@@ -4,6 +4,7 @@ import { requirePosSession } from "@/libs/posAuth";
 import { mapWeeklySnapshotDoc } from "@/libs/posMappers";
 import {
   buildStaffPerformanceHistory,
+  cleanupInvalidWeeklySnapshots,
   getAllWeeklySnapshots,
   getWeeklySnapshotForWeekStart,
   refreshAllWeeklySnapshots,
@@ -25,13 +26,18 @@ export async function GET(req) {
     const weekStartParam = (req.nextUrl.searchParams.get("weekStart") || "").trim();
 
     if (scopeParam === "history") {
-      // Refresca la semana en curso para que el último punto de la curva sea real.
+      // Quita semanas huérfanas/futuras; refresca semanas recientes para propinas/neta correctas.
+      await cleanupInvalidWeeklySnapshots();
       const currentWeekStart = resolveWeekStartDateLabel("");
-      if (currentWeekStart) {
+      let snapshots = await getAllWeeklySnapshots();
+      const recent = snapshots.slice(-6);
+      for (const snap of recent) {
+        await upsertWeeklySnapshot(snap.weekStartDate);
+      }
+      if (currentWeekStart && !recent.some((snap) => snap.weekStartDate === currentWeekStart)) {
         await upsertWeeklySnapshot(currentWeekStart);
       }
-
-      const snapshots = await getAllWeeklySnapshots();
+      snapshots = await getAllWeeklySnapshots();
       return NextResponse.json({
         scope: "history",
         count: snapshots.length,
@@ -40,6 +46,7 @@ export async function GET(req) {
     }
 
     if (scopeParam === "staff-performance") {
+      await cleanupInvalidWeeklySnapshots();
       const result = await buildStaffPerformanceHistory();
       return NextResponse.json({
         scope: "staff-performance",
@@ -50,10 +57,12 @@ export async function GET(req) {
     }
 
     if (refreshParam === "all") {
-      const snapshots = await refreshAllWeeklySnapshots();
+      const result = await refreshAllWeeklySnapshots();
+      const snapshots = result.snapshots || result;
       return NextResponse.json({
         scope: "all",
         count: snapshots.length,
+        deleted: result.cleanup?.deleted || [],
         snapshots: snapshots.map(mapWeeklySnapshotDoc),
       });
     }

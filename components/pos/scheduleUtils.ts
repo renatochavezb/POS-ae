@@ -102,6 +102,22 @@ export const ymdAddDays = (ymd: string, days: number): string => {
   return utc.toISOString().slice(0, 10);
 };
 
+/** Etiquetas «28 Jul, 2026» para una ventana alrededor de hoy (México). */
+export function buildSpanishDateLabelsAroundToday(
+  daysBefore: number,
+  daysAfter: number,
+  fromDate: Date = new Date()
+): string[] {
+  const before = Math.max(0, Math.floor(daysBefore));
+  const after = Math.max(0, Math.floor(daysAfter));
+  const todayYmd = getMexicoDateYMD(fromDate);
+  const labels: string[] = [];
+  for (let offset = -before; offset <= after; offset += 1) {
+    labels.push(formatSpanishShortDateFromYmd(ymdAddDays(todayYmd, offset)));
+  }
+  return labels;
+}
+
 /** Día de la semana civil de un YYYY-MM-DD: 0=dom … 6=sáb. */
 export const ymdWeekday = (ymd: string): number => {
   const [year, month, day] = ymd.split('-').map(Number);

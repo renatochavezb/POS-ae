@@ -11,8 +11,7 @@ import {
   normalizeEmail,
   normalizePhone,
 } from "@/libs/posClientIdentity";
-import { backfillClientsCrmFields } from "@/libs/posClientCrmFields";
-import { syncAllClientCrmSegments, syncClientCrmSegments } from "@/libs/posClientCrmSegments";
+import { syncClientCrmSegments } from "@/libs/posClientCrmSegments";
 import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
@@ -24,18 +23,6 @@ export async function GET() {
 
     await connectMongo();
     await seedPosClientsIfEmpty();
-
-    try {
-      await backfillClientsCrmFields();
-    } catch (error) {
-      console.error("backfillClientsCrmFields", error);
-    }
-
-    try {
-      await syncAllClientCrmSegments();
-    } catch (error) {
-      console.error("syncAllClientCrmSegments", error);
-    }
 
     const clients = await PosClient.find().sort({ name: 1 });
     return NextResponse.json(clients.map(mapClientDoc));

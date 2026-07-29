@@ -6,7 +6,7 @@ import PosAppointment from "@/models/PosAppointment";
 import PosStaff from "@/models/PosStaff";
 import PosClient from "@/models/PosClient";
 import PosReceptionist from "@/models/PosReceptionist";
-import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
+import { getTodaySpanishShortDate, buildSpanishDateLabelsAroundToday } from "@/components/pos/scheduleUtils";
 import { mapReceptionistDoc } from "@/libs/posMappers";
 import { seedPosReceptionistsIfEmpty, refreshReceptionistDailyCounts } from "@/libs/posSeed";
 import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
@@ -16,14 +16,33 @@ import { syncClientCrmSegmentsForClients } from "@/libs/posClientCrmSegments";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+function parseWindowParam(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(120, Math.floor(n)));
+}
+
+export async function GET(req) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
 
     await connectMongo();
 
-    const appointments = await PosAppointment.find().sort({ date: 1, time: 1 });
+    const daysBeforeParam = req.nextUrl.searchParams.get("daysBefore");
+    const daysAfterParam = req.nextUrl.searchParams.get("daysAfter");
+    const hasWindow = daysBeforeParam != null || daysAfterParam != null;
+
+    let query = {};
+    if (hasWindow) {
+      const daysBefore = parseWindowParam(daysBeforeParam, 7);
+      const daysAfter = parseWindowParam(daysAfterParam, 14);
+      query = {
+        date: { $in: buildSpanishDateLabelsAroundToday(daysBefore, daysAfter) },
+      };
+    }
+
+    const appointments = await PosAppointment.find(query).sort({ date: 1, time: 1 });
     return NextResponse.json(appointments.map(mapAppointmentDoc));
   } catch (error) {
     console.error("GET /api/pos/appointments", error);

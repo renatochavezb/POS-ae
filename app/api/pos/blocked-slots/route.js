@@ -3,17 +3,37 @@ import connectMongo from "@/libs/mongoose";
 import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
 import { mapBlockedSlotDoc } from "@/libs/posMappers";
 import PosBlockedSlot from "@/models/PosBlockedSlot";
+import { buildSpanishDateLabelsAroundToday } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+function parseWindowParam(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(120, Math.floor(n)));
+}
+
+export async function GET(req) {
   try {
     const authResult = await requirePosSession();
     if (authResult.error) return authResult.error;
 
     await connectMongo();
 
-    const blockedSlots = await PosBlockedSlot.find().sort({ date: 1, time: 1 });
+    const daysBeforeParam = req.nextUrl.searchParams.get("daysBefore");
+    const daysAfterParam = req.nextUrl.searchParams.get("daysAfter");
+    const hasWindow = daysBeforeParam != null || daysAfterParam != null;
+
+    let query = {};
+    if (hasWindow) {
+      const daysBefore = parseWindowParam(daysBeforeParam, 7);
+      const daysAfter = parseWindowParam(daysAfterParam, 14);
+      query = {
+        date: { $in: buildSpanishDateLabelsAroundToday(daysBefore, daysAfter) },
+      };
+    }
+
+    const blockedSlots = await PosBlockedSlot.find(query).sort({ date: 1, time: 1 });
     return NextResponse.json(blockedSlots.map(mapBlockedSlotDoc));
   } catch (error) {
     console.error("GET /api/pos/blocked-slots", error);
