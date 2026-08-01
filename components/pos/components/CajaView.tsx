@@ -21,6 +21,7 @@ import {
   Send,
   Plus,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import { Appointment, CashRegisterState, CashSession, CashTicketLine, PaymentMethod, PosCashTicket, PosPayment, Receptionist, Service } from '../types';
 import { formatMXN } from '../data';
@@ -48,6 +49,8 @@ interface CajaViewProps {
   onTicketSubmitted?: () => void | Promise<void>;
   liveSyncAt?: number;
   isMasterSession?: boolean;
+  /** Refresca citas/tickets desde el padre (sin auto-poll). */
+  onRefreshAppointments?: () => void | Promise<void>;
 }
 
 const EMPTY_SUMMARY = {
@@ -92,6 +95,7 @@ export default function CajaView({
   onTicketSubmitted,
   liveSyncAt = 0,
   isMasterSession = false,
+  onRefreshAppointments,
 }: CajaViewProps) {
   const [registerState, setRegisterState] = useState<CashRegisterState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -143,6 +147,7 @@ export default function CajaView({
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [expandedPayments, setExpandedPayments] = useState<PosPayment[]>([]);
   const [expandedPaymentsLoading, setExpandedPaymentsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const cashDayLabel =
     registerState?.cashDay ||
@@ -297,6 +302,25 @@ export default function CajaView({
       setExpandedPayments([]);
     } finally {
       setExpandedPaymentsLoading(false);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setError(null);
+    try {
+      await onRefreshAppointments?.();
+      if (isManicuristaSession) {
+        await loadTickets(todayLabel);
+      } else {
+        await loadRegister();
+      }
+    } catch (refreshError) {
+      console.error(refreshError);
+      setError('No se pudo actualizar. Intenta de nuevo.');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -683,14 +707,28 @@ export default function CajaView({
   if (isManicuristaSession) {
     return (
       <div className="space-y-6 animate-fade-in p-1 md:p-2 max-w-3xl mx-auto">
-        <div>
-          <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">
-            Caja
-          </span>
-          <h2 className="font-display text-3xl font-bold text-primary mt-1">Enviar a caja</h2>
-          <p className="text-on-surface-variant text-sm mt-1">
-            Arma la ficha de cada cliente como en WhatsApp. La recepción la cobra.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">
+              Caja
+            </span>
+            <h2 className="font-display text-3xl font-bold text-primary mt-1">Enviar a caja</h2>
+            <p className="text-on-surface-variant text-sm mt-1">
+              Arma la ficha de cada cliente como en WhatsApp. La recepción la cobra.
+            </p>
+            <p className="text-[10px] text-outline mt-1">
+              Si recepción acaba de agendar o cambiar una cita, pulsa Actualizar.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleManualRefresh()}
+            disabled={isRefreshing}
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Actualizando…' : 'Actualizar'}
+          </button>
         </div>
 
         <section className="bg-surface border border-primary/10 rounded-2xl overflow-hidden">
@@ -781,9 +819,21 @@ export default function CajaView({
             {' · '}
             turno {session ? 'abierto' : 'cerrado'}
           </p>
+          <p className="text-[10px] text-outline mt-1">
+            Las fichas que envían las manicuristas no llegan solas: usa Actualizar.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void handleManualRefresh()}
+            disabled={isRefreshing}
+            className="px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors flex items-center gap-2 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Actualizando…' : 'Actualizar'}
+          </button>
           {session ? (
             <>
               <div className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold uppercase tracking-wider flex items-center gap-2">

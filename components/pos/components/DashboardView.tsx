@@ -8,6 +8,7 @@ import {
   Clock3,
   FileSpreadsheet,
   Plus,
+  RefreshCw,
   RotateCcw,
   Trash2,
   UserPlus,
@@ -84,6 +85,8 @@ interface DashboardViewProps {
   scheduleConfig?: ScheduleConfig;
   scrollToSection?: string | null;
   scrollToken?: number;
+  onRefreshData?: () => void | Promise<void>;
+  isRefreshingData?: boolean;
 }
 
 function matchesStaffFilter(staffId: string, selectedStaffIds: string[]) {
@@ -111,6 +114,8 @@ export default function DashboardView({
   scheduleConfig,
   scrollToSection = null,
   scrollToken = 0,
+  onRefreshData,
+  isRefreshingData = false,
 }: DashboardViewProps) {
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [selectedReportStatusIds, setSelectedReportStatusIds] = useState<string[]>([]);
@@ -808,10 +813,21 @@ export default function DashboardView({
             Gestión Operativa
           </h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            Control diario en tiempo real de studio aé premium manicure & spa.
+            Control diario del salón. Usa Actualizar si otra pantalla acaba de cambiar citas.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {onRefreshData ? (
+            <button
+              type="button"
+              onClick={() => void onRefreshData()}
+              disabled={isRefreshingData}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshingData ? 'animate-spin' : ''}`} />
+              <span>{isRefreshingData ? 'Actualizando…' : 'Actualizar'}</span>
+            </button>
+          ) : null}
           <button
             onClick={onOpenNewClient}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors"

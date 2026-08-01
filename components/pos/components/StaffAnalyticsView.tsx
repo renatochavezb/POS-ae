@@ -12,6 +12,7 @@ import {
   Sliders,
   Star,
   TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
 import { Staff, Appointment, StaffSettlement, PosPayment } from '../types';
 import { formatServicePrice, formatMXN } from '../data';
@@ -57,6 +58,8 @@ interface StaffAnalyticsViewProps {
   activityRefreshKey?: number;
   readOnly?: boolean;
   hideBack?: boolean;
+  onRefreshAppointments?: () => void | Promise<void>;
+  isRefreshingAppointments?: boolean;
 }
 
 export default function StaffAnalyticsView({
@@ -71,6 +74,8 @@ export default function StaffAnalyticsView({
   activityRefreshKey = 0,
   readOnly = false,
   hideBack = false,
+  onRefreshAppointments,
+  isRefreshingAppointments = false,
 }: StaffAnalyticsViewProps) {
   const [weekStart, setWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [workHistoryMode, setWorkHistoryMode] = useState<WorkHistoryMode>('day');
@@ -291,6 +296,22 @@ export default function StaffAnalyticsView({
     }
   };
 
+  const handleManualRefresh = async () => {
+    if (isRefreshingAppointments) return;
+    try {
+      await onRefreshAppointments?.();
+      setIsLoadingTips(true);
+      const results = await Promise.all(
+        weekDays.map((day) => posApi.getPayments({ date: day.dateLabel }))
+      );
+      setWeekPayments(results.flatMap((result) => result.payments || []));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoadingTips(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in p-1 md:p-6 max-w-7xl mx-auto">
       {!hideBack && (
@@ -332,8 +353,26 @@ export default function StaffAnalyticsView({
           </div>
         </div>
 
-        {!readOnly && (
         <div className="flex flex-col sm:flex-row gap-3">
+          {onRefreshAppointments ? (
+            <button
+              type="button"
+              onClick={() => void handleManualRefresh()}
+              disabled={isRefreshingAppointments || isLoadingTips}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${
+                  isRefreshingAppointments || isLoadingTips ? 'animate-spin' : ''
+                }`}
+              />
+              <span>
+                {isRefreshingAppointments || isLoadingTips ? 'Actualizando…' : 'Actualizar'}
+              </span>
+            </button>
+          ) : null}
+          {!readOnly && (
+          <>
           {!isAccountantSession && (
           <button
             type="button"
@@ -352,8 +391,9 @@ export default function StaffAnalyticsView({
             <Download className="w-4 h-4 text-secondary" />
             <span>Descargar reporte</span>
           </button>
+          </>
+          )}
         </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">

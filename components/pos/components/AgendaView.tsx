@@ -485,7 +485,9 @@ export default function AgendaView({
               : 'Cada columna es una manicurista. Usa el calendario por columnas para agendar y gestionar citas.'}
           </p>
           <p className="text-[10px] text-outline mt-1">
-            La agenda no se actualiza sola: usa «Actualizar» si otra pantalla acaba de agendar.
+            {lockedStaffId
+              ? 'Tus citas no se actualizan solas: pulsa Actualizar si recepción acaba de agendar.'
+              : 'La agenda no se actualiza sola: usa «Actualizar» si otra pantalla acaba de agendar.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">

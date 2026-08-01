@@ -1701,6 +1701,8 @@ export default function POSDashboard() {
             scrollToSection={dashboardSection}
             scrollToken={dashboardScrollToken}
             scheduleConfig={scheduleConfig}
+            onRefreshData={handleManualAgendaRefresh}
+            isRefreshingData={isAgendaRefreshing}
           />
         );
       case 'agenda':
@@ -1755,6 +1757,7 @@ export default function POSDashboard() {
               await loadPosData({ silent: true });
             }}
             liveSyncAt={liveSyncAt}
+            onRefreshAppointments={handleManualAgendaRefresh}
           />
         );
       case 'clients':
@@ -1789,6 +1792,8 @@ export default function POSDashboard() {
               onStaffUpdated={handleStaffUpdated}
               readOnly
               hideBack
+              onRefreshAppointments={handleManualAgendaRefresh}
+              isRefreshingAppointments={isAgendaRefreshing}
             />
           );
         }
@@ -1809,6 +1814,8 @@ export default function POSDashboard() {
               onAccountantActivity={bumpAccountantActivity}
               activityRefreshKey={accountantActivityRefresh}
               showAccountantBitacora={isMasterSession && !isAccountantSession}
+              onRefreshAppointments={handleManualAgendaRefresh}
+              isRefreshingAppointments={isAgendaRefreshing}
             />
           );
         }
