@@ -98,8 +98,7 @@ const RECEPTIONIST_TAB_IDS = [
   ...RECEPTIONIST_ADMIN_TAB_IDS,
 ];
 const ACCOUNTANT_TAB_IDS = ['staff', 'inventario', ...ACCOUNTANT_ADMIN_TAB_IDS];
-const AGENDA_POLL_INTERVAL_MS = 120_000;
-/** Ventana del poll en vivo: 7 días atrás + 14 adelante (no todo el histórico). */
+/** Ventana del refresh manual: 7 días atrás + 14 adelante (no todo el histórico). */
 const LIVE_AGENDA_DAYS_BEFORE = 7;
 const LIVE_AGENDA_DAYS_AFTER = 14;
 
@@ -245,6 +244,7 @@ export default function POSDashboard() {
   const [services, setServices] = useState<Service[]>(INITIAL_SERVICES);
   const [ticketAppointmentIds, setTicketAppointmentIds] = useState<string[]>([]);
   const [liveSyncAt, setLiveSyncAt] = useState(0);
+  const [isAgendaRefreshing, setIsAgendaRefreshing] = useState(false);
   const agendaPollInFlight = useRef(false);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>(DEFAULT_SCHEDULE_CONFIG);
 
@@ -637,6 +637,20 @@ export default function POSDashboard() {
     setLiveSyncAt(Date.now());
   };
 
+  const handleManualAgendaRefresh = async () => {
+    if (agendaPollInFlight.current || isAgendaRefreshing) return;
+    agendaPollInFlight.current = true;
+    setIsAgendaRefreshing(true);
+    try {
+      await refreshLiveAgendaData();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      agendaPollInFlight.current = false;
+      setIsAgendaRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     const storedSession = readPosSession();
     if (storedSession) {
@@ -653,40 +667,6 @@ export default function POSDashboard() {
     }
     loadPosData();
   }, [isSessionValidated]);
-
-  useEffect(() => {
-    if (!isSessionValidated) return;
-
-    const pollAgenda = async () => {
-      if (agendaPollInFlight.current || document.visibilityState !== 'visible') return;
-
-      agendaPollInFlight.current = true;
-      try {
-        await refreshLiveAgendaData();
-      } catch (pollError) {
-        console.error(pollError);
-      } finally {
-        agendaPollInFlight.current = false;
-      }
-    };
-
-    const intervalId = window.setInterval(() => {
-      void pollAgenda();
-    }, AGENDA_POLL_INTERVAL_MS);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        void pollAgenda();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isSessionValidated, loggedInStaffId]);
 
   useEffect(() => {
     if (!isSessionValidated || !isMasterSession) return;
@@ -1753,6 +1733,8 @@ export default function POSDashboard() {
             onTicketSubmitted={async () => {
               await loadPosData({ silent: true });
             }}
+            onRefreshAgenda={handleManualAgendaRefresh}
+            isRefreshingAgenda={isAgendaRefreshing}
           />
         );
       case 'caja':

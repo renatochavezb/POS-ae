@@ -4,7 +4,6 @@ import { requirePosSession } from "@/libs/posAuth";
 import { mapWeeklySnapshotDoc } from "@/libs/posMappers";
 import {
   buildStaffPerformanceHistory,
-  cleanupInvalidWeeklySnapshots,
   getAllWeeklySnapshots,
   getWeeklySnapshotForWeekStart,
   refreshAllWeeklySnapshots,
@@ -26,18 +25,8 @@ export async function GET(req) {
     const weekStartParam = (req.nextUrl.searchParams.get("weekStart") || "").trim();
 
     if (scopeParam === "history") {
-      // Quita semanas huérfanas/futuras; refresca semanas recientes para propinas/neta correctas.
-      await cleanupInvalidWeeklySnapshots();
-      const currentWeekStart = resolveWeekStartDateLabel("");
-      let snapshots = await getAllWeeklySnapshots();
-      const recent = snapshots.slice(-6);
-      for (const snap of recent) {
-        await upsertWeeklySnapshot(snap.weekStartDate);
-      }
-      if (currentWeekStart && !recent.some((snap) => snap.weekStartDate === currentWeekStart)) {
-        await upsertWeeklySnapshot(currentWeekStart);
-      }
-      snapshots = await getAllWeeklySnapshots();
+      // Solo lectura de snapshots. Recomputar 6 semanas aquí inflaba Function Duration.
+      const snapshots = await getAllWeeklySnapshots();
       return NextResponse.json({
         scope: "history",
         count: snapshots.length,
@@ -46,8 +35,9 @@ export async function GET(req) {
     }
 
     if (scopeParam === "staff-performance") {
-      await cleanupInvalidWeeklySnapshots();
-      const result = await buildStaffPerformanceHistory();
+      const result = await buildStaffPerformanceHistory({
+        refreshCurrent: refreshParam === "1",
+      });
       return NextResponse.json({
         scope: "staff-performance",
         weekCount: result.weeks.length,

@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Pencil,
   Send,
+  RefreshCw,
 } from 'lucide-react';
 import { Appointment, DailyStats, Receptionist, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
 import {
@@ -68,6 +69,8 @@ interface AgendaViewProps {
   services?: Service[];
   ticketAppointmentIds?: string[];
   onTicketSubmitted?: () => void | Promise<void>;
+  onRefreshAgenda?: () => void | Promise<void>;
+  isRefreshingAgenda?: boolean;
 }
 
 type CloseDraft = {
@@ -147,6 +150,8 @@ export default function AgendaView({
   services = [],
   ticketAppointmentIds = [],
   onTicketSubmitted,
+  onRefreshAgenda,
+  isRefreshingAgenda = false,
 }: AgendaViewProps) {
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -479,9 +484,25 @@ export default function AgendaView({
               ? 'Haz clic en un horario para cerrarlo. No se podrán agendar citas en ese bloque.'
               : 'Cada columna es una manicurista. Usa el calendario por columnas para agendar y gestionar citas.'}
           </p>
+          <p className="text-[10px] text-outline mt-1">
+            La agenda no se actualiza sola: usa «Actualizar» si otra pantalla acaba de agendar.
+          </p>
         </div>
-        {!readOnly && (
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onRefreshAgenda ? (
+            <button
+              type="button"
+              onClick={() => void onRefreshAgenda()}
+              disabled={isRefreshingAgenda}
+              className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 rounded-lg font-sans text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all border border-primary/10 text-primary hover:bg-surface-container-low disabled:opacity-50"
+              title="Traer citas recientes desde Mongo"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAgenda ? 'animate-spin' : ''}`} />
+              {isRefreshingAgenda ? 'Actualizando…' : 'Actualizar'}
+            </button>
+          ) : null}
+        {!readOnly && (
+        <>
           <button
             type="button"
             disabled={isSalonClosed}
@@ -519,8 +540,9 @@ export default function AgendaView({
             <Plus className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-secondary" />
             <span>Reservar Cita</span>
           </button>
-        </div>
+        </>
         )}
+        </div>
       </div>
 
       <div ref={statsBarSentinelRef} className="h-px" aria-hidden="true" />

@@ -533,9 +533,9 @@ function availableHoursForWeek(weekStartDate, scheduleConfig) {
  * Histórico por manicurista: combina snapshots semanales (ventas)
  * con citas vivas (cancelaciones, horas, clientes nuevos/recurrentes).
  */
-export async function buildStaffPerformanceHistory() {
+export async function buildStaffPerformanceHistory({ refreshCurrent = false } = {}) {
   const currentWeekStart = resolveWeekStartDateLabel("");
-  if (currentWeekStart) {
+  if (refreshCurrent && currentWeekStart) {
     await upsertWeeklySnapshot(currentWeekStart);
   }
 
