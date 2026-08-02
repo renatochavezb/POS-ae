@@ -376,6 +376,25 @@ export interface PosCashTicket {
   workPhotos?: string[];
 }
 
+export interface PaymentDiscountSplit {
+  role: 'staff' | 'receptionist';
+  id: string;
+  name: string;
+  percent: number;
+  amount: number;
+}
+
+export interface PaymentWarranty {
+  originalStaffId: string;
+  originalStaffName: string;
+  performedByStaffId: string;
+  performedByStaffName: string;
+  workDescription: string;
+  serviceAmount: number;
+  transferAmount: number;
+  sameStaff: boolean;
+}
+
 export interface PosPayment {
   id: string;
   transactionType?: 'appointment' | 'gift_card_sale';
@@ -390,7 +409,24 @@ export interface PosPayment {
   serviceLines?: CashTicketLine[];
   ticketId?: string;
   amount: number;
+  serviceGross?: number;
   tip: number;
+  discount: number;
+  discountSplits?: PaymentDiscountSplit[];
+  discountTargetRole?: '' | 'staff' | 'receptionist';
+  discountTargetId?: string;
+  discountTargetName?: string;
+  discountReason?: string;
+  isWarranty: boolean;
+  warrantyOriginalStaffId?: string;
+  warrantyOriginalStaffName?: string;
+  warrantyPerformedByStaffId?: string;
+  warrantyPerformedByStaffName?: string;
+  warrantyWorkDescription?: string;
+  warrantyServiceAmount?: number;
+  warrantyTransferAmount?: number;
+  warrantySameStaff?: boolean;
+  isCajaDemo?: boolean;
   total: number;
   method: PaymentMethod;
   cashAmount: number;

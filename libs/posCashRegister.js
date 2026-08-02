@@ -5,10 +5,59 @@ import { getTodaySpanishShortDate } from "@/components/pos/scheduleUtils";
 
 export const PAYMENT_METHODS = ["efectivo", "tarjeta", "transferencia", "gift_card", "mixto"];
 
-export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, cardAmount, transferAmount }) {
-  const serviceTotal = Number(amount) || 0;
+export function resolvePaymentBreakdown({
+  method,
+  amount,
+  tip = 0,
+  discount = 0,
+  isWarranty = false,
+  cashAmount,
+  cardAmount,
+  transferAmount,
+}) {
+  const serviceGross = Number(amount) || 0;
   const tipValue = Number(tip) || 0;
-  const total = serviceTotal + tipValue;
+  const discountValue = Math.max(0, Number(discount) || 0);
+  const warranty = Boolean(isWarranty);
+
+  if (warranty) {
+    // Garantía: no se cobra el servicio; la propina sí puede aplicar.
+    const total = tipValue;
+    return finishBreakdown(method, {
+      amount: 0,
+      serviceGross,
+      tip: tipValue,
+      discount: serviceGross,
+      isWarranty: true,
+      total,
+      cashAmount,
+      cardAmount,
+      transferAmount,
+    });
+  }
+
+  if (discountValue > serviceGross + 0.009) {
+    throw new Error("El descuento no puede ser mayor al importe del servicio.");
+  }
+
+  const serviceNet = Math.max(0, serviceGross - discountValue);
+  const total = serviceNet + tipValue;
+
+  return finishBreakdown(method, {
+    amount: serviceNet,
+    serviceGross,
+    tip: tipValue,
+    discount: discountValue,
+    isWarranty: false,
+    total,
+    cashAmount,
+    cardAmount,
+    transferAmount,
+  });
+}
+
+function finishBreakdown(method, base) {
+  const { total, cashAmount, cardAmount, transferAmount, ...rest } = base;
 
   if (method === "mixto") {
     const cash = Number(cashAmount) || 0;
@@ -21,8 +70,7 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
     }
 
     return {
-      amount: serviceTotal,
-      tip: tipValue,
+      ...rest,
       total,
       cashAmount: cash,
       cardAmount: card,
@@ -33,8 +81,7 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
 
   if (method === "efectivo") {
     return {
-      amount: serviceTotal,
-      tip: tipValue,
+      ...rest,
       total,
       cashAmount: total,
       cardAmount: 0,
@@ -45,8 +92,7 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
 
   if (method === "tarjeta") {
     return {
-      amount: serviceTotal,
-      tip: tipValue,
+      ...rest,
       total,
       cashAmount: 0,
       cardAmount: total,
@@ -57,8 +103,7 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
 
   if (method === "transferencia") {
     return {
-      amount: serviceTotal,
-      tip: tipValue,
+      ...rest,
       total,
       cashAmount: 0,
       cardAmount: 0,
@@ -69,8 +114,7 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
 
   if (method === "gift_card") {
     return {
-      amount: serviceTotal,
-      tip: tipValue,
+      ...rest,
       total,
       cashAmount: 0,
       cardAmount: 0,
@@ -79,7 +123,7 @@ export function resolvePaymentBreakdown({ method, amount, tip = 0, cashAmount, c
     };
   }
 
-  throw new Error("Método de pago no válido.");
+  throw new Error("Método de pago no válido");
 }
 
 export async function getOpenCashSession() {

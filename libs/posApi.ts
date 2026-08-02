@@ -571,6 +571,25 @@ const posApi = {
     ticketId?: string;
     amount: number;
     tip?: number;
+    discount?: number;
+    discountSplits?: {
+      role: 'staff' | 'receptionist';
+      id: string;
+      name: string;
+      percent: number;
+      amount?: number;
+    }[];
+    discountTargetRole?: '' | 'staff' | 'receptionist';
+    discountTargetId?: string;
+    discountTargetName?: string;
+    discountReason?: string;
+    isWarranty?: boolean;
+    warrantyOriginalStaffId?: string;
+    warrantyOriginalStaffName?: string;
+    warrantyPerformedByStaffId?: string;
+    warrantyPerformedByStaffName?: string;
+    warrantyWorkDescription?: string;
+    warrantyServiceAmount?: number;
     method: PaymentMethod;
     cashAmount?: number;
     cardAmount?: number;

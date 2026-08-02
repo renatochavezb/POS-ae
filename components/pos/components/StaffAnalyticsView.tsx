@@ -38,6 +38,12 @@ import StaffEditProfileModal from './StaffEditProfileModal';
 import StaffReportModal from './StaffReportModal';
 import StaffLiquidateModal from './StaffLiquidateModal';
 import AccountantActivityPanel from './AccountantActivityPanel';
+import AccountantDiscountsPanel from './AccountantDiscountsPanel';
+import {
+  collectDiscountRows,
+  sumDiscountForPerson,
+} from '@/libs/posPaymentDiscounts';
+import { warrantyMovementsForStaff } from '@/libs/posWarranty';
 
 type WorkHistoryMode = 'day' | 'period';
 
@@ -160,12 +166,44 @@ export default function StaffAnalyticsView({
   }, [appointments, staff.id, weekDays]);
 
   const weekTotalSales = weeklyPerformance.reduce((sum, day) => sum + day.sales, 0);
-  const weekTotalCommission = weekTotalSales * (staff.commissionPercent / 100);
+  const weekGrossCommission = weekTotalSales * (staff.commissionPercent / 100);
+  const weekStaffDiscount = sumDiscountForPerson(weekPayments, 'staff', staff.id);
+  const weekStaffDiscountRows = useMemo(
+    () =>
+      collectDiscountRows(weekPayments).filter(
+        (row) =>
+          row.role === 'staff' &&
+          String(row.id).trim().toUpperCase() === String(staff.id).trim().toUpperCase()
+      ),
+    [weekPayments, staff.id]
+  );
+  const weekWarrantyMovements = useMemo(
+    () => warrantyMovementsForStaff(weekPayments, staff.id),
+    [weekPayments, staff.id]
+  );
+  const weekWarrantyNet = weekWarrantyMovements.reduce(
+    (sum, row) => sum + (row.signedAmount || 0),
+    0
+  );
+  const weekWarrantyCount = weekWarrantyMovements.length;
+  const weekTotalCommission = Math.max(
+    0,
+    weekGrossCommission - weekStaffDiscount + weekWarrantyNet
+  );
   const weekTotalTips = weekPayments
     .filter((payment) => payment.staffId === staff.id)
     .reduce((sum, payment) => sum + (payment.tip || 0), 0);
   const weekTotalCommissionAndTips = weekTotalCommission + weekTotalTips;
   const chartMax = Math.max(500, ...weeklyPerformance.map((day) => day.sales), 1);
+
+  const paymentDiscountByAppointment = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of weekStaffDiscountRows) {
+      if (!row.appointmentId) continue;
+      map.set(row.appointmentId, (map.get(row.appointmentId) || 0) + row.amount);
+    }
+    return map;
+  }, [weekStaffDiscountRows]);
 
   const workHistoryAppointments = useMemo(() => {
     const base = appointments.filter(
@@ -187,21 +225,26 @@ export default function StaffAnalyticsView({
         if (byDate !== 0) return byDate;
         return a.time.localeCompare(b.time);
       })
-      .map((app) => ({
-        id: app.id,
-        date: app.date,
-        time: app.time,
-        clientName: app.clientName,
-        badge: 'Cliente',
-        service: app.serviceName,
-        cost: app.cost,
-        status: app.status,
-        isPaid: isAppointmentPaid(app.status),
-        commission:
+      .map((app) => {
+        const grossCommission =
           app.cost > 0 && isAppointmentPaid(app.status)
             ? app.cost * (staff.commissionPercent / 100)
-            : 0,
-      }));
+            : 0;
+        const discount = paymentDiscountByAppointment.get(app.id) || 0;
+        return {
+          id: app.id,
+          date: app.date,
+          time: app.time,
+          clientName: app.clientName,
+          badge: 'Cliente',
+          service: app.serviceName,
+          cost: app.cost,
+          status: app.status,
+          isPaid: isAppointmentPaid(app.status),
+          discount,
+          commission: Math.max(0, grossCommission - discount),
+        };
+      });
   }, [
     appointments,
     staff.id,
@@ -210,6 +253,7 @@ export default function StaffAnalyticsView({
     workDayLabel,
     periodStartLabel,
     periodEndLabel,
+    paymentDiscountByAppointment,
   ]);
 
   const totalWorkSales = workHistoryAppointments.reduce(
@@ -421,15 +465,31 @@ export default function StaffAnalyticsView({
             </span>
             <div className="flex items-baseline gap-1">
               <span className="font-display text-3xl font-black text-secondary">
-                {formatMXN(weekTotalCommission)}
+                {isLoadingTips ? '—' : formatMXN(weekTotalCommission)}
               </span>
               <span className="text-[10px] text-outline font-sans ml-1">
                 ({staff.commissionPercent}%)
               </span>
             </div>
-            <p className="text-xs text-on-surface-variant">
-              Calculada sobre citas terminadas de la semana.
-            </p>
+            {weekStaffDiscount > 0 ? (
+              <p className="text-xs text-amber-800 font-medium">
+                Bruta {formatMXN(weekGrossCommission)} − descuentos{' '}
+                {formatMXN(weekStaffDiscount)}
+                {weekWarrantyNet !== 0
+                  ? ` ${weekWarrantyNet > 0 ? '+' : ''}garantías ${formatMXN(weekWarrantyNet)}`
+                  : ''}
+              </p>
+            ) : weekWarrantyNet !== 0 ? (
+              <p className="text-xs text-amber-800 font-medium">
+                Incluye garantías {weekWarrantyNet > 0 ? '+' : ''}
+                {formatMXN(weekWarrantyNet)} · {weekWarrantyCount} registro
+                {weekWarrantyCount === 1 ? '' : 's'}
+              </p>
+            ) : (
+              <p className="text-xs text-on-surface-variant">
+                Calculada sobre citas terminadas de la semana.
+              </p>
+            )}
           </div>
           <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
             <Coins className="w-6 h-6" />
@@ -485,6 +545,101 @@ export default function StaffAnalyticsView({
           )}
         </div>
       </div>
+
+      {(weekStaffDiscount > 0 || weekStaffDiscountRows.length > 0) && (
+        <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-5 md:p-6 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <h3 className="font-display text-lg font-bold text-primary">
+                Descuentos de tu comisión
+              </h3>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Se restan de tu liquidación · {weekRangeLabel}
+              </p>
+            </div>
+            <p className="font-display text-2xl font-black text-amber-900">
+              −{formatMXN(weekStaffDiscount)}
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {weekStaffDiscountRows.map((row, index) => (
+              <li
+                key={`${row.paymentId}-${index}`}
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs border-t border-amber-200/80 pt-2 first:border-0 first:pt-0"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-primary">
+                    {row.clientName || 'Cliente'} · {row.serviceName || 'Servicio'}
+                  </p>
+                  <p className="text-outline mt-0.5">
+                    {row.appointmentDate || '—'}
+                    {row.percent > 0 ? ` · ${row.percent}%` : ''}
+                    {row.reason ? ` · ${row.reason}` : ''}
+                  </p>
+                </div>
+                <span className="font-display font-black text-amber-900 shrink-0">
+                  −{formatMXN(row.amount)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {weekWarrantyCount > 0 && (
+        <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-5 md:p-6 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div>
+              <h3 className="font-display text-lg font-bold text-primary">Garantías</h3>
+              <p className="text-xs text-on-surface-variant mt-1">
+                {weekWarrantyCount} esta semana · calidad del trabajo · {weekRangeLabel}
+              </p>
+            </div>
+            <p
+              className={`font-display text-2xl font-black ${
+                weekWarrantyNet < 0
+                  ? 'text-rose-800'
+                  : weekWarrantyNet > 0
+                    ? 'text-emerald-800'
+                    : 'text-primary'
+              }`}
+            >
+              {weekWarrantyNet > 0 ? '+' : ''}
+              {formatMXN(weekWarrantyNet)}
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {weekWarrantyMovements.map((row, index) => (
+              <li
+                key={`${row.paymentId}-${row.type}-${index}`}
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs border-t border-rose-200/80 pt-2 first:border-0 first:pt-0"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-primary">
+                    {row.clientName || 'Cliente'} · {row.workDescription}
+                  </p>
+                  <p className="text-outline mt-0.5">
+                    {row.appointmentDate || '—'} · {row.label}
+                  </p>
+                </div>
+                <span
+                  className={`font-display font-black shrink-0 ${
+                    row.signedAmount < 0
+                      ? 'text-rose-800'
+                      : row.signedAmount > 0
+                        ? 'text-emerald-800'
+                        : 'text-outline'
+                  }`}
+                >
+                  {row.type === 'same'
+                    ? 'Sin traspaso'
+                    : `${row.signedAmount > 0 ? '+' : '−'}${formatMXN(Math.abs(row.signedAmount))}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-surface-container-lowest p-6 rounded-2xl border border-primary/5 luxury-shadow space-y-4">
@@ -744,6 +899,7 @@ export default function StaffAnalyticsView({
                 <th className="py-4 px-6">Cliente</th>
                 <th className="py-4 px-6">Tratamiento / Servicio</th>
                 <th className="py-4 px-6 text-right">Monto bruto</th>
+                <th className="py-4 px-6 text-right">Desc.</th>
                 <th className="py-4 px-6 text-right">Comisión ({staff.commissionPercent}%)</th>
                 <th className="py-4 px-6 text-center">Estado</th>
               </tr>
@@ -752,7 +908,7 @@ export default function StaffAnalyticsView({
               {workHistoryAppointments.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={workHistoryMode === 'period' ? 7 : 6}
+                    colSpan={workHistoryMode === 'period' ? 8 : 7}
                     className="py-8 px-6 text-center text-xs text-outline"
                   >
                     Sin trabajos para {staff.name} en{' '}
@@ -781,6 +937,9 @@ export default function StaffAnalyticsView({
                     </td>
                     <td className="py-4 px-6 text-right font-display font-black text-xs text-primary">
                       {item.cost > 0 ? formatServicePrice(item.cost) : 'Por definir'}
+                    </td>
+                    <td className="py-4 px-6 text-right font-display font-black text-xs text-amber-900">
+                      {item.isPaid && item.discount > 0 ? `−${formatServicePrice(item.discount)}` : '—'}
                     </td>
                     <td className="py-4 px-6 text-right font-display font-black text-xs text-secondary">
                       {item.isPaid
@@ -814,6 +973,13 @@ export default function StaffAnalyticsView({
                 </td>
                 <td className="py-4 px-6 text-right font-display font-extrabold text-sm text-primary">
                   {totalWorkSales > 0 ? formatServicePrice(totalWorkSales) : 'Por definir'}
+                </td>
+                <td className="py-4 px-6 text-right font-display font-extrabold text-sm text-amber-900">
+                  {workHistoryAppointments.some((item) => item.discount > 0)
+                    ? `−${formatServicePrice(
+                        workHistoryAppointments.reduce((sum, item) => sum + (item.discount || 0), 0)
+                      )}`
+                    : '—'}
                 </td>
                 <td className="py-4 px-6 text-right font-display font-extrabold text-sm text-secondary">
                   {totalWorkCommission > 0
@@ -856,6 +1022,13 @@ export default function StaffAnalyticsView({
         onSettled={handleSettlementRecorded}
         loggedInAccountant={loggedInAccountant}
       />
+
+      {isAccountantSession ? (
+        <AccountantDiscountsPanel
+          title="Todos los descuentos (nómina)"
+          subtitle="Incluye manicuristas y recepción. Los de recepción no se liquidan solos: rebájalos de su nómina."
+        />
+      ) : null}
 
       {showAccountantBitacora ? (
         <AccountantActivityPanel

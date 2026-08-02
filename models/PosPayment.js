@@ -74,10 +74,115 @@ const posPaymentSchema = mongoose.Schema(
       required: true,
       min: 0,
     },
+    /** Importe del servicio antes de descuento/garantía. */
+    serviceGross: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     tip: {
       type: Number,
       default: 0,
       min: 0,
+    },
+    discount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    /**
+     * Reparto del descuento entre responsables (manicurista / recepción).
+     * percent = % del importe del servicio; amount = pesos a descontar de su comisión.
+     */
+    discountSplits: {
+      type: [
+        {
+          role: { type: String, enum: ["staff", "receptionist"], required: true },
+          id: { type: String, default: "", trim: true },
+          name: { type: String, default: "", trim: true },
+          percent: { type: Number, default: 0, min: 0 },
+          amount: { type: Number, default: 0, min: 0 },
+        },
+      ],
+      default: [],
+    },
+    /** @deprecated Preferir discountSplits; se mantiene por compatibilidad. */
+    discountTargetRole: {
+      type: String,
+      enum: ["", "staff", "receptionist"],
+      default: "",
+    },
+    discountTargetId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    discountTargetName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    /** Motivo del descuento (ej. llegó tarde, error de recepción). */
+    discountReason: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    isWarranty: {
+      type: Boolean,
+      default: false,
+    },
+    /** Manicurista que cometió el error (servicio original). */
+    warrantyOriginalStaffId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    warrantyOriginalStaffName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    /** Quién realiza el arreglo de garantía. */
+    warrantyPerformedByStaffId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    warrantyPerformedByStaffName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    /** Qué trabajo se vuelve a hacer (todo o parte). */
+    warrantyWorkDescription: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    /** Monto del trabajo en garantía (servicio completo o parcial). */
+    warrantyServiceAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    /**
+     * Pesos que se restan de la comisión de la original y se suman a quien
+     * terminó la garantía. 0 si es la misma manicurista.
+     */
+    warrantyTransferAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    warrantySameStaff: {
+      type: Boolean,
+      default: false,
+    },
+    /** Cobro de prueba solo desde Registrar cobro (no afecta agenda). */
+    isCajaDemo: {
+      type: Boolean,
+      default: false,
     },
     total: {
       type: Number,

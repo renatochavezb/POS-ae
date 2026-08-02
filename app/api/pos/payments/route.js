@@ -17,6 +17,8 @@ import {
   resolvePaymentBreakdown,
   summarizePayments,
 } from "@/libs/posCashRegister";
+import { normalizeDiscountSplits } from "@/libs/posDiscountSplits";
+import { normalizeWarrantyPayload } from "@/libs/posWarranty";
 import { upsertDailySnapshot } from "@/libs/posDailyStats";
 import { refreshWeeklySnapshotsForDates } from "@/libs/posWeeklyStats";
 import {
@@ -178,6 +180,51 @@ export async function POST(req) {
         ? Number(ticket.subtotal ?? 0)
         : Number(appointment.cost ?? 0);
     const tip = Number(body.tip ?? 0);
+    const isWarranty = Boolean(body.isWarranty);
+    let discount = Number(body.discount ?? 0);
+    let discountSplits = [];
+    let discountReason = "";
+    let primaryTarget = {
+      discountTargetRole: "",
+      discountTargetId: "",
+      discountTargetName: "",
+    };
+    let warrantyFields = {
+      warrantyOriginalStaffId: "",
+      warrantyOriginalStaffName: "",
+      warrantyPerformedByStaffId: "",
+      warrantyPerformedByStaffName: "",
+      warrantyWorkDescription: "",
+      warrantyServiceAmount: 0,
+      warrantyTransferAmount: 0,
+      warrantySameStaff: false,
+    };
+
+    try {
+      if (isWarranty) {
+        warrantyFields = normalizeWarrantyPayload(body);
+        discount = amount;
+        discountSplits = [];
+        discountReason = `Garantía · ${warrantyFields.warrantyWorkDescription}`;
+      } else {
+        const normalized = normalizeDiscountSplits(amount, body.discountSplits || []);
+        discountSplits = normalized.discountSplits;
+        discount = normalized.discount;
+        discountReason = String(body.discountReason || "").trim();
+        if (normalized.primary) {
+          primaryTarget = {
+            discountTargetRole: normalized.primary.role,
+            discountTargetId: normalized.primary.id,
+            discountTargetName: normalized.primary.name,
+          };
+        }
+      }
+    } catch (splitError) {
+      return NextResponse.json(
+        { error: splitError.message || "Descuento/garantía inválido" },
+        { status: 400 }
+      );
+    }
 
     const serviceLines = ticket?.lines?.length
       ? ticket.lines.map((line) => ({
@@ -197,6 +244,8 @@ export async function POST(req) {
         method,
         amount,
         tip,
+        discount,
+        isWarranty,
         cashAmount: body.cashAmount,
         cardAmount: body.cardAmount,
         transferAmount: body.transferAmount,
@@ -230,13 +279,39 @@ export async function POST(req) {
       appointmentDate: appointment.date,
       clientId: appointment.clientId,
       clientName: appointment.clientName,
-      staffId: appointment.staffId,
-      staffName: appointment.staffName,
+      staffId: isWarranty
+        ? warrantyFields.warrantyPerformedByStaffId || appointment.staffId
+        : appointment.staffId,
+      staffName: isWarranty
+        ? warrantyFields.warrantyPerformedByStaffName || appointment.staffName
+        : appointment.staffName,
       ticketCode: ticket?.ticketCode || "",
-      serviceName,
-      serviceLines,
+      serviceName: isWarranty
+        ? `Garantía · ${warrantyFields.warrantyWorkDescription}`
+        : serviceName,
+      serviceLines: isWarranty
+        ? [
+            {
+              serviceId: "",
+              name: warrantyFields.warrantyWorkDescription,
+              price: 0,
+            },
+          ]
+        : serviceLines,
       amount: breakdown.amount,
+      serviceGross: isWarranty
+        ? warrantyFields.warrantyServiceAmount
+        : breakdown.serviceGross ?? amount,
       tip: breakdown.tip,
+      discount: breakdown.discount ?? 0,
+      discountSplits: isWarranty ? [] : discountSplits,
+      discountTargetRole: isWarranty ? "" : primaryTarget.discountTargetRole,
+      discountTargetId: isWarranty ? "" : primaryTarget.discountTargetId,
+      discountTargetName: isWarranty ? "" : primaryTarget.discountTargetName,
+      discountReason: isWarranty ? discountReason : discountReason,
+      isWarranty: Boolean(breakdown.isWarranty),
+      ...warrantyFields,
+      isCajaDemo: false,
       total: breakdown.total,
       method,
       cashAmount: breakdown.cashAmount,

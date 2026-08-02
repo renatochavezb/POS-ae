@@ -23,7 +23,7 @@ import {
   Trash2,
   RefreshCw,
 } from 'lucide-react';
-import { Appointment, CashRegisterState, CashSession, CashTicketLine, PaymentMethod, PosCashTicket, PosPayment, Receptionist, Service } from '../types';
+import { Appointment, CashRegisterState, CashSession, CashTicketLine, PaymentMethod, PosCashTicket, PosPayment, Receptionist, Service, Staff } from '../types';
 import { formatMXN } from '../data';
 import { isAppointmentPaid, isAppointmentPendingPayment } from '../appointmentStatus';
 import posApi from '@/libs/posApi';
@@ -46,6 +46,7 @@ interface CajaViewProps {
   isManicuristaSession?: boolean;
   loggedInStaffId?: string | null;
   services?: Service[];
+  staffList?: Staff[];
   onTicketSubmitted?: () => void | Promise<void>;
   liveSyncAt?: number;
   isMasterSession?: boolean;
@@ -83,6 +84,12 @@ const METHOD_LABELS: Record<PaymentMethod, string> = {
   mixto: 'Mixto',
 };
 
+const DISCOUNT_REASON_OPTIONS = [
+  { id: 'llego_tarde', label: 'Llegó tarde' },
+  { id: 'error_recepcion', label: 'Error de recepción' },
+  { id: 'otro', label: 'Otro' },
+] as const;
+
 export default function CajaView({
   appointments,
   todayLabel,
@@ -92,6 +99,7 @@ export default function CajaView({
   isManicuristaSession = false,
   loggedInStaffId = null,
   services = [],
+  staffList = [],
   onTicketSubmitted,
   liveSyncAt = 0,
   isMasterSession = false,
@@ -110,6 +118,16 @@ export default function CajaView({
   const [sendToCajaAppointment, setSendToCajaAppointment] = useState<Appointment | null>(null);
   const [amount, setAmount] = useState('');
   const [tip, setTip] = useState('0');
+  const [isWarranty, setIsWarranty] = useState(false);
+  const [showDiscountPanel, setShowDiscountPanel] = useState(false);
+  const [discountSplits, setDiscountSplits] = useState<
+    { key: string; role: 'staff' | 'receptionist'; id: string; name: string; percent: string }[]
+  >([]);
+  const [discountReasonId, setDiscountReasonId] = useState<string>('llego_tarde');
+  const [warrantyOriginalStaffId, setWarrantyOriginalStaffId] = useState('');
+  const [warrantyPerformedByStaffId, setWarrantyPerformedByStaffId] = useState('');
+  const [warrantyWorkDescription, setWarrantyWorkDescription] = useState('');
+  const [warrantyServiceAmount, setWarrantyServiceAmount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('efectivo');
   const [cashAmount, setCashAmount] = useState('');
   const [cardAmount, setCardAmount] = useState('');
@@ -192,16 +210,14 @@ export default function CajaView({
     return Array.from(dates).sort((a, b) => parseSpanishDateSortKey(b) - parseSpanishDateSortKey(a));
   }, [todayLabel, cashDayLabel, pendingByDate, appointments]);
 
-  const pendingTickets = useMemo(
-    () =>
-      cashTickets
-        .filter(
-          (ticket) =>
-            ticket.status === 'submitted' && ticket.appointmentDate === operationalDay
-        )
-        .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)),
-    [cashTickets, operationalDay]
-  );
+  const pendingTickets = useMemo(() => {
+    return cashTickets
+      .filter(
+        (ticket) =>
+          ticket.status === 'submitted' && ticket.appointmentDate === operationalDay
+      )
+      .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+  }, [cashTickets, operationalDay]);
 
   const ticketAppointmentIds = useMemo(() => {
     const ids = new Set<string>();
@@ -390,6 +406,14 @@ export default function CajaView({
     setLinesDirty(false);
     setAmount(String(selectedTicket.subtotal || 0));
     setTip('0');
+    setIsWarranty(false);
+    setShowDiscountPanel(false);
+    setDiscountSplits([]);
+    setDiscountReasonId('llego_tarde');
+    setWarrantyOriginalStaffId(selectedTicket.staffId || '');
+    setWarrantyPerformedByStaffId(selectedTicket.staffId || '');
+    setWarrantyWorkDescription('');
+    setWarrantyServiceAmount(String(selectedTicket.subtotal || 0));
     setMethod('efectivo');
     setCashAmount('');
     setCardAmount('');
@@ -397,9 +421,171 @@ export default function CajaView({
     setNotes('');
   }, [selectedTicket?.id]);
 
-  const serviceTotal = Number(amount) || 0;
+  const discountPersonOptions = useMemo(() => {
+    if (!selectedTicket) return [];
+    const options: { key: string; role: 'staff' | 'receptionist'; id: string; name: string; label: string }[] =
+      [];
+
+    if (selectedTicket.staffId) {
+      options.push({
+        key: `staff:${selectedTicket.staffId}`,
+        role: 'staff',
+        id: selectedTicket.staffId,
+        name: selectedTicket.staffName || selectedTicket.staffId,
+        label: `${selectedTicket.staffName || selectedTicket.staffId} · manicurista`,
+      });
+    }
+
+    receptionists.forEach((receptionist) => {
+      options.push({
+        key: `receptionist:${receptionist.id}`,
+        role: 'receptionist',
+        id: receptionist.id,
+        name: receptionist.name,
+        label: `${receptionist.name} · recepción`,
+      });
+    });
+
+    return options;
+  }, [selectedTicket, receptionists]);
+
+  const discountReasonLabel =
+    DISCOUNT_REASON_OPTIONS.find((option) => option.id === discountReasonId)?.label ||
+    'Llegó tarde';
+
+  const serviceGross = Number(amount) || 0;
   const tipValue = Number(tip) || 0;
-  const paymentTotal = serviceTotal + tipValue;
+
+  const normalizedSplitPreview = useMemo(() => {
+    return discountSplits
+      .map((row) => {
+        const percent = Math.max(0, Number(row.percent) || 0);
+        const splitAmount = Math.round(((serviceGross * percent) / 100) * 100) / 100;
+        return { ...row, percent, amount: splitAmount };
+      })
+      .filter((row) => row.id && row.percent > 0);
+  }, [discountSplits, serviceGross]);
+
+  const totalDiscountPercent = normalizedSplitPreview.reduce((sum, row) => sum + row.percent, 0);
+  const effectiveDiscount = isWarranty
+    ? serviceGross
+    : normalizedSplitPreview.reduce((sum, row) => sum + row.amount, 0);
+  const serviceNet = isWarranty ? 0 : Math.max(0, serviceGross - effectiveDiscount);
+  const paymentTotal = serviceNet + tipValue;
+  const showDiscountAssignment = !isWarranty && normalizedSplitPreview.length > 0;
+
+  const activeStaffOptions = useMemo(
+    () =>
+      (staffList || []).filter((member) => member.isActive !== false).sort((a, b) =>
+        a.name.localeCompare(b.name, 'es')
+      ),
+    [staffList]
+  );
+
+  const warrantyOriginalStaff = activeStaffOptions.find(
+    (member) => member.id === warrantyOriginalStaffId
+  );
+  const warrantyPerformedByStaff = activeStaffOptions.find(
+    (member) => member.id === warrantyPerformedByStaffId
+  );
+  const warrantyAmountValue = Math.max(0, Number(warrantyServiceAmount) || 0);
+  const warrantySameStaff =
+    Boolean(warrantyOriginalStaffId) &&
+    warrantyOriginalStaffId === warrantyPerformedByStaffId;
+  const warrantyTransferPreview = warrantySameStaff ? 0 : warrantyAmountValue;
+
+  const discountPayload = showDiscountAssignment
+    ? {
+        discountSplits: normalizedSplitPreview.map((row) => ({
+          role: row.role,
+          id: row.id,
+          name: row.name,
+          percent: row.percent,
+          amount: row.amount,
+        })),
+        discountReason: discountReasonLabel,
+      }
+    : {
+        discountSplits: [] as {
+          role: 'staff' | 'receptionist';
+          id: string;
+          name: string;
+          percent: number;
+          amount: number;
+        }[],
+        discountReason: '',
+      };
+
+  const warrantyPayload = isWarranty
+    ? {
+        warrantyOriginalStaffId: warrantyOriginalStaff?.id || warrantyOriginalStaffId,
+        warrantyOriginalStaffName: warrantyOriginalStaff?.name || warrantyOriginalStaffId,
+        warrantyPerformedByStaffId:
+          warrantyPerformedByStaff?.id || warrantyPerformedByStaffId,
+        warrantyPerformedByStaffName:
+          warrantyPerformedByStaff?.name || warrantyPerformedByStaffId,
+        warrantyWorkDescription: warrantyWorkDescription.trim(),
+        warrantyServiceAmount: warrantyAmountValue,
+      }
+    : {};
+
+  const availableSplitPeople = discountPersonOptions.filter(
+    (option) => !discountSplits.some((row) => row.key === option.key)
+  );
+
+  const buildDefaultDiscountSplits = () => {
+    if (!selectedTicket?.staffId) return [];
+    return [
+      {
+        key: `staff:${selectedTicket.staffId}`,
+        role: 'staff' as const,
+        id: selectedTicket.staffId,
+        name: selectedTicket.staffName || selectedTicket.staffId,
+        percent: '10',
+      },
+    ];
+  };
+
+  const scrollDiscountPanelIntoView = () => {
+    requestAnimationFrame(() => {
+      document
+        .getElementById('caja-discount-panel')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  const handleToggleDiscountPanel = () => {
+    if (showDiscountPanel && !isWarranty) {
+      setShowDiscountPanel(false);
+      setDiscountSplits([]);
+      return;
+    }
+    setIsWarranty(false);
+    setDiscountSplits(buildDefaultDiscountSplits());
+    setShowDiscountPanel(true);
+    scrollDiscountPanelIntoView();
+  };
+
+  const handleToggleWarrantyPanel = () => {
+    if (showDiscountPanel && isWarranty) {
+      setShowDiscountPanel(false);
+      setIsWarranty(false);
+      return;
+    }
+    setIsWarranty(true);
+    setDiscountSplits([]);
+    setWarrantyOriginalStaffId(selectedTicket?.staffId || warrantyOriginalStaffId || '');
+    setWarrantyPerformedByStaffId(selectedTicket?.staffId || warrantyPerformedByStaffId || '');
+    setWarrantyWorkDescription(
+      (prev) =>
+        prev ||
+        selectedTicket?.lines?.map((line) => line.name).filter(Boolean).join(' + ') ||
+        ''
+    );
+    setWarrantyServiceAmount((prev) => prev || String(selectedTicket?.subtotal || amount || 0));
+    setShowDiscountPanel(true);
+    scrollDiscountPanelIntoView();
+  };
 
   const expectedCash =
     (registerState?.session?.openingFloat ?? 0) + (registerState?.shiftSummary.efectivo ?? 0);
@@ -641,7 +827,11 @@ export default function CajaView({
   };
 
   const handleRegisterPayment = async () => {
-    if (!selectedTicket || !registerState?.session) return;
+    if (!selectedTicket) return;
+    if (!registerState?.session) {
+      setError('Abre un turno de caja para cobrar.');
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
@@ -660,15 +850,48 @@ export default function CajaView({
         setLinesDirty(false);
       }
 
+      if (isWarranty) {
+        if (!warrantyPayload.warrantyOriginalStaffId || !warrantyPayload.warrantyPerformedByStaffId) {
+          throw new Error('Indica quién falló y quién realiza la garantía.');
+        }
+        if (!warrantyPayload.warrantyWorkDescription) {
+          throw new Error('Describe qué trabajo se vuelve a hacer.');
+        }
+        if ((warrantyPayload.warrantyServiceAmount || 0) <= 0) {
+          throw new Error('Indica el monto del trabajo en garantía.');
+        }
+      }
+      if (!isWarranty && totalDiscountPercent > 100) {
+        throw new Error('La suma de porcentajes del descuento no puede superar 100%.');
+      }
+      if (!isWarranty && showDiscountAssignment && normalizedSplitPreview.length === 0) {
+        throw new Error('Confirma a quién se le aplica el descuento de comisión.');
+      }
+
       const chargeAmount = Number(amount) || ticketToCharge.subtotal;
+      const noteParts = [
+        notes.trim(),
+        isWarranty
+          ? `Garantía · ${warrantyPayload.warrantyWorkDescription} · original ${warrantyPayload.warrantyOriginalStaffName} · realiza ${warrantyPayload.warrantyPerformedByStaffName} · ${formatMXN(warrantyPayload.warrantyServiceAmount || 0)}`
+          : '',
+        !isWarranty && showDiscountAssignment
+          ? `Descuento ${formatMXN(effectiveDiscount)} → ${normalizedSplitPreview
+              .map((row) => `${row.name} ${row.percent}%`)
+              .join(' + ')} (${discountReasonLabel})`
+          : '',
+      ].filter(Boolean);
 
       const payload = {
         appointmentId: ticketToCharge.appointmentId,
         ticketId: ticketToCharge.id,
         amount: chargeAmount,
         tip: tipValue,
+        discount: isWarranty ? 0 : effectiveDiscount,
+        isWarranty,
+        ...discountPayload,
+        ...warrantyPayload,
         method,
-        notes,
+        notes: noteParts.join(' · '),
         processedByReceptionistId: loggedInReceptionist?.id,
         processedByReceptionistName: loggedInReceptionist?.name,
         ...(method === 'mixto'
@@ -683,6 +906,7 @@ export default function CajaView({
       await posApi.registerPayment(payload);
       setSelectedTicketId(null);
       await loadRegister();
+      await loadTickets(operationalDay);
       await onPaymentComplete();
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : 'No se pudo registrar el pago');
@@ -955,7 +1179,7 @@ export default function CajaView({
                         <p className="font-sans text-sm font-bold text-primary">{ticket.clientName}</p>
                         <TicketLinesList lines={ticket.lines} className="mt-0.5" />
                         <p className="text-[10px] text-outline mt-1">
-                          {ticket.submittedByStaffName || ticket.staffName} envió cobro
+                          {`${ticket.submittedByStaffName || ticket.staffName} envió cobro`}
                         </p>
                       </div>
                       <div className="text-right">
@@ -996,7 +1220,7 @@ export default function CajaView({
                 <p className="text-xs font-bold uppercase tracking-wider text-outline">Cliente</p>
                 <p className="font-sans text-sm font-bold text-primary mt-1">{selectedTicket.clientName}</p>
                 <p className="text-[10px] text-outline mt-1">
-                  Enviada por {selectedTicket.submittedByStaffName || selectedTicket.staffName}
+                  {`Enviada por ${selectedTicket.submittedByStaffName || selectedTicket.staffName}`}
                 </p>
               </div>
 
@@ -1120,6 +1344,296 @@ export default function CajaView({
                 </Field>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-outline font-bold uppercase tracking-wider">
+                    Descuento
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleToggleDiscountPanel}
+                    className={`w-full px-3 py-2.5 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors ${
+                      showDiscountPanel && !isWarranty
+                        ? 'bg-amber-100 border-amber-300 text-amber-950'
+                        : 'bg-surface border-primary/10 text-outline hover:border-secondary'
+                    }`}
+                  >
+                    {showDiscountPanel && !isWarranty
+                      ? effectiveDiscount > 0
+                        ? `Descuento ${formatMXN(effectiveDiscount)} · ${totalDiscountPercent}%`
+                        : 'Descuento activo'
+                      : 'Marcar descuento'}
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-outline font-bold uppercase tracking-wider">Garantía</p>
+                  <button
+                    type="button"
+                    onClick={handleToggleWarrantyPanel}
+                    className={`w-full px-3 py-2.5 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors ${
+                      isWarranty
+                        ? 'bg-amber-100 border-amber-300 text-amber-950'
+                        : 'bg-surface border-primary/10 text-outline hover:border-secondary'
+                    }`}
+                  >
+                    {isWarranty ? 'Garantía activa · $0 servicio' : 'Marcar garantía'}
+                  </button>
+                </div>
+              </div>
+
+              {showDiscountPanel && (
+              <div
+                id="caja-discount-panel"
+                className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3"
+              >
+                {isWarranty ? (
+                  <>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                        Garantía
+                      </p>
+                    </div>
+
+                    <Field label="Manicurista del servicio original">
+                      <select
+                        value={warrantyOriginalStaffId}
+                        onChange={(e) => setWarrantyOriginalStaffId(e.target.value)}
+                        className={fieldClassName}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {activeStaffOptions.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
+                    <Field label="Quién realiza la garantía">
+                      <select
+                        value={warrantyPerformedByStaffId}
+                        onChange={(e) => setWarrantyPerformedByStaffId(e.target.value)}
+                        className={fieldClassName}
+                      >
+                        <option value="">Seleccionar…</option>
+                        {activeStaffOptions.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                            {member.id === warrantyOriginalStaffId ? ' (misma)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
+                    <Field label="Qué trabajo se vuelve a hacer">
+                      <textarea
+                        value={warrantyWorkDescription}
+                        onChange={(e) => setWarrantyWorkDescription(e.target.value)}
+                        rows={2}
+                        placeholder="Ej. solo 2 uñas, solo pedi, servicio completo…"
+                        className={`${fieldClassName} min-h-[64px] resize-y`}
+                      />
+                    </Field>
+
+                    <Field label="Monto del trabajo en garantía">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={warrantyServiceAmount}
+                        onChange={(e) => setWarrantyServiceAmount(e.target.value)}
+                        className={fieldClassName}
+                      />
+                    </Field>
+
+                    {!warrantySameStaff && warrantyTransferPreview > 0 ? (
+                      <div className="rounded-lg bg-white/70 border border-amber-200 px-3 py-2 text-[11px] text-amber-950 space-y-0.5">
+                        <p>
+                          Se descuenta a{' '}
+                          <span className="font-bold">
+                            {warrantyOriginalStaff?.name || '—'}
+                          </span>
+                          : −{formatMXN(warrantyTransferPreview)}
+                        </p>
+                        <p>
+                          Se acredita a{' '}
+                          <span className="font-bold">
+                            {warrantyPerformedByStaff?.name || '—'}
+                          </span>
+                          : +{formatMXN(warrantyTransferPreview)}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                        Descuento
+                      </p>
+                    </div>
+
+                    {discountSplits.length === 0 ? (
+                      <p className="text-[11px] text-amber-950/70">
+                        Sin descuento. Agrega personas abajo.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {discountSplits.map((row, index) => (
+                          <div
+                            key={row.key || `split-${index}`}
+                            className="grid grid-cols-[1fr_72px_auto] gap-2 items-end"
+                          >
+                            <Field label={index === 0 ? 'Persona' : ''}>
+                              <select
+                                value={row.key}
+                                onChange={(e) => {
+                                  const option = discountPersonOptions.find(
+                                    (o) => o.key === e.target.value
+                                  );
+                                  if (!option) return;
+                                  setDiscountSplits((prev) =>
+                                    prev.map((item, i) =>
+                                      i === index
+                                        ? {
+                                            key: option.key,
+                                            role: option.role,
+                                            id: option.id,
+                                            name: option.name,
+                                            percent: item.percent,
+                                          }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                className={fieldClassName}
+                              >
+                                {[
+                                  discountPersonOptions.find((o) => o.key === row.key),
+                                  ...availableSplitPeople,
+                                ]
+                                  .filter(Boolean)
+                                  .map((option) => (
+                                    <option key={option!.key} value={option!.key}>
+                                      {option!.label}
+                                    </option>
+                                  ))}
+                              </select>
+                            </Field>
+                            <Field label={index === 0 ? '%' : ''}>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={row.percent}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setDiscountSplits((prev) =>
+                                    prev.map((item, i) =>
+                                      i === index ? { ...item, percent: value } : item
+                                    )
+                                  );
+                                }}
+                                className={fieldClassName}
+                              />
+                            </Field>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDiscountSplits((prev) => prev.filter((_, i) => i !== index))
+                              }
+                              className="mb-0.5 px-2 py-2.5 rounded-lg border border-primary/10 text-[10px] font-bold uppercase tracking-wider text-outline hover:border-secondary"
+                              aria-label="Quitar persona del descuento"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {availableSplitPeople.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = availableSplitPeople[0];
+                          if (!next) return;
+                          setDiscountSplits((prev) => [
+                            ...prev,
+                            {
+                              key: next.key,
+                              role: next.role,
+                              id: next.id,
+                              name: next.name,
+                              percent: '10',
+                            },
+                          ]);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-dashed border-amber-300 text-[11px] font-bold uppercase tracking-wider text-amber-950 hover:bg-amber-100/60"
+                      >
+                        + Agregar persona (10%)
+                      </button>
+                    )}
+
+                    <Field label="Motivo / cuándo aplica">
+                      <select
+                        value={discountReasonId}
+                        onChange={(e) => setDiscountReasonId(e.target.value)}
+                        className={fieldClassName}
+                      >
+                        {DISCOUNT_REASON_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
+                    {showDiscountAssignment && (
+                      <div className="rounded-lg bg-white/70 border border-amber-200 px-3 py-2 text-[11px] text-amber-950 space-y-0.5">
+                        <p>
+                          Reparto:{' '}
+                          <span className="font-bold">
+                            {normalizedSplitPreview
+                              .map(
+                                (row) =>
+                                  `${row.name} ${row.percent}% (${formatMXN(row.amount)})`
+                              )
+                              .join(' · ')}
+                          </span>
+                        </p>
+                        <p>
+                          Motivo: <span className="font-bold">{discountReasonLabel}</span>
+                        </p>
+                        <p>
+                          Total a descontar de comisiones:{' '}
+                          <span className="font-bold">{formatMXN(effectiveDiscount)}</span>
+                        </p>
+                        {totalDiscountPercent > 100 && (
+                          <p className="text-red-700 font-bold">
+                            La suma de % no puede superar 100.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              )}
+
+              {!isWarranty && effectiveDiscount > 0 && (
+                <div className="rounded-lg border border-primary/10 bg-surface-container-low/60 px-3 py-2 text-[11px] text-on-surface-variant space-y-0.5">
+                  <p>
+                    Cliente paga servicio {formatMXN(serviceGross)}
+                    {` − ${formatMXN(effectiveDiscount)}`}
+                    {' = '}
+                    <span className="font-bold text-primary">{formatMXN(serviceNet)}</span>
+                  </p>
+                  {tipValue > 0 && <p>Propina {formatMXN(tipValue)}</p>}
+                </div>
+              )}
+
               <div>
                 <p className="text-[10px] text-outline font-bold uppercase tracking-wider mb-2">Método de pago</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -1176,12 +1690,16 @@ export default function CajaView({
 
               <button
                 type="button"
-                disabled={isSubmitting || paymentTotal <= 0}
+                disabled={
+                  isSubmitting ||
+                  paymentTotal < 0 ||
+                  (serviceGross <= 0 && tipValue <= 0 && !isWarranty)
+                }
                 onClick={handleRegisterPayment}
                 className="w-full py-3 rounded-xl bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                Registrar pago
+                {isWarranty ? 'Registrar garantía' : 'Registrar pago'}
               </button>
             </div>
           )}
@@ -1880,6 +2398,24 @@ function PaymentRow({ payment }: { payment: PosPayment }) {
               ? new Date(payment.createdAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
               : '—'}
             · {methodLabel}
+            {payment.isWarranty ? ' · Garantía' : ''}
+            {payment.isWarranty && payment.warrantyWorkDescription
+              ? ` · ${payment.warrantyWorkDescription}`
+              : ''}
+            {payment.isWarranty && !payment.warrantySameStaff && (payment.warrantyTransferAmount || 0) > 0
+              ? ` · ${payment.warrantyOriginalStaffName} → ${payment.warrantyPerformedByStaffName} (${formatMXN(payment.warrantyTransferAmount || 0)})`
+              : ''}
+            {!payment.isWarranty && (payment.discount ?? 0) > 0
+              ? ` · Desc. ${formatMXN(payment.discount)}${
+                  (payment.discountSplits || []).length > 0
+                    ? ` → ${(payment.discountSplits || [])
+                        .map((split) => `${split.name} ${split.percent}%`)
+                        .join(' + ')}`
+                    : payment.discountTargetName
+                      ? ` → ${payment.discountTargetName}`
+                      : ''
+                }${payment.discountReason ? ` (${payment.discountReason})` : ''}`
+              : ''}
           </p>
         </div>
         <div className="text-right">

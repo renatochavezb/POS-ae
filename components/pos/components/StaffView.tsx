@@ -14,6 +14,7 @@ import {
 import { Appointment, Staff, StaffStatus, Receptionist } from '../types';
 import { formatServicePrice, INITIAL_RECEPTIONISTS } from '../data';
 import AccountantActivityPanel from './AccountantActivityPanel';
+import AccountantDiscountsPanel from './AccountantDiscountsPanel';
 import { isAppointmentPaid } from '../appointmentStatus';
 import { buildWeekDayEntries, getStudioWeekStart } from '../scheduleUtils';
 
@@ -27,6 +28,7 @@ interface StaffViewProps {
   onDeleteStaff: (_staffId: string) => void;
   readOnly?: boolean;
   showAccountantBitacora?: boolean;
+  showAccountantDiscounts?: boolean;
   showReceptionistCodes?: boolean;
   activityRefreshKey?: number;
 }
@@ -41,6 +43,7 @@ export default function StaffView({
   onDeleteStaff,
   readOnly = false,
   showAccountantBitacora = false,
+  showAccountantDiscounts = false,
   showReceptionistCodes = false,
   activityRefreshKey = 0,
 }: StaffViewProps) {
@@ -160,6 +163,8 @@ export default function StaffView({
         </div>
       </div>
       )}
+
+      {showAccountantDiscounts ? <AccountantDiscountsPanel /> : null}
 
       {showAccountantBitacora ? (
         <AccountantActivityPanel refreshKey={activityRefreshKey} />

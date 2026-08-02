@@ -1752,6 +1752,7 @@ export default function POSDashboard() {
             isMasterSession={isMasterSession}
             loggedInStaffId={loggedInStaffId}
             services={services}
+            staffList={staffList}
             onPaymentComplete={() => loadPosData({ silent: true })}
             onTicketSubmitted={async () => {
               await loadPosData({ silent: true });
@@ -1830,6 +1831,7 @@ export default function POSDashboard() {
             onDeleteStaff={handleDeleteStaff}
             readOnly={isAccountantSession}
             showAccountantBitacora={isMasterSession && !isAccountantSession}
+            showAccountantDiscounts={isAccountantSession}
             showReceptionistCodes={isMasterSession && !isAccountantSession}
             activityRefreshKey={accountantActivityRefresh}
           />
