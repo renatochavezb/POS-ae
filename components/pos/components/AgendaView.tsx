@@ -11,6 +11,7 @@ import {
   Pencil,
   Send,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { Appointment, DailyStats, Receptionist, ScheduleConfig, Staff, StaffBlockedSlot } from '../types';
 import {
@@ -21,7 +22,9 @@ import {
   formatDuration,
   formatMinutesAsTime,
   getStudioWeekStart,
+  getStudioWeekStartLabel,
   formatSpanishShortDateInTimeZone,
+  formatWeekRangeLabel,
   getTodaySpanishShortDate,
   addDays,
   parseTimeToMinutes,
@@ -71,6 +74,9 @@ interface AgendaViewProps {
   onTicketSubmitted?: () => void | Promise<void>;
   onRefreshAgenda?: () => void | Promise<void>;
   isRefreshingAgenda?: boolean;
+  loadedAgendaWeekKeys?: string[];
+  onLoadAgendaWeek?: (weekStart: Date) => void | Promise<void>;
+  isLoadingAgendaWeek?: boolean;
 }
 
 type CloseDraft = {
@@ -152,9 +158,14 @@ export default function AgendaView({
   onTicketSubmitted,
   onRefreshAgenda,
   isRefreshingAgenda = false,
+  loadedAgendaWeekKeys = [],
+  onLoadAgendaWeek,
+  isLoadingAgendaWeek = false,
 }: AgendaViewProps) {
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStudioWeekStart(new Date()));
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const viewedWeekKey = getStudioWeekStartLabel(currentWeekStart);
+  const isViewedWeekLoaded = loadedAgendaWeekKeys.includes(viewedWeekKey);
   const [closeMode, setCloseMode] = useState(false);
   const [closeDraft, setCloseDraft] = useState<CloseDraft | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
@@ -487,7 +498,8 @@ export default function AgendaView({
           <p className="text-[10px] text-outline mt-1">
             {lockedStaffId
               ? 'Tus citas no se actualizan solas: pulsa Actualizar si recepción acaba de agendar.'
-              : 'La agenda no se actualiza sola: usa «Actualizar» si otra pantalla acaba de agendar.'}
+              : 'La agenda no se actualiza sola: usa «Actualizar» si otra pantalla acaba de agendar.'}{' '}
+            Siempre vienen cargadas la semana actual y la anterior.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -497,10 +509,22 @@ export default function AgendaView({
               onClick={() => void onRefreshAgenda()}
               disabled={isRefreshingAgenda}
               className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 rounded-lg font-sans text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all border border-primary/10 text-primary hover:bg-surface-container-low disabled:opacity-50"
-              title="Traer citas recientes desde Mongo"
+              title="Actualizar semana actual y anterior"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAgenda ? 'animate-spin' : ''}`} />
               {isRefreshingAgenda ? 'Actualizando…' : 'Actualizar'}
+            </button>
+          ) : null}
+          {onLoadAgendaWeek && !isViewedWeekLoaded ? (
+            <button
+              type="button"
+              onClick={() => void onLoadAgendaWeek(currentWeekStart)}
+              disabled={isLoadingAgendaWeek}
+              className="flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 rounded-lg font-sans text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all border border-secondary/30 text-secondary hover:bg-secondary/10 disabled:opacity-50"
+              title={`Cargar citas de ${formatWeekRangeLabel(currentWeekStart)}`}
+            >
+              <Download className={`w-3.5 h-3.5 ${isLoadingAgendaWeek ? 'animate-pulse' : ''}`} />
+              {isLoadingAgendaWeek ? 'Cargando semana…' : 'Cargar esta semana'}
             </button>
           ) : null}
         {!readOnly && (

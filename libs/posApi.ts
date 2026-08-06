@@ -359,11 +359,15 @@ const posApi = {
   getAppointments(params?: {
     daysBefore?: number;
     daysAfter?: number;
+    weekStart?: string;
+    weekCount?: number;
   }): Promise<Appointment[]> {
     return posClient.get("/pos/appointments", {
       params: {
         daysBefore: params?.daysBefore,
         daysAfter: params?.daysAfter,
+        weekStart: params?.weekStart,
+        weekCount: params?.weekCount,
       },
     });
   },
@@ -438,11 +442,15 @@ const posApi = {
   getBlockedSlots(params?: {
     daysBefore?: number;
     daysAfter?: number;
+    weekStart?: string;
+    weekCount?: number;
   }): Promise<StaffBlockedSlot[]> {
     return posClient.get("/pos/blocked-slots", {
       params: {
         daysBefore: params?.daysBefore,
         daysAfter: params?.daysAfter,
+        weekStart: params?.weekStart,
+        weekCount: params?.weekCount,
       },
     });
   },
@@ -539,8 +547,16 @@ const posApi = {
     status?: "submitted" | "charged" | "cancelled" | "all";
     staffId?: string;
     appointmentId?: string;
+    /** Solo Caja necesita las fotos; el listado del dashboard debe omitirlas. */
+    includePhotos?: boolean;
   }): Promise<{ date: string; tickets: PosCashTicket[] }> {
-    return posClient.get("/pos/cash-tickets", { params });
+    const { includePhotos, ...rest } = params || {};
+    return posClient.get("/pos/cash-tickets", {
+      params: {
+        ...rest,
+        ...(includePhotos ? { includePhotos: "1" } : {}),
+      },
+    });
   },
   submitCashTicket(data: {
     appointmentId: string;

@@ -78,8 +78,10 @@ export function mapServiceDoc(doc) {
   };
 }
 
-export function mapCashTicketDoc(doc) {
+export function mapCashTicketDoc(doc, options = {}) {
   const raw = doc.toObject ? doc.toObject() : doc;
+  const includeWorkPhotos = Boolean(options.includeWorkPhotos);
+  const storedPhotos = Array.isArray(raw.workPhotos) ? raw.workPhotos : [];
 
   return {
     id: raw.ticketCode,
@@ -101,7 +103,9 @@ export function mapCashTicketDoc(doc) {
     submittedAt: raw.submittedAt ? new Date(raw.submittedAt).toISOString() : "",
     chargedAt: raw.chargedAt ? new Date(raw.chargedAt).toISOString() : "",
     paymentId: raw.paymentCode || "",
-    workPhotos: raw.workPhotos || [],
+    workPhotoCount: storedPhotos.length,
+    // Por defecto no se mandan base64 (consumo enorme). Solo con includeWorkPhotos.
+    workPhotos: includeWorkPhotos ? storedPhotos : [],
   };
 }
 
@@ -504,6 +508,12 @@ function mapWeeklyBreakdownDay(raw = {}) {
       ? Number(raw.net)
       : sales - commission - tips;
 
+  const hasPaymentBreakdown =
+    raw.efectivo != null ||
+    raw.tarjeta != null ||
+    raw.transferencia != null ||
+    raw.gift_card != null;
+
   return {
     dateLabel: raw.dateLabel || "",
     dayLabel: raw.dayLabel || "",
@@ -512,6 +522,14 @@ function mapWeeklyBreakdownDay(raw = {}) {
     commission,
     tips,
     net,
+    ...(hasPaymentBreakdown
+      ? {
+          efectivo: Number(raw.efectivo) || 0,
+          tarjeta: Number(raw.tarjeta) || 0,
+          transferencia: Number(raw.transferencia) || 0,
+          gift_card: Number(raw.gift_card) || 0,
+        }
+      : {}),
   };
 }
 

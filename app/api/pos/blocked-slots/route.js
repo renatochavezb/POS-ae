@@ -3,7 +3,8 @@ import connectMongo from "@/libs/mongoose";
 import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
 import { mapBlockedSlotDoc } from "@/libs/posMappers";
 import PosBlockedSlot from "@/models/PosBlockedSlot";
-import { buildSpanishDateLabelsAroundToday } from "@/components/pos/scheduleUtils";
+import { buildSpanishDateLabelsAroundToday, buildWeekDayEntries, getStudioWeekStart, addDays } from "@/components/pos/scheduleUtils";
+import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,36 @@ function parseWindowParam(value, fallback) {
   return Math.max(0, Math.min(120, Math.floor(n)));
 }
 
+function resolveDateLabelsFromRequest(req) {
+  const weekStartParam = (req.nextUrl.searchParams.get("weekStart") || "").trim();
+  if (weekStartParam) {
+    const parsed = parseSpanishShortDateLabel(weekStartParam);
+    if (!parsed) return null;
+    const weekCount = Math.max(
+      1,
+      Math.min(8, parseWindowParam(req.nextUrl.searchParams.get("weekCount"), 1))
+    );
+    const start = getStudioWeekStart(parsed);
+    const labels = [];
+    for (let index = 0; index < weekCount; index += 1) {
+      buildWeekDayEntries(addDays(start, index * 7)).forEach((day) => {
+        labels.push(day.dateLabel);
+      });
+    }
+    return labels;
+  }
+
+  const daysBeforeParam = req.nextUrl.searchParams.get("daysBefore");
+  const daysAfterParam = req.nextUrl.searchParams.get("daysAfter");
+  if (daysBeforeParam != null || daysAfterParam != null) {
+    const daysBefore = parseWindowParam(daysBeforeParam, 7);
+    const daysAfter = parseWindowParam(daysAfterParam, 14);
+    return buildSpanishDateLabelsAroundToday(daysBefore, daysAfter);
+  }
+
+  return null;
+}
+
 export async function GET(req) {
   try {
     const authResult = await requirePosSession();
@@ -20,18 +51,9 @@ export async function GET(req) {
 
     await connectMongo();
 
-    const daysBeforeParam = req.nextUrl.searchParams.get("daysBefore");
-    const daysAfterParam = req.nextUrl.searchParams.get("daysAfter");
-    const hasWindow = daysBeforeParam != null || daysAfterParam != null;
-
-    let query = {};
-    if (hasWindow) {
-      const daysBefore = parseWindowParam(daysBeforeParam, 7);
-      const daysAfter = parseWindowParam(daysAfterParam, 14);
-      query = {
-        date: { $in: buildSpanishDateLabelsAroundToday(daysBefore, daysAfter) },
-      };
-    }
+    const dateLabels = resolveDateLabelsFromRequest(req);
+    const query =
+      dateLabels && dateLabels.length > 0 ? { date: { $in: dateLabels } } : { date: { $in: [] } };
 
     const blockedSlots = await PosBlockedSlot.find(query).sort({ date: 1, time: 1 });
     return NextResponse.json(blockedSlots.map(mapBlockedSlotDoc));

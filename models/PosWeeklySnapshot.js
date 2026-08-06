@@ -9,6 +9,11 @@ const dayBreakdownSchema = mongoose.Schema(
     commission: { type: Number, default: 0 },
     tips: { type: Number, default: 0 },
     net: { type: Number, default: 0 },
+    // Sin default: si faltan, el cliente sabe que debe cargar cobros reales
+    efectivo: { type: Number },
+    tarjeta: { type: Number },
+    transferencia: { type: Number },
+    gift_card: { type: Number },
   },
   { _id: false }
 );

@@ -195,6 +195,33 @@ export function isCurrentWeek(weekStart: Date): boolean {
   );
 }
 
+/** Semana operativa anterior + semana en curso (sáb–vie). */
+export function getDefaultAgendaWeekStarts(reference: Date = new Date()): Date[] {
+  const current = getStudioWeekStart(reference);
+  return [addDays(current, -7), current];
+}
+
+/** Etiquetas de fecha (es-MX) para una o más semanas operativas. */
+export function buildAgendaDateLabelsForWeekStarts(weekStarts: Date[]): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+
+  weekStarts.forEach((weekStart) => {
+    buildWeekDayEntries(getStudioWeekStart(weekStart)).forEach((day) => {
+      if (seen.has(day.dateLabel)) return;
+      seen.add(day.dateLabel);
+      labels.push(day.dateLabel);
+    });
+  });
+
+  return labels;
+}
+
+/** Clave estable de semana = label del sábado de esa semana. */
+export function getStudioWeekStartLabel(date: Date = new Date()): string {
+  return formatSpanishShortDate(getStudioWeekStart(date));
+}
+
 /** Formatea minutos desde medianoche como "10:00 AM" / "6:30 PM". */
 export const formatMinutesAsTime = (totalMinutes: number): string => {
   const normalized = ((Math.floor(totalMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);

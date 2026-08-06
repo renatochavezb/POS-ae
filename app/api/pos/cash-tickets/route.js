@@ -38,6 +38,11 @@ export async function GET(req) {
     const status = (req.nextUrl.searchParams.get("status") || "submitted").trim();
     const staffId = (req.nextUrl.searchParams.get("staffId") || "").trim().toUpperCase();
     const appointmentId = (req.nextUrl.searchParams.get("appointmentId") || "").trim();
+    const includePhotosParam = (req.nextUrl.searchParams.get("includePhotos") || "").trim();
+    const includeWorkPhotos =
+      includePhotosParam === "1" ||
+      includePhotosParam.toLowerCase() === "true" ||
+      includePhotosParam.toLowerCase() === "yes";
 
     const query = { appointmentDate: date };
 
@@ -53,11 +58,18 @@ export async function GET(req) {
       query.appointmentCode = appointmentId;
     }
 
-    const tickets = await PosCashTicket.find(query).sort({ submittedAt: -1 });
+    // Sin fotos: no leer base64 de Mongo ni mandarlo al cliente (mayor causa de egress).
+    let ticketsQuery = PosCashTicket.find(query).sort({ submittedAt: -1 });
+    if (!includeWorkPhotos) {
+      ticketsQuery = ticketsQuery.select("-workPhotos");
+    }
+
+    const tickets = await ticketsQuery;
 
     return NextResponse.json({
       date,
-      tickets: tickets.map(mapCashTicketDoc),
+      includeWorkPhotos,
+      tickets: tickets.map((ticket) => mapCashTicketDoc(ticket, { includeWorkPhotos })),
     });
   } catch (error) {
     console.error("GET /api/pos/cash-tickets", error);
@@ -202,7 +214,10 @@ export async function POST(req) {
       }
     );
 
-    return NextResponse.json({ ticket: mapCashTicketDoc(ticket) }, { status: 201 });
+    return NextResponse.json(
+      { ticket: mapCashTicketDoc(ticket, { includeWorkPhotos: true }) },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("POST /api/pos/cash-tickets", error);
     return NextResponse.json(

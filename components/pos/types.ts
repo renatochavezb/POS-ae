@@ -258,6 +258,11 @@ export interface WeeklyBreakdownDay {
   tips?: number;
   /** Neto salón del día: ventas − comisión − propinas */
   net?: number;
+  /** Cobros del día por método (desde PosPayment; mixto ya va partido) */
+  efectivo?: number;
+  tarjeta?: number;
+  transferencia?: number;
+  gift_card?: number;
 }
 
 export interface WeeklyStaffBreakdown {
@@ -373,6 +378,7 @@ export interface PosCashTicket {
   submittedAt: string;
   chargedAt: string;
   paymentId: string;
+  workPhotoCount?: number;
   workPhotos?: string[];
 }
 

@@ -20,6 +20,7 @@ import {
   spanishShortDateToYmd,
 } from "@/components/pos/scheduleUtils";
 import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
+import { paymentMethodAmounts } from "@/libs/posCashRegister";
 
 const DEFAULT_COMMISSION_PERCENT = 40;
 
@@ -118,7 +119,7 @@ async function loadWeekContext(weekStartDateLabel) {
       "date staffId staffName cost status"
     ),
     PosPayment.find({ appointmentDate: { $in: dateLabels } }).select(
-      "appointmentDate tip staffId staffName"
+      "appointmentDate tip staffId staffName method total amount cashAmount cardAmount transferAmount giftCardAmount"
     ),
     PosCashSession.find({
       shiftDate: { $in: dateLabels },
@@ -207,9 +208,21 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
       (sum, appointment) => sum + appointmentCommission(appointment, commissionByStaffId),
       0
     );
-    const dayTips = payments
-      .filter((payment) => payment.appointmentDate === day.dateLabel)
-      .reduce((sum, payment) => sum + (payment.tip || 0), 0);
+    const dayPayments = payments.filter(
+      (payment) => payment.appointmentDate === day.dateLabel
+    );
+    const dayTips = dayPayments.reduce((sum, payment) => sum + (payment.tip || 0), 0);
+    const paymentBreakdown = dayPayments.reduce(
+      (acc, payment) => {
+        const methods = paymentMethodAmounts(payment);
+        acc.efectivo += methods.efectivo;
+        acc.tarjeta += methods.tarjeta;
+        acc.transferencia += methods.transferencia;
+        acc.gift_card += methods.gift_card;
+        return acc;
+      },
+      { efectivo: 0, tarjeta: 0, transferencia: 0, gift_card: 0 }
+    );
     const net = sales - commission - dayTips;
 
     return {
@@ -220,6 +233,10 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
       commission,
       tips: dayTips,
       net,
+      efectivo: paymentBreakdown.efectivo,
+      tarjeta: paymentBreakdown.tarjeta,
+      transferencia: paymentBreakdown.transferencia,
+      gift_card: paymentBreakdown.gift_card,
     };
   });
 

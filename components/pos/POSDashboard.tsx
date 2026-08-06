@@ -33,8 +33,11 @@ import {
   DEFAULT_SCHEDULE_CONFIG,
   buildBookingTimeOptions,
   buildDayScheduleConfigForLabel,
-  buildSpanishDateLabelsAroundToday,
+  buildAgendaDateLabelsForWeekStarts,
   formatSpanishShortDate,
+  getDefaultAgendaWeekStarts,
+  getStudioWeekStart,
+  getStudioWeekStartLabel,
   getTodaySpanishShortDate,
   getDurationOptionsFromConfig,
   formatDuration,
@@ -44,6 +47,7 @@ import {
   getConflictingAppointment,
   formatAppointmentTimeRange,
   resolveScheduleForDateLabel,
+  buildWeekDayEntries,
 } from './scheduleUtils';
 
 // Visual Components
@@ -98,9 +102,7 @@ const RECEPTIONIST_TAB_IDS = [
   ...RECEPTIONIST_ADMIN_TAB_IDS,
 ];
 const ACCOUNTANT_TAB_IDS = ['staff', 'inventario', ...ACCOUNTANT_ADMIN_TAB_IDS];
-/** Ventana del refresh manual: 7 días atrás + 14 adelante (no todo el histórico). */
-const LIVE_AGENDA_DAYS_BEFORE = 7;
-const LIVE_AGENDA_DAYS_AFTER = 14;
+/** Agenda por defecto: semana anterior + semana en curso (sáb–vie). */
 
 const isReceptionSupervisorRole = (role?: string) => /supervis/i.test(role || '');
 import { isAppointmentPaid, canDeleteAppointment, canCancelAppointment, isAppointmentLockedOnBoard, getNextAppointmentStatus, getPreviousAppointmentStatus } from './appointmentStatus';
@@ -245,6 +247,8 @@ export default function POSDashboard() {
   const [ticketAppointmentIds, setTicketAppointmentIds] = useState<string[]>([]);
   const [liveSyncAt, setLiveSyncAt] = useState(0);
   const [isAgendaRefreshing, setIsAgendaRefreshing] = useState(false);
+  const [isLoadingAgendaWeek, setIsLoadingAgendaWeek] = useState(false);
+  const [loadedAgendaWeekKeys, setLoadedAgendaWeekKeys] = useState<string[]>([]);
   const agendaPollInFlight = useRef(false);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>(DEFAULT_SCHEDULE_CONFIG);
 
@@ -523,16 +527,50 @@ export default function POSDashboard() {
     }
   };
 
+  const getDefaultAgendaFetchParams = () => {
+    const [previousWeekStart] = getDefaultAgendaWeekStarts();
+    return {
+      weekStart: formatSpanishShortDate(previousWeekStart),
+      weekCount: 2,
+    };
+  };
+
+  const markDefaultAgendaWeeksLoaded = () => {
+    setLoadedAgendaWeekKeys(
+      getDefaultAgendaWeekStarts().map((weekStart) => getStudioWeekStartLabel(weekStart))
+    );
+  };
+
+  const mergeAppointmentsForDates = (
+    prev: Appointment[],
+    fresh: Appointment[],
+    dateLabels: Set<string>
+  ) => {
+    const kept = prev.filter((appointment) => !dateLabels.has(appointment.date));
+    return [...kept, ...fresh];
+  };
+
+  const mergeBlockedSlotsForDates = (
+    prev: StaffBlockedSlot[],
+    fresh: StaffBlockedSlot[],
+    dateLabels: Set<string>
+  ) => {
+    const kept = prev.filter((slot) => !dateLabels.has(slot.date));
+    return [...kept, ...fresh];
+  };
+
   const loadPosData = async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setIsDataLoading(true);
       setDbWarning(null);
     }
 
+    const agendaParams = getDefaultAgendaFetchParams();
+
     const results = await Promise.allSettled([
       posApi.getStaff(),
-      posApi.getAppointments(),
-      posApi.getBlockedSlots(),
+      posApi.getAppointments(agendaParams),
+      posApi.getBlockedSlots(agendaParams),
       posApi.getClients(),
       posApi.getReceptionists(),
       posApi.getScheduleConfig(),
@@ -549,14 +587,40 @@ export default function POSDashboard() {
     }
 
     if (results[1].status === 'fulfilled') {
-      setAppointments(results[1].value);
+      if (options?.silent) {
+        const liveDateLabels = new Set(
+          buildAgendaDateLabelsForWeekStarts(getDefaultAgendaWeekStarts())
+        );
+        setAppointments((prev) =>
+          mergeAppointmentsForDates(prev, results[1].value, liveDateLabels)
+        );
+        setLoadedAgendaWeekKeys((prev) => {
+          const next = new Set(prev);
+          getDefaultAgendaWeekStarts().forEach((weekStart) => {
+            next.add(getStudioWeekStartLabel(weekStart));
+          });
+          return Array.from(next);
+        });
+      } else {
+        setAppointments(results[1].value);
+        markDefaultAgendaWeeksLoaded();
+      }
     } else {
       failedSections.push('agenda');
       console.error(results[1].reason);
     }
 
     if (results[2].status === 'fulfilled') {
-      setBlockedSlots(results[2].value);
+      if (options?.silent) {
+        const liveDateLabels = new Set(
+          buildAgendaDateLabelsForWeekStarts(getDefaultAgendaWeekStarts())
+        );
+        setBlockedSlots((prev) =>
+          mergeBlockedSlotsForDates(prev, results[2].value, liveDateLabels)
+        );
+      } else {
+        setBlockedSlots(results[2].value);
+      }
     } else {
       failedSections.push('cierres de horario');
       console.error(results[2].reason);
@@ -604,37 +668,78 @@ export default function POSDashboard() {
   };
 
   const refreshLiveAgendaData = async () => {
-    const liveWindow = {
-      daysBefore: LIVE_AGENDA_DAYS_BEFORE,
-      daysAfter: LIVE_AGENDA_DAYS_AFTER,
-    };
+    const agendaParams = getDefaultAgendaFetchParams();
     const liveDateLabels = new Set(
-      buildSpanishDateLabelsAroundToday(LIVE_AGENDA_DAYS_BEFORE, LIVE_AGENDA_DAYS_AFTER)
+      buildAgendaDateLabelsForWeekStarts(getDefaultAgendaWeekStarts())
     );
 
     const [appointmentsResult, blockedSlotsResult] = await Promise.allSettled([
-      posApi.getAppointments(liveWindow),
-      posApi.getBlockedSlots(liveWindow),
+      posApi.getAppointments(agendaParams),
+      posApi.getBlockedSlots(agendaParams),
     ]);
 
     if (appointmentsResult.status === 'fulfilled') {
       const fresh = appointmentsResult.value;
-      setAppointments((prev) => {
-        const kept = prev.filter((appointment) => !liveDateLabels.has(appointment.date));
-        return [...kept, ...fresh];
+      setAppointments((prev) => mergeAppointmentsForDates(prev, fresh, liveDateLabels));
+      setLoadedAgendaWeekKeys((prev) => {
+        const next = new Set(prev);
+        getDefaultAgendaWeekStarts().forEach((weekStart) => {
+          next.add(getStudioWeekStartLabel(weekStart));
+        });
+        return Array.from(next);
       });
     }
 
     if (blockedSlotsResult.status === 'fulfilled') {
       const fresh = blockedSlotsResult.value;
-      setBlockedSlots((prev) => {
-        const kept = prev.filter((slot) => !liveDateLabels.has(slot.date));
-        return [...kept, ...fresh];
-      });
+      setBlockedSlots((prev) => mergeBlockedSlotsForDates(prev, fresh, liveDateLabels));
     }
 
     await refreshTicketAppointmentIds();
     setLiveSyncAt(Date.now());
+  };
+
+  const handleLoadAgendaWeek = async (weekStart: Date) => {
+    const normalizedStart = getStudioWeekStart(weekStart);
+    const weekKey = getStudioWeekStartLabel(normalizedStart);
+    if (loadedAgendaWeekKeys.includes(weekKey) || isLoadingAgendaWeek) return;
+
+    setIsLoadingAgendaWeek(true);
+    try {
+      const weekParams = {
+        weekStart: weekKey,
+        weekCount: 1,
+      };
+      const weekDateLabels = new Set(
+        buildWeekDayEntries(normalizedStart).map((day) => day.dateLabel)
+      );
+
+      const [appointmentsResult, blockedSlotsResult] = await Promise.allSettled([
+        posApi.getAppointments(weekParams),
+        posApi.getBlockedSlots(weekParams),
+      ]);
+
+      if (appointmentsResult.status === 'fulfilled') {
+        setAppointments((prev) =>
+          mergeAppointmentsForDates(prev, appointmentsResult.value, weekDateLabels)
+        );
+        setLoadedAgendaWeekKeys((prev) =>
+          prev.includes(weekKey) ? prev : [...prev, weekKey]
+        );
+      } else {
+        console.error(appointmentsResult.reason);
+      }
+
+      if (blockedSlotsResult.status === 'fulfilled') {
+        setBlockedSlots((prev) =>
+          mergeBlockedSlotsForDates(prev, blockedSlotsResult.value, weekDateLabels)
+        );
+      } else {
+        console.error(blockedSlotsResult.reason);
+      }
+    } finally {
+      setIsLoadingAgendaWeek(false);
+    }
   };
 
   const handleManualAgendaRefresh = async () => {
@@ -1737,6 +1842,9 @@ export default function POSDashboard() {
             }}
             onRefreshAgenda={handleManualAgendaRefresh}
             isRefreshingAgenda={isAgendaRefreshing}
+            loadedAgendaWeekKeys={loadedAgendaWeekKeys}
+            onLoadAgendaWeek={handleLoadAgendaWeek}
+            isLoadingAgendaWeek={isLoadingAgendaWeek}
           />
         );
       case 'caja':

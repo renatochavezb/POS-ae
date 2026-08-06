@@ -78,7 +78,9 @@ export async function PATCH(req, { params }) {
       { $set: { serviceName, cost: subtotal } }
     );
 
-    return NextResponse.json({ ticket: mapCashTicketDoc(updatedTicket) });
+    return NextResponse.json({
+      ticket: mapCashTicketDoc(updatedTicket, { includeWorkPhotos: true }),
+    });
   } catch (error) {
     console.error("PATCH /api/pos/cash-tickets/[ticketId]", error);
     return NextResponse.json(

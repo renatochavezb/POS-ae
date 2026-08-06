@@ -936,7 +936,11 @@ export const MONGO_COLLECTIONS = [
       { name: "estimatedCommission", type: "Number", key: "Comisión estimada semanal." },
       { name: "tips", type: "Number", key: "Propinas semanales." },
       { name: "salonNet", type: "Number", key: "Neto salón = grossSales − estimatedCommission − tips." },
-      { name: "salesByDay", type: "Array", key: "Por día: count, sales, commission, tips, net." },
+      {
+        name: "salesByDay",
+        type: "Array",
+        key: "Por día: count, sales, commission, tips, net, efectivo, tarjeta, transferencia, gift_card.",
+      },
       { name: "salesByStaff", type: "Array", key: "Ventas y comisión por manicurista." },
       { name: "previousWeekGrossSales", type: "Number", key: "Venta bruta semana anterior." },
       { name: "grossSalesWeekDeltaPercent", type: "Number", key: "% cambio vs semana anterior (ventas)." },

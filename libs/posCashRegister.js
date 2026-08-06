@@ -186,15 +186,46 @@ export async function getClosedCashSessions({ date, limit = 30 } = {}) {
     .limit(limit);
 }
 
+/** Montos por método; si faltan cash/card/transfer, deriva de method + total. */
+export function paymentMethodAmounts(payment = {}) {
+  const cash = Number(payment.cashAmount) || 0;
+  const card = Number(payment.cardAmount) || 0;
+  const transfer = Number(payment.transferAmount) || 0;
+  const gift = Number(payment.giftCardAmount) || 0;
+  if (cash + card + transfer + gift > 0) {
+    return { efectivo: cash, tarjeta: card, transferencia: transfer, gift_card: gift };
+  }
+
+  const total = Number(payment.total) || Number(payment.amount) || 0;
+  const method = String(payment.method || "").toLowerCase();
+  if (total <= 0) {
+    return { efectivo: 0, tarjeta: 0, transferencia: 0, gift_card: 0 };
+  }
+  if (method === "efectivo") {
+    return { efectivo: total, tarjeta: 0, transferencia: 0, gift_card: 0 };
+  }
+  if (method === "tarjeta") {
+    return { efectivo: 0, tarjeta: total, transferencia: 0, gift_card: 0 };
+  }
+  if (method === "transferencia") {
+    return { efectivo: 0, tarjeta: 0, transferencia: total, gift_card: 0 };
+  }
+  if (method === "gift_card") {
+    return { efectivo: 0, tarjeta: 0, transferencia: 0, gift_card: total };
+  }
+  return { efectivo: 0, tarjeta: 0, transferencia: 0, gift_card: 0 };
+}
+
 export function summarizePayments(payments = []) {
   return payments.reduce(
     (acc, payment) => {
+      const methods = paymentMethodAmounts(payment);
       acc.count += 1;
       acc.total += payment.total ?? 0;
-      acc.efectivo += payment.cashAmount ?? 0;
-      acc.tarjeta += payment.cardAmount ?? 0;
-      acc.transferencia += payment.transferAmount ?? 0;
-      acc.gift_card += payment.giftCardAmount ?? 0;
+      acc.efectivo += methods.efectivo;
+      acc.tarjeta += methods.tarjeta;
+      acc.transferencia += methods.transferencia;
+      acc.gift_card += methods.gift_card;
       acc.tips += payment.tip ?? 0;
       if (payment.transactionType === "gift_card_sale") {
         acc.giftCardSales += payment.amount ?? 0;

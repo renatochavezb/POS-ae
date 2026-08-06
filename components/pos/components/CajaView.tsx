@@ -264,6 +264,7 @@ export default function CajaView({
         date: date || (isManicuristaSession ? todayLabel : operationalDay),
         status: isManicuristaSession ? 'all' : 'submitted',
         staffId: isManicuristaSession ? loggedInStaffId || undefined : undefined,
+        includePhotos: true,
       });
       setCashTickets(result.tickets);
     } catch (ticketError) {
