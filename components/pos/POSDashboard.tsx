@@ -35,6 +35,7 @@ import {
   buildDayScheduleConfigForLabel,
   buildAgendaDateLabelsForWeekStarts,
   formatSpanishShortDate,
+  formatSpanishShortDateFromYmd,
   getDefaultAgendaWeekStarts,
   getStudioWeekStart,
   getStudioWeekStartLabel,
@@ -48,6 +49,7 @@ import {
   formatAppointmentTimeRange,
   resolveScheduleForDateLabel,
   buildWeekDayEntries,
+  calendarDateToYmd,
 } from './scheduleUtils';
 
 // Visual Components
@@ -530,7 +532,7 @@ export default function POSDashboard() {
   const getDefaultAgendaFetchParams = () => {
     const [previousWeekStart] = getDefaultAgendaWeekStarts();
     return {
-      weekStart: formatSpanishShortDate(previousWeekStart),
+      weekStart: formatSpanishShortDateFromYmd(calendarDateToYmd(previousWeekStart)),
       weekCount: 2,
     };
   };

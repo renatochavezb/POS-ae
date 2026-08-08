@@ -217,9 +217,9 @@ export function buildAgendaDateLabelsForWeekStarts(weekStarts: Date[]): string[]
   return labels;
 }
 
-/** Clave estable de semana = label del sábado de esa semana. */
+/** Clave estable de semana = label del sábado de esa semana (calendario civil). */
 export function getStudioWeekStartLabel(date: Date = new Date()): string {
-  return formatSpanishShortDate(getStudioWeekStart(date));
+  return formatSpanishShortDateFromYmd(calendarDateToYmd(getStudioWeekStart(date)));
 }
 
 /** Formatea minutos desde medianoche como "10:00 AM" / "6:30 PM". */

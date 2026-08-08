@@ -6,8 +6,7 @@ import PosAppointment from "@/models/PosAppointment";
 import PosStaff from "@/models/PosStaff";
 import PosClient from "@/models/PosClient";
 import PosReceptionist from "@/models/PosReceptionist";
-import { getTodaySpanishShortDate, buildSpanishDateLabelsAroundToday, buildWeekDayEntries, getStudioWeekStart, addDays } from "@/components/pos/scheduleUtils";
-import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
+import { getTodaySpanishShortDate, buildSpanishDateLabelsAroundToday, buildWeekDayEntries, getStudioWeekStartYmd, spanishShortDateToYmd, dateFromMexicoYmd, ymdAddDays } from "@/components/pos/scheduleUtils";
 import { mapReceptionistDoc } from "@/libs/posMappers";
 import { seedPosReceptionistsIfEmpty, refreshReceptionistDailyCounts } from "@/libs/posSeed";
 import { findConflictingAppointment } from "@/libs/posAppointmentConflicts";
@@ -26,18 +25,22 @@ function parseWindowParam(value, fallback) {
 function resolveDateLabelsFromRequest(req) {
   const weekStartParam = (req.nextUrl.searchParams.get("weekStart") || "").trim();
   if (weekStartParam) {
-    const parsed = parseSpanishShortDateLabel(weekStartParam);
-    if (!parsed) return null;
+    // Usar YMD civil (no getMexicoDateYMD sobre Date local): en Vercel/UTC
+    // new Date(y,m,d) a medianoche se corre un día atrás en México.
+    const weekStartYmd = spanishShortDateToYmd(weekStartParam);
+    if (!weekStartYmd) return null;
     const weekCount = Math.max(
       1,
       Math.min(8, parseWindowParam(req.nextUrl.searchParams.get("weekCount"), 1))
     );
-    const start = getStudioWeekStart(parsed);
+    const startYmd = getStudioWeekStartYmd(weekStartYmd);
     const labels = [];
     for (let index = 0; index < weekCount; index += 1) {
-      buildWeekDayEntries(addDays(start, index * 7)).forEach((day) => {
-        labels.push(day.dateLabel);
-      });
+      buildWeekDayEntries(dateFromMexicoYmd(ymdAddDays(startYmd, index * 7))).forEach(
+        (day) => {
+          labels.push(day.dateLabel);
+        }
+      );
     }
     return labels;
   }

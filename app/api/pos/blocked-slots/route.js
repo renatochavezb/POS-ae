@@ -3,8 +3,7 @@ import connectMongo from "@/libs/mongoose";
 import { requirePosSession, rejectManicuristaAgendaMutation } from "@/libs/posAuth";
 import { mapBlockedSlotDoc } from "@/libs/posMappers";
 import PosBlockedSlot from "@/models/PosBlockedSlot";
-import { buildSpanishDateLabelsAroundToday, buildWeekDayEntries, getStudioWeekStart, addDays } from "@/components/pos/scheduleUtils";
-import { parseSpanishShortDateLabel } from "@/libs/spanishDateUtils";
+import { buildSpanishDateLabelsAroundToday, buildWeekDayEntries, getStudioWeekStartYmd, spanishShortDateToYmd, dateFromMexicoYmd, ymdAddDays } from "@/components/pos/scheduleUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -17,18 +16,20 @@ function parseWindowParam(value, fallback) {
 function resolveDateLabelsFromRequest(req) {
   const weekStartParam = (req.nextUrl.searchParams.get("weekStart") || "").trim();
   if (weekStartParam) {
-    const parsed = parseSpanishShortDateLabel(weekStartParam);
-    if (!parsed) return null;
+    const weekStartYmd = spanishShortDateToYmd(weekStartParam);
+    if (!weekStartYmd) return null;
     const weekCount = Math.max(
       1,
       Math.min(8, parseWindowParam(req.nextUrl.searchParams.get("weekCount"), 1))
     );
-    const start = getStudioWeekStart(parsed);
+    const startYmd = getStudioWeekStartYmd(weekStartYmd);
     const labels = [];
     for (let index = 0; index < weekCount; index += 1) {
-      buildWeekDayEntries(addDays(start, index * 7)).forEach((day) => {
-        labels.push(day.dateLabel);
-      });
+      buildWeekDayEntries(dateFromMexicoYmd(ymdAddDays(startYmd, index * 7))).forEach(
+        (day) => {
+          labels.push(day.dateLabel);
+        }
+      );
     }
     return labels;
   }
