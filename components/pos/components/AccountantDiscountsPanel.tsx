@@ -172,7 +172,7 @@ export default function AccountantDiscountsPanel({
               {isLoading ? "—" : warrantyRows.length}
             </p>
             <p className="text-[10px] text-rose-900/70 mt-0.5">
-              Traspasos {formatMXN(warrantyTransferTotal)}
+              − original / + quien realiza · {formatMXN(warrantyTransferTotal)}
             </p>
           </div>
         </div>
@@ -303,18 +303,20 @@ export default function AccountantDiscountsPanel({
               Garantías de la semana
             </h4>
             <p className="text-[11px] text-on-surface-variant mt-1">
-              Conteo de calidad. Traspaso de comisión entre manicuristas (caja $0).
+              Caja $0. Regla fija: se <span className="font-bold text-rose-800">DESCUENTA</span> a
+              quien hizo el servicio original y se{" "}
+              <span className="font-bold text-emerald-800">SUMA</span> a quien realizó la garantía.
             </p>
           </div>
           <div className="overflow-x-auto rounded-xl border border-rose-200">
-            <table className="w-full text-left border-collapse min-w-[640px]">
+            <table className="w-full text-left border-collapse min-w-[720px]">
               <thead>
                 <tr className="bg-rose-50/80 text-[10px] text-outline font-bold uppercase tracking-widest border-b border-rose-100">
                   <th className="py-3 px-4">Fecha</th>
                   <th className="py-3 px-4">Cliente / trabajo</th>
-                  <th className="py-3 px-4">Original → realiza</th>
+                  <th className="py-3 px-4">Se DESCUENTA (−)</th>
+                  <th className="py-3 px-4">Se SUMA (+)</th>
                   <th className="py-3 px-4 text-right">Monto</th>
-                  <th className="py-3 px-4 text-right">Traspaso</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-rose-100">
@@ -341,16 +343,37 @@ export default function AccountantDiscountsPanel({
                         <p className="text-outline mt-0.5">{row.workDescription}</p>
                       </td>
                       <td className="py-3 px-4">
-                        <p className="font-bold text-primary">
-                          {row.originalStaffName || "—"}
-                          {row.sameStaff ? " (misma)" : ` → ${row.performedByStaffName || "—"}`}
-                        </p>
+                        {row.sameStaff ? (
+                          <p className="text-outline">Misma manicurista · sin traspaso</p>
+                        ) : (
+                          <>
+                            <p className="font-bold text-rose-800">
+                              − {row.originalStaffName || "—"}
+                            </p>
+                            <p className="text-[10px] text-outline mt-0.5">Servicio original</p>
+                          </>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right font-display font-black text-primary whitespace-nowrap">
-                        {formatMXN(row.serviceAmount)}
+                      <td className="py-3 px-4">
+                        {row.sameStaff ? (
+                          <p className="text-outline">—</p>
+                        ) : (
+                          <>
+                            <p className="font-bold text-emerald-800">
+                              + {row.performedByStaffName || "—"}
+                            </p>
+                            <p className="text-[10px] text-outline mt-0.5">Realizó la garantía</p>
+                          </>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-right font-display font-black text-rose-900 whitespace-nowrap">
-                        {row.sameStaff ? "—" : formatMXN(row.transferAmount)}
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        {row.sameStaff ? (
+                          <span className="font-display font-black text-outline">$0</span>
+                        ) : (
+                          <span className="font-display font-black text-primary">
+                            {formatMXN(row.transferAmount)}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))

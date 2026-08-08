@@ -114,7 +114,7 @@ export function warrantyMovementsForStaff(payments, staffId) {
       movements.push({
         ...row,
         type: "same",
-        label: "Garantía (ella misma)",
+        label: "Garantía hecha por ella misma · sin traspaso",
         amount: 0,
         signedAmount: 0,
       });
@@ -125,7 +125,7 @@ export function warrantyMovementsForStaff(payments, staffId) {
       movements.push({
         ...row,
         type: "debit",
-        label: `Garantía → ${row.performedByStaffName}`,
+        label: `Se le DESCUENTA (servicio original) · lo recibe ${row.performedByStaffName}`,
         amount: row.transferAmount,
         signedAmount: -row.transferAmount,
       });
@@ -134,7 +134,7 @@ export function warrantyMovementsForStaff(payments, staffId) {
       movements.push({
         ...row,
         type: "credit",
-        label: `Garantía ← ${row.originalStaffName}`,
+        label: `Se le SUMA (realizó la garantía) · sale de ${row.originalStaffName}`,
         amount: row.transferAmount,
         signedAmount: row.transferAmount,
       });

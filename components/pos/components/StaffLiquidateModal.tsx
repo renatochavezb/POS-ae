@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { AlertCircle, Calculator, X } from "lucide-react";
-import { Accountant, Appointment, Staff, StaffSettlement } from "../types";
+import { Accountant, Appointment, PosPayment, Staff, StaffSettlement } from "../types";
 import {
   addDays,
   formatSpanishShortDateFromYmd,
   getMexicoDateYMD,
   getStudioWeekStart,
+  ymdAddDays,
 } from "../scheduleUtils";
 import {
   buildStaffReportPeriodTitle,
@@ -17,6 +18,8 @@ import {
 import { formatMXN } from "../data";
 import posApi from "@/libs/posApi";
 import AccountantPinModal from "./AccountantPinModal";
+import { sumDiscountForPerson } from "@/libs/posPaymentDiscounts";
+import { warrantyMovementsForStaff } from "@/libs/posWarranty";
 
 type LiquidateMode = "day" | "period";
 
@@ -32,6 +35,20 @@ function openNativeDatePicker(event: MouseEvent<HTMLInputElement>) {
   } catch {
     // Algunos navegadores bloquean showPicker fuera de un gesto directo.
   }
+}
+
+function buildYmdRange(startYmd: string, endYmd: string) {
+  if (!startYmd || !endYmd) return [] as string[];
+  const labels: string[] = [];
+  let cursor = startYmd <= endYmd ? startYmd : endYmd;
+  const last = startYmd <= endYmd ? endYmd : startYmd;
+  let guard = 0;
+  while (cursor <= last && guard < 120) {
+    labels.push(cursor);
+    cursor = ymdAddDays(cursor, 1);
+    guard += 1;
+  }
+  return labels;
 }
 
 type StaffLiquidateModalProps = {
@@ -55,7 +72,9 @@ export default function StaffLiquidateModal({
 }: StaffLiquidateModalProps) {
   const [mode, setMode] = useState<LiquidateMode>("day");
   const [dayYmd, setDayYmd] = useState(() => getMexicoDateYMD(new Date()));
-  const [periodStartYmd, setPeriodStartYmd] = useState(() => getMexicoDateYMD(getStudioWeekStart(new Date())));
+  const [periodStartYmd, setPeriodStartYmd] = useState(() =>
+    getMexicoDateYMD(getStudioWeekStart(new Date()))
+  );
   const [periodEndYmd, setPeriodEndYmd] = useState(() =>
     getMexicoDateYMD(addDays(getStudioWeekStart(new Date()), 6))
   );
@@ -63,6 +82,8 @@ export default function StaffLiquidateModal({
   const [accountants, setAccountants] = useState<Accountant[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [periodPayments, setPeriodPayments] = useState<PosPayment[]>([]);
+  const [isLoadingAdjustments, setIsLoadingAdjustments] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -98,6 +119,37 @@ export default function StaffLiquidateModal({
     [mode, startLabel, endLabel]
   );
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    const ymds = buildYmdRange(startYmd, endYmd);
+
+    const load = async () => {
+      setIsLoadingAdjustments(true);
+      try {
+        const results = await Promise.all(
+          ymds.map((ymd) =>
+            posApi.getPayments({ date: formatSpanishShortDateFromYmd(ymd) })
+          )
+        );
+        if (!cancelled) {
+          setPeriodPayments(results.flatMap((result) => result.payments || []));
+        }
+      } catch (loadError) {
+        console.error(loadError);
+        if (!cancelled) setPeriodPayments([]);
+      } finally {
+        if (!cancelled) setIsLoadingAdjustments(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, startYmd, endYmd]);
+
   const previewRows = useMemo(
     () => buildStaffReportRows(appointments, staff, period),
     [appointments, staff, period]
@@ -105,7 +157,23 @@ export default function StaffLiquidateModal({
 
   const periodTitle = buildStaffReportPeriodTitle(period);
   const totalSales = previewRows.reduce((sum, row) => sum + row.cost, 0);
-  const totalCommission = previewRows.reduce((sum, row) => sum + row.commission, 0);
+  const commissionFromAppointments = previewRows.reduce(
+    (sum, row) => sum + row.commission,
+    0
+  );
+  const discountTotal = sumDiscountForPerson(periodPayments, "staff", staff.id);
+  const warrantyMovements = useMemo(
+    () => warrantyMovementsForStaff(periodPayments, staff.id),
+    [periodPayments, staff.id]
+  );
+  const warrantyNet = warrantyMovements.reduce(
+    (sum, row) => sum + (row.signedAmount || 0),
+    0
+  );
+  const amountToPay = Math.max(
+    0,
+    Math.round((commissionFromAppointments - discountTotal + warrantyNet) * 100) / 100
+  );
 
   if (!isOpen) return null;
 
@@ -168,7 +236,7 @@ export default function StaffLiquidateModal({
     return (
       <AccountantPinModal
         title="Confirmar liquidación"
-        description={`${staff.name} · ${periodTitle} · ${formatMXN(totalCommission)}`}
+        description={`${staff.name} · ${periodTitle} · a pagar ${formatMXN(amountToPay)}`}
         confirmLabel="Liquidar"
         accountants={accountants}
         defaultAccountantId="CO"
@@ -326,28 +394,101 @@ export default function StaffLiquidateModal({
             </button>
           </div>
 
-          <div className="rounded-xl border border-primary/10 bg-surface-container-low/40 p-4 space-y-2">
+          <div className="rounded-xl border border-primary/10 bg-surface-container-low/40 p-4 space-y-3">
             <div className="flex items-start gap-2">
               <Calculator className="w-4 h-4 text-secondary shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-primary">{periodTitle}</p>
                 <p className="text-[11px] text-outline mt-1">
-                  {previewRows.length} cita{previewRows.length === 1 ? "" : "s"} · Bruto{" "}
-                  {formatMXN(totalSales)} · A pagar {formatMXN(totalCommission)}
+                  {previewRows.length} cita{previewRows.length === 1 ? "" : "s"} · ventas{" "}
+                  {formatMXN(totalSales)}
+                  {isLoadingAdjustments ? " · cargando ajustes…" : ""}
                 </p>
               </div>
             </div>
+
+            <div className="space-y-1.5 text-xs border-t border-primary/10 pt-3">
+              <div className="flex justify-between gap-3">
+                <span className="text-outline">Comisión de citas</span>
+                <span className="font-mono font-bold text-primary">
+                  {formatMXN(commissionFromAppointments)}
+                </span>
+              </div>
+              {discountTotal > 0 ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-amber-900 font-bold">− Descuentos de comisión</span>
+                  <span className="font-mono font-bold text-amber-900">
+                    −{formatMXN(discountTotal)}
+                  </span>
+                </div>
+              ) : null}
+              {warrantyMovements.map((row, index) => (
+                <div
+                  key={`${row.paymentId}-${row.type}-${index}`}
+                  className="rounded-lg bg-white/70 border border-rose-100 px-2.5 py-2 space-y-0.5"
+                >
+                  <div className="flex justify-between gap-3">
+                    <span
+                      className={`font-bold ${
+                        row.signedAmount < 0
+                          ? "text-rose-800"
+                          : row.signedAmount > 0
+                            ? "text-emerald-800"
+                            : "text-outline"
+                      }`}
+                    >
+                      {row.signedAmount < 0
+                        ? "− Garantía (se le quita)"
+                        : row.signedAmount > 0
+                          ? "+ Garantía (se le suma)"
+                          : "Garantía (sin traspaso)"}
+                    </span>
+                    <span
+                      className={`font-mono font-bold shrink-0 ${
+                        row.signedAmount < 0
+                          ? "text-rose-800"
+                          : row.signedAmount > 0
+                            ? "text-emerald-800"
+                            : "text-outline"
+                      }`}
+                    >
+                      {row.signedAmount === 0
+                        ? formatMXN(0)
+                        : `${row.signedAmount > 0 ? "+" : "−"}${formatMXN(Math.abs(row.signedAmount))}`}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-outline leading-snug">
+                    {row.clientName || "Cliente"} · {row.workDescription}
+                    {!row.sameStaff
+                      ? row.signedAmount < 0
+                        ? ` · original ${staff.name}, realizó ${row.performedByStaffName}`
+                        : ` · realizó ${staff.name}, original ${row.originalStaffName}`
+                      : null}
+                  </p>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3 pt-2 border-t border-primary/10">
+                <span className="font-bold text-primary uppercase tracking-wider text-[10px]">
+                  Total a pagar
+                </span>
+                <span className="font-display text-lg font-extrabold text-secondary">
+                  {formatMXN(amountToPay)}
+                </span>
+              </div>
+            </div>
+
             <p className="text-[10px] text-outline leading-relaxed">
-              Al confirmar se guardará en MongoDB la fecha de liquidación, el periodo y el monto
-              pagado. Se solicitará la clave de contabilidad.
+              Regla de garantía: a quien inició el trabajo se le <strong>quita</strong>; a quien lo
+              terminó (realizó la garantía) se le <strong>suma</strong>. Este total es el que se
+              guarda al liquidar.
             </p>
           </div>
 
-          {previewRows.length === 0 ? (
+          {previewRows.length === 0 && warrantyMovements.length === 0 ? (
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              No hay citas terminadas en este periodo. Puedes continuar para registrar liquidación en
-              cero o cambiar las fechas.
+              No hay citas terminadas ni garantías en este periodo. Puedes continuar para registrar
+              liquidación en cero o cambiar las fechas.
             </div>
           ) : null}
 
@@ -369,7 +510,7 @@ export default function StaffLiquidateModal({
             <button
               type="button"
               onClick={handleContinueToPin}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoadingAdjustments}
               className="px-4 py-2 rounded-lg text-xs font-sans font-bold uppercase tracking-wider bg-primary text-on-primary hover:bg-primary-container disabled:opacity-40"
             >
               {isSubmitting ? "Registrando..." : loggedInAccountant ? "Liquidar" : "Continuar"}

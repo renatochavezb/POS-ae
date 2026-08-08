@@ -592,7 +592,8 @@ export default function StaffAnalyticsView({
             <div>
               <h3 className="font-display text-lg font-bold text-primary">Garantías</h3>
               <p className="text-xs text-on-surface-variant mt-1">
-                {weekWarrantyCount} esta semana · calidad del trabajo · {weekRangeLabel}
+                {weekWarrantyCount} esta semana · se descuenta a quien inició, se suma a quien
+                realizó · {weekRangeLabel}
               </p>
             </div>
             <p
