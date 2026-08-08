@@ -587,12 +587,13 @@ export default function POSDashboard() {
     }
 
     if (results[1].status === 'fulfilled') {
+      const freshAppointments = results[1].value;
       if (options?.silent) {
         const liveDateLabels = new Set(
           buildAgendaDateLabelsForWeekStarts(getDefaultAgendaWeekStarts())
         );
         setAppointments((prev) =>
-          mergeAppointmentsForDates(prev, results[1].value, liveDateLabels)
+          mergeAppointmentsForDates(prev, freshAppointments, liveDateLabels)
         );
         setLoadedAgendaWeekKeys((prev) => {
           const next = new Set(prev);
@@ -602,7 +603,7 @@ export default function POSDashboard() {
           return Array.from(next);
         });
       } else {
-        setAppointments(results[1].value);
+        setAppointments(freshAppointments);
         markDefaultAgendaWeeksLoaded();
       }
     } else {
@@ -611,15 +612,16 @@ export default function POSDashboard() {
     }
 
     if (results[2].status === 'fulfilled') {
+      const freshBlockedSlots = results[2].value;
       if (options?.silent) {
         const liveDateLabels = new Set(
           buildAgendaDateLabelsForWeekStarts(getDefaultAgendaWeekStarts())
         );
         setBlockedSlots((prev) =>
-          mergeBlockedSlotsForDates(prev, results[2].value, liveDateLabels)
+          mergeBlockedSlotsForDates(prev, freshBlockedSlots, liveDateLabels)
         );
       } else {
-        setBlockedSlots(results[2].value);
+        setBlockedSlots(freshBlockedSlots);
       }
     } else {
       failedSections.push('cierres de horario');
