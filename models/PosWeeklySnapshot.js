@@ -151,6 +151,15 @@ const posWeeklySnapshotSchema = mongoose.Schema(
       type: [cutReceptionistSchema],
       default: [],
     },
+    servicesByCount: {
+      type: [
+        {
+          serviceName: { type: String, default: "", trim: true },
+          count: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
+    },
     computedAt: {
       type: Date,
       default: Date.now,

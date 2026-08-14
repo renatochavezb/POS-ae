@@ -77,6 +77,33 @@ function snapshotMissingStaffTips(snapshot) {
   return staffTips <= 0;
 }
 
+function snapshotMissingServices(snapshot) {
+  const completed = Number(snapshot?.completedAppointmentsCount) || 0;
+  if (completed <= 0) return false;
+  return !Array.isArray(snapshot?.servicesByCount) || snapshot.servicesByCount.length === 0;
+}
+
+function splitServiceNames(serviceName) {
+  const trimmed = String(serviceName || "").trim();
+  if (!trimmed) return [];
+  if (!trimmed.includes(" + ")) return [trimmed];
+  return trimmed.split(" + ").map((part) => part.trim()).filter(Boolean);
+}
+
+function countServicesFromAppointments(appointments = []) {
+  const map = new Map();
+  for (const appointment of appointments) {
+    for (const name of splitServiceNames(appointment.serviceName)) {
+      const current = map.get(name) || { serviceName: name, count: 0 };
+      current.count += 1;
+      map.set(name, current);
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => b.count - a.count || a.serviceName.localeCompare(b.serviceName)
+  );
+}
+
 function buildCommissionMap(staffMembers = []) {
   return new Map(
     staffMembers.map((member) => [
@@ -116,7 +143,7 @@ async function loadWeekContext(weekStartDateLabel) {
 
   const [appointments, payments, cashSessions, staffMembers] = await Promise.all([
     PosAppointment.find({ date: { $in: dateLabels } }).select(
-      "date staffId staffName cost status"
+      "date staffId staffName cost status serviceName"
     ),
     PosPayment.find({ appointmentDate: { $in: dateLabels } }).select(
       "appointmentDate tip staffId staffName method total amount cashAmount cardAmount transferAmount giftCardAmount"
@@ -367,6 +394,7 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
   const cutsByReceptionist = [...cutsByReceptionistMap.values()].sort(
     (a, b) => b.total - a.total || a.name.localeCompare(b.name)
   );
+  const servicesByCount = countServicesFromAppointments(completedAppointments);
 
   return {
     weekStartDate: context.weekStartDateLabel,
@@ -404,6 +432,7 @@ export async function computeWeeklyStatsForWeekStart(weekStartDateLabel) {
     ),
     cutsByTurn,
     cutsByReceptionist,
+    servicesByCount,
     computedAt: new Date(),
   };
 }
@@ -435,7 +464,7 @@ export async function getWeeklySnapshotForWeekStart(weekStartDateLabel, { refres
   if (snapshot) {
     const plain = snapshot.toObject();
     // Recomputar si faltan propinas por manicurista (snapshots viejos) o tip día a día.
-    if (snapshotMissingStaffTips(plain)) {
+    if (snapshotMissingStaffTips(plain) || snapshotMissingServices(plain)) {
       return upsertWeeklySnapshot(resolved);
     }
     return plain;
@@ -448,13 +477,50 @@ export async function getAllWeeklySnapshots() {
   const currentWeekStartYmd = weekStartYmdOrNull(resolveWeekStartDateLabel(""));
   const docs = await PosWeeklySnapshot.find({}).lean();
 
-  return docs
+  const usable = docs
     .filter((doc) => isUsableWeeklySnapshotDoc(doc, currentWeekStartYmd))
     .sort((a, b) => {
       const da = parseSpanishShortDateLabel(a.weekStartDate);
       const db = parseSpanishShortDateLabel(b.weekStartDate);
       return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
     });
+
+  const missing = usable.filter(snapshotMissingServices);
+  if (missing.length === 0) return usable;
+
+  const dateLabels = [
+    ...new Set(
+      missing.flatMap((snap) =>
+        [...(snap.completedByDay || []), ...(snap.salesByDay || [])]
+          .map((day) => day.dateLabel)
+          .filter(Boolean)
+      )
+    ),
+  ];
+
+  if (dateLabels.length === 0) return usable;
+
+  const appointments = await PosAppointment.find({
+    date: { $in: dateLabels },
+  }).select("date serviceName status");
+  const completed = appointments.filter((appointment) =>
+    isAppointmentPaid(appointment.status)
+  );
+
+  return usable.map((snap) => {
+    if (!snapshotMissingServices(snap)) return snap;
+    const weekDates = new Set(
+      [...(snap.completedByDay || []), ...(snap.salesByDay || [])]
+        .map((day) => day.dateLabel)
+        .filter(Boolean)
+    );
+    return {
+      ...snap,
+      servicesByCount: countServicesFromAppointments(
+        completed.filter((appointment) => weekDates.has(appointment.date))
+      ),
+    };
+  });
 }
 
 /** Elimina semanas no canónicas (p. ej. jue–mié) y semanas futuras vacías. */

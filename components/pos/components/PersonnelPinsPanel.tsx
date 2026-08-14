@@ -6,7 +6,7 @@ import posApi from "@/libs/posApi";
 import MasterPinModal from "./MasterPinModal";
 
 type PinPerson = {
-  role: "staff" | "reception" | "accountant" | "master";
+  role: "staff" | "reception" | "accountant" | "marketing" | "master";
   id: string;
   name: string;
   subtitle: string;
@@ -95,6 +95,7 @@ export default function PersonnelPinsPanel() {
         ...data.receptionists,
         ...data.staff,
         ...data.accountants,
+        ...(data.marketingAgencies || []),
       ];
       setPeople(rows);
       const nextDrafts: DraftMap = {};
@@ -170,6 +171,7 @@ export default function PersonnelPinsPanel() {
   const receptionists = people.filter((p) => p.role === "reception");
   const staff = people.filter((p) => p.role === "staff");
   const accountants = people.filter((p) => p.role === "accountant");
+  const marketingAgencies = people.filter((p) => p.role === "marketing");
   const master = people.filter((p) => p.role === "master");
 
   return (
@@ -232,6 +234,15 @@ export default function PersonnelPinsPanel() {
             <PinGroup
               title="Contabilidad"
               people={accountants}
+              drafts={drafts}
+              showCodes={showCodes}
+              onDraftChange={(key, value) =>
+                setDrafts((prev) => ({ ...prev, [key]: value }))
+              }
+            />
+            <PinGroup
+              title="Mercadotecnia / Agencia"
+              people={marketingAgencies}
               drafts={drafts}
               showCodes={showCodes}
               onDraftChange={(key, value) =>

@@ -83,6 +83,16 @@ export interface Accountant {
   isActive?: boolean;
 }
 
+export interface MarketingAgency {
+  id: string;
+  name: string;
+  role: string;
+  loginCode?: string;
+  email?: string;
+  phone?: string;
+  isActive?: boolean;
+}
+
 export interface StaffSettlementAppointmentSnapshot {
   appointmentCode: string;
   date: string;
@@ -291,6 +301,11 @@ export interface WeeklyCutReceptionist {
   total: number;
 }
 
+export interface WeeklyServiceBreakdown {
+  serviceName: string;
+  count: number;
+}
+
 export interface WeeklyStats {
   weekStartDate: string;
   weekEndDate: string;
@@ -315,6 +330,7 @@ export interface WeeklyStats {
   cutsTotalTransferencia: number;
   cutsByTurn: WeeklyCutTurn[];
   cutsByReceptionist: WeeklyCutReceptionist[];
+  servicesByCount?: WeeklyServiceBreakdown[];
   computedAt: string;
   updatedAt: string;
 }

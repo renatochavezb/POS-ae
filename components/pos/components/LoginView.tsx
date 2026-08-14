@@ -1,21 +1,28 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle, Calculator, KeyRound } from "lucide-react";
-import { Staff, Receptionist, Accountant } from "../types";
-import { INITIAL_RECEPTIONISTS, INITIAL_STAFF, INITIAL_ACCOUNTANTS } from "../data";
+import { Users, ShieldCheck, ArrowLeft, Check, AlertCircle, Calculator, KeyRound, Megaphone } from "lucide-react";
+import { Staff, Receptionist, Accountant, MarketingAgency } from "../types";
+import {
+  INITIAL_RECEPTIONISTS,
+  INITIAL_STAFF,
+  INITIAL_ACCOUNTANTS,
+  INITIAL_MARKETING_AGENCIES,
+} from "../data";
 import posApi from "@/libs/posApi";
 import StudioLogo from "./StudioLogo";
 import NumericKeypad from "./NumericKeypad";
 
 interface LoginViewProps {
   onLogin: (
-    role: "reception" | "manicurista" | "accountant",
+    role: "reception" | "manicurista" | "accountant" | "marketing",
     staffId?: string,
     receptionistId?: string,
     isMaster?: boolean,
     accountantId?: string,
-    accountantName?: string
+    accountantName?: string,
+    agencyId?: string,
+    agencyName?: string
   ) => void;
 }
 
@@ -28,14 +35,18 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     | "staff_pin"
     | "accountant_select"
     | "accountant_pin"
+    | "marketing_select"
+    | "marketing_pin"
     | "admin_pin"
   >("select");
   const [receptionists, setReceptionists] = useState<Receptionist[]>(INITIAL_RECEPTIONISTS);
   const [staffList, setStaffList] = useState<Staff[]>(INITIAL_STAFF);
   const [accountants, setAccountants] = useState<Accountant[]>(INITIAL_ACCOUNTANTS);
+  const [agencies, setAgencies] = useState<MarketingAgency[]>(INITIAL_MARKETING_AGENCIES);
   const [selectedReceptionist, setSelectedReceptionist] = useState<Receptionist | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [selectedAccountant, setSelectedAccountant] = useState<Accountant | null>(null);
+  const [selectedAgency, setSelectedAgency] = useState<MarketingAgency | null>(null);
   const [pin, setPin] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
@@ -45,12 +56,20 @@ export default function LoginView({ onLogin }: LoginViewProps) {
   useEffect(() => {
     posApi
       .getLoginBootstrap()
-      .then(({ receptionists: nextReceptionists, staff, accountants: nextAccountants }) => {
-        if (nextReceptionists.length > 0) setReceptionists(nextReceptionists);
-        if (staff.length > 0) setStaffList(staff);
-        if (nextAccountants?.length > 0) setAccountants(nextAccountants);
-        setBootstrapError(null);
-      })
+      .then(
+        ({
+          receptionists: nextReceptionists,
+          staff,
+          accountants: nextAccountants,
+          marketingAgencies: nextAgencies,
+        }) => {
+          if (nextReceptionists.length > 0) setReceptionists(nextReceptionists);
+          if (staff.length > 0) setStaffList(staff);
+          if (nextAccountants?.length > 0) setAccountants(nextAccountants);
+          if (nextAgencies?.length > 0) setAgencies(nextAgencies);
+          setBootstrapError(null);
+        }
+      )
       .catch((bootstrapErr) => {
         console.error(bootstrapErr);
         setBootstrapError("No se pudo conectar con la base de datos. Usando datos locales.");
@@ -78,6 +97,13 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     setViewState("accountant_select");
   };
 
+  const handleMarketingClick = () => {
+    setSelectedAgency(null);
+    setPin("");
+    setError(null);
+    setViewState("marketing_select");
+  };
+
   const handleAdminClick = () => {
     setPin("");
     setError(null);
@@ -89,6 +115,13 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     setPin("");
     setError(null);
     setViewState("accountant_pin");
+  };
+
+  const handleAgencySelect = (agency: MarketingAgency) => {
+    setSelectedAgency(agency);
+    setPin("");
+    setError(null);
+    setViewState("marketing_pin");
   };
 
   const handleReceptionistSelect = (receptionist: Receptionist) => {
@@ -211,11 +244,48 @@ export default function LoginView({ onLogin }: LoginViewProps) {
       } finally {
         setIsVerifying(false);
       }
+    } else if (viewState === "marketing_pin" && selectedAgency) {
+      setIsVerifying(true);
+      try {
+        const result = await posApi.verifyLogin({
+          role: "marketing",
+          userId: selectedAgency.id,
+          pin,
+        });
+
+        setSuccess(true);
+        setTimeout(
+          () =>
+            onLogin(
+              "marketing",
+              undefined,
+              undefined,
+              result.isMaster,
+              undefined,
+              undefined,
+              result.userId,
+              result.userName
+            ),
+          800
+        );
+      } catch (verifyError) {
+        setError(
+          verifyError instanceof Error ? verifyError.message : "PIN incorrecto. Intenta de nuevo."
+        );
+        setPin("");
+      } finally {
+        setIsVerifying(false);
+      }
     }
   };
 
   const handlePinBack = (
-    target: "select" | "reception_select" | "staff_select" | "accountant_select"
+    target:
+      | "select"
+      | "reception_select"
+      | "staff_select"
+      | "accountant_select"
+      | "marketing_select"
   ) => {
     setPin("");
     setError(null);
@@ -226,15 +296,19 @@ export default function LoginView({ onLogin }: LoginViewProps) {
     viewState === "reception_pin" ||
     viewState === "staff_pin" ||
     viewState === "accountant_pin" ||
+    viewState === "marketing_pin" ||
     viewState === "admin_pin";
 
   const isListView =
     viewState === "reception_select" ||
     viewState === "staff_select" ||
-    viewState === "accountant_select";
+    viewState === "accountant_select" ||
+    viewState === "marketing_select";
+
+  const isSelectView = viewState === "select";
 
   return (
-    <div className={`pos-theme fixed inset-0 min-h-[100dvh] bg-[#00261b] z-[9999] flex flex-col items-center overflow-y-auto overscroll-contain px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 font-sans ${isListView ? "justify-start" : "justify-center"}`}>
+    <div className={`pos-theme fixed inset-0 min-h-[100dvh] bg-[#00261b] z-[9999] flex flex-col items-center overflow-y-auto overscroll-contain px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 font-sans ${isListView || isSelectView ? "justify-start" : "justify-center"}`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(254,214,91,0.06),transparent_60%)] pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(254,214,91,0.04),transparent_60%)] pointer-events-none" />
 
@@ -270,14 +344,14 @@ export default function LoginView({ onLogin }: LoginViewProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 gap-3">
               <button
                 onClick={handleReceptionClick}
-                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+                className="w-full p-3 sm:p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
-                    <ShieldCheck className="w-6 h-6" />
+                  <div className="w-11 h-11 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div>
                     <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
@@ -291,11 +365,11 @@ export default function LoginView({ onLogin }: LoginViewProps) {
 
               <button
                 onClick={handleAdminClick}
-                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+                className="w-full p-3 sm:p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
-                    <KeyRound className="w-6 h-6" />
+                  <div className="w-11 h-11 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <KeyRound className="w-5 h-5" />
                   </div>
                   <div>
                     <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
@@ -309,11 +383,11 @@ export default function LoginView({ onLogin }: LoginViewProps) {
 
               <button
                 onClick={handleStaffClick}
-                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+                className="w-full p-3 sm:p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
-                    <Users className="w-6 h-6" />
+                  <div className="w-11 h-11 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <Users className="w-5 h-5" />
                   </div>
                   <div>
                     <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
@@ -327,17 +401,35 @@ export default function LoginView({ onLogin }: LoginViewProps) {
 
               <button
                 onClick={handleAccountantClick}
-                className="w-full p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+                className="w-full p-3 sm:p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
-                    <Calculator className="w-6 h-6" />
+                  <div className="w-11 h-11 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <Calculator className="w-5 h-5" />
                   </div>
                   <div>
                     <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
                       Contabilidad
                     </h4>
                     <p className="text-white/40 text-[11px]">Liquidaciones del equipo</p>
+                  </div>
+                </div>
+                <div className="text-[#e5c158]">→</div>
+              </button>
+
+              <button
+                onClick={handleMarketingClick}
+                className="w-full p-3 sm:p-4 rounded-2xl bg-[#00261b] border border-[#e5c158]/10 hover:border-[#e5c158]/40 transition-all text-left flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-[#e5c158]/5 border border-[#e5c158]/20 flex items-center justify-center text-[#e5c158]">
+                    <Megaphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-sans text-sm font-extrabold text-[#e5c158] uppercase tracking-wider">
+                      Agencia / Mercadotecnia
+                    </h4>
+                    <p className="text-white/40 text-[11px]">Citas finalizadas y agenda (solo lectura)</p>
                   </div>
                 </div>
                 <div className="text-[#e5c158]">→</div>
@@ -479,6 +571,54 @@ export default function LoginView({ onLogin }: LoginViewProps) {
             isVerifying={isVerifying}
             submitLabel="Validar"
             onBack={() => handlePinBack("accountant_select")}
+            onPinChange={handlePinChange}
+            onSubmit={handlePinSubmit}
+          />
+        )}
+
+        {viewState === "marketing_select" && (
+          <div className="w-full space-y-6">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewState("select")}
+                className="p-1.5 rounded-full text-[#e5c158] border border-[#e5c158]/10"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <h3 className="font-display text-lg text-[#e5c158] font-bold">Selecciona Agencia</h3>
+            </div>
+            <div className="space-y-2">
+              {agencies.map((agency) => (
+                <button
+                  key={agency.id}
+                  onClick={() => handleAgencySelect(agency)}
+                  className="w-full p-3 rounded-xl bg-[#00261b] border border-[#e5c158]/5 hover:border-[#e5c158]/20 flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-[10px] font-bold border border-[#e5c158]/20 text-[#e5c158] bg-[#e5c158]/5">
+                      {agency.id}
+                    </div>
+                    <div>
+                      <h4 className="font-sans text-xs font-bold text-[#e5c158]">{agency.name}</h4>
+                      <p className="text-white/40 text-[10px] uppercase font-semibold">{agency.role}</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-[#e5c158]/5 text-[#e5c158] text-[9px] font-bold">INGRESAR</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {viewState === "marketing_pin" && selectedAgency && (
+          <PinEntryScreen
+            key={`marketing-${selectedAgency.id}`}
+            personName={selectedAgency.name}
+            pin={pin}
+            error={error}
+            isVerifying={isVerifying}
+            submitLabel="Validar"
+            onBack={() => handlePinBack("marketing_select")}
             onPinChange={handlePinChange}
             onSubmit={handlePinSubmit}
           />

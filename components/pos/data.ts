@@ -1,4 +1,4 @@
-import { Client, Staff, Appointment, Service, ServiceCategory, StaffBlockedSlot, Receptionist, Accountant } from './types';
+import { Client, Staff, Appointment, Service, ServiceCategory, StaffBlockedSlot, Receptionist, Accountant, MarketingAgency } from './types';
 import { STAFF_COLOR_PALETTE, STAFF_CATALOG_TEMPLATE_BY_ROLE } from './staffColors';
 
 const SERVICE_IMAGE =
@@ -417,6 +417,18 @@ export const INITIAL_ACCOUNTANTS: Accountant[] = [
     role: 'Contabilidad',
     loginCode: '4001',
     email: 'contabilidad@ae.studioo',
+    phone: '',
+  },
+];
+
+/** Agencia externa: acceso limitado al dashboard (sin KPIs todavía). PIN aleatorio inicial. */
+export const INITIAL_MARKETING_AGENCIES: MarketingAgency[] = [
+  {
+    id: 'AG',
+    name: 'Agencia',
+    role: 'Mercadotecnia',
+    loginCode: '6291',
+    email: 'agencia@ae.studioo',
     phone: '',
   },
 ];

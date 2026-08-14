@@ -10,6 +10,7 @@ import {
   LineChart,
   Users,
   UserRoundSearch,
+  Sparkles,
 } from "lucide-react";
 
 export type DashboardSectionId =
@@ -21,6 +22,7 @@ export type DashboardSectionId =
   | "citas-semana"
   | "comparativo-semanal"
   | "historico-semanal"
+  | "servicios-recurrentes"
   | "ranking-manicuristas"
   | "historico-manicurista";
 
@@ -40,6 +42,7 @@ export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = [
   { id: "citas-semana", label: "Citas de la semana", icon: CalendarDays },
   { id: "comparativo-semanal", label: "Comparativo semanal", icon: GitCompareArrows },
   { id: "historico-semanal", label: "Histórico semanal", icon: LineChart },
+  { id: "servicios-recurrentes", label: "Servicios recurrentes", icon: Sparkles },
   { id: "ranking-manicuristas", label: "Ranking de manicuristas", icon: Users },
   { id: "historico-manicurista", label: "Histórico por manicurista", icon: UserRoundSearch },
 ];

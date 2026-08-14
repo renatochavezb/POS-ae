@@ -44,6 +44,7 @@ import WeeklyCutsCard from './WeeklyCutsCard';
 import WeeklyTipsCard from './WeeklyTipsCard';
 import WeeklyWeekComparisonCard from './WeeklyWeekComparisonCard';
 import WeeklyHistoryTrendCard from './WeeklyHistoryTrendCard';
+import WeeklyServicesRecurrenceCard from './WeeklyServicesRecurrenceCard';
 import StaffPerformanceBoard from './StaffPerformanceBoard';
 import CabinOccupancyCard from './CabinOccupancyCard';
 import SendToCajaModal from './SendToCajaModal';
@@ -87,6 +88,8 @@ interface DashboardViewProps {
   scrollToken?: number;
   onRefreshData?: () => void | Promise<void>;
   isRefreshingData?: boolean;
+  /** Agencia de mercadotecnia: shell del dashboard sin KPIs ni acciones operativas. */
+  hideKpis?: boolean;
 }
 
 function matchesStaffFilter(staffId: string, selectedStaffIds: string[]) {
@@ -116,6 +119,7 @@ export default function DashboardView({
   scrollToken = 0,
   onRefreshData,
   isRefreshingData = false,
+  hideKpis = false,
 }: DashboardViewProps) {
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [selectedReportStatusIds, setSelectedReportStatusIds] = useState<string[]>([]);
@@ -142,6 +146,12 @@ export default function DashboardView({
   const viewingCurrentWeek = isCurrentWeek(weekStart);
 
   useEffect(() => {
+    if (!hideKpis) return;
+    setSelectedStaffIds([]);
+    setSelectedReportStatusIds([]);
+  }, [hideKpis]);
+
+  useEffect(() => {
     if (!scrollToSection) return;
     const timer = window.setTimeout(() => {
       const el = document.getElementById(dashboardSectionDomId(scrollToSection));
@@ -153,6 +163,13 @@ export default function DashboardView({
   }, [scrollToSection, scrollToken]);
 
   useEffect(() => {
+    if (hideKpis) {
+      setWeekTickets([]);
+      setWeekPayments([]);
+      setIsLoadingCajaBoard(false);
+      return;
+    }
+
     let cancelled = false;
 
     const loadCajaBoard = async () => {
@@ -188,7 +205,7 @@ export default function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [weekDays, cajaRefreshKey]);
+  }, [weekDays, cajaRefreshKey, hideKpis]);
 
   const appointmentById = useMemo(
     () => new Map(appointments.map((appointment) => [appointment.id, appointment])),
@@ -807,13 +824,15 @@ export default function DashboardView({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-secondary font-sans text-xs font-bold tracking-widest uppercase">
-            Panel Ejecutivo
+            {hideKpis ? 'Vista agencia' : 'Panel Ejecutivo'}
           </span>
           <h2 className="font-display text-3xl font-bold text-primary mt-1">
-            Gestión Operativa
+            {hideKpis ? 'Dashboard Mercadotecnia' : 'Gestión Operativa'}
           </h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            Control diario del salón. Usa Actualizar si otra pantalla acaba de cambiar citas.
+            {hideKpis
+              ? 'Consulta de citas finalizadas, agenda, comparativo e histórico (solo citas).'
+              : 'Control diario del salón. Usa Actualizar si otra pantalla acaba de cambiar citas.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -828,24 +847,38 @@ export default function DashboardView({
               <span>{isRefreshingData ? 'Actualizando…' : 'Actualizar'}</span>
             </button>
           ) : null}
-          <button
-            onClick={onOpenNewClient}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors"
-          >
-            <UserPlus className="w-4 h-4 text-secondary" />
-            <span>Registrar Cliente</span>
-          </button>
-          <button
-            onClick={onOpenNewAppointment}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-all shadow-sm shadow-primary/10"
-          >
-            <Plus className="w-4 h-4 text-secondary" />
-            <span>Nueva Cita</span>
-          </button>
+          {!hideKpis ? (
+            <>
+              <button
+                onClick={onOpenNewClient}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-primary/10 text-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low transition-colors"
+              >
+                <UserPlus className="w-4 h-4 text-secondary" />
+                <span>Registrar Cliente</span>
+              </button>
+              <button
+                onClick={onOpenNewAppointment}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-on-primary font-sans text-xs font-bold uppercase tracking-wider hover:bg-primary-container transition-all shadow-sm shadow-primary/10"
+              >
+                <Plus className="w-4 h-4 text-secondary" />
+                <span>Nueva Cita</span>
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-2 gap-6 items-stretch">
+      {hideKpis ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+          <div
+            id={dashboardSectionDomId('citas-finalizadas')}
+            className="h-full min-h-0 scroll-mt-4"
+          >
+            <WeeklyCompletedAppointmentsCard />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-2 gap-6 items-stretch">
         <div
           id={dashboardSectionDomId('citas-finalizadas')}
           className="h-full min-h-0 scroll-mt-4"
@@ -884,6 +917,7 @@ export default function DashboardView({
           <WeeklyTipsCard />
         </div>
       </div>
+      )}
 
       <section
         id={dashboardSectionDomId('citas-semana')}
@@ -896,7 +930,9 @@ export default function DashboardView({
                 Citas de la semana
               </h3>
               <p className="text-xs text-outline mt-1">
-                Agenda y caja · sábado a viernes
+                {hideKpis
+                  ? 'Solo lectura · agendado, confirmado y terminado · sábado a viernes'
+                  : 'Agenda y caja · sábado a viernes'}
               </p>
             </div>
 
@@ -948,94 +984,114 @@ export default function DashboardView({
             >
               Todas
             </button>
-            {operationalStaff.map((staff) => {
-              const selected = selectedStaffIds.includes(staff.id);
-              return (
+            {!hideKpis
+              ? operationalStaff.map((staff) => {
+                  const selected = selectedStaffIds.includes(staff.id);
+                  return (
+                    <button
+                      key={staff.id}
+                      type="button"
+                      onClick={() => toggleStaff(staff.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-colors ${
+                        selected
+                          ? 'bg-primary text-on-primary border-primary'
+                          : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
+                      }`}
+                    >
+                      {selected ? <CheckCircle2 className="w-3 h-3" /> : null}
+                      {staff.name}
+                    </button>
+                  );
+                })
+              : null}
+          </div>
+
+          {!hideKpis ? (
+            <div className="pt-4 border-t border-primary/5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-secondary" />
+                  <h4 className="font-display font-bold text-sm text-primary">
+                    Generar reportes
+                  </h4>
+                </div>
                 <button
-                  key={staff.id}
                   type="button"
-                  onClick={() => toggleStaff(staff.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-colors ${
-                    selected
+                  onClick={handleGenerateReport}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary font-sans text-[10px] font-bold uppercase tracking-wider hover:bg-primary-container transition-colors shadow-sm shadow-primary/10 self-start sm:self-auto"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-secondary" />
+                  Descargar Excel ({reportRowCount})
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedReportStatusIds([])}
+                  className={`px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    selectedReportStatusIds.length === 0
                       ? 'bg-primary text-on-primary border-primary'
                       : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
                   }`}
                 >
-                  {selected ? <CheckCircle2 className="w-3 h-3" /> : null}
-                  {staff.name}
+                  Todos
                 </button>
-              );
-            })}
-          </div>
-
-          <div className="pt-4 border-t border-primary/5 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-secondary" />
-                <h4 className="font-display font-bold text-sm text-primary">
-                  Generar reportes
-                </h4>
+                {reportStatusOptions.map((option) => {
+                  const selected = selectedReportStatusIds.includes(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => toggleReportStatus(option.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-colors ${
+                        selected
+                          ? 'bg-primary text-on-primary border-primary'
+                          : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${option.accent}`} />
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
-              <button
-                type="button"
-                onClick={handleGenerateReport}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary font-sans text-[10px] font-bold uppercase tracking-wider hover:bg-primary-container transition-colors shadow-sm shadow-primary/10 self-start sm:self-auto"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-secondary" />
-                Descargar Excel ({reportRowCount})
-              </button>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedReportStatusIds([])}
-                className={`px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                  selectedReportStatusIds.length === 0
-                    ? 'bg-primary text-on-primary border-primary'
-                    : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
-                }`}
-              >
-                Todos
-              </button>
-              {reportStatusOptions.map((option) => {
-                const selected = selectedReportStatusIds.includes(option.id);
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => toggleReportStatus(option.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-colors ${
-                      selected
-                        ? 'bg-primary text-on-primary border-primary'
-                        : 'bg-surface text-primary border-primary/10 hover:bg-surface-container-low'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${option.accent}`} />
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          ) : null}
         </div>
 
         {renderColumnGrid(agendaStatusColumns)}
 
-        <div className="px-5 py-3 border-y border-primary/5 bg-surface-container-low/40">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-outline">
-            Flujo de caja
-          </p>
-        </div>
+        {!hideKpis ? (
+          <>
+            <div className="px-5 py-3 border-y border-primary/5 bg-surface-container-low/40">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-outline">
+                Flujo de caja
+              </p>
+            </div>
 
-        {renderColumnGrid(cajaStatusColumns)}
+            {renderColumnGrid(cajaStatusColumns)}
+          </>
+        ) : null}
       </section>
 
-      <WeeklyWeekComparisonCard />
+      {!hideKpis ? (
+        <>
+          <WeeklyWeekComparisonCard />
 
-      <WeeklyHistoryTrendCard />
+          <WeeklyHistoryTrendCard />
 
-      <StaffPerformanceBoard />
+          <WeeklyServicesRecurrenceCard />
+
+          <StaffPerformanceBoard />
+        </>
+      ) : (
+        <>
+          <WeeklyWeekComparisonCard citasOnly />
+          <WeeklyHistoryTrendCard citasOnly />
+          <WeeklyServicesRecurrenceCard />
+        </>
+      )}
 
       {sendToCajaAppointment ? (
         <SendToCajaModal

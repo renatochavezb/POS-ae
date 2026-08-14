@@ -3,9 +3,16 @@ import connectMongo from "@/libs/mongoose";
 import PosReceptionist from "@/models/PosReceptionist";
 import PosStaff from "@/models/PosStaff";
 import PosAccountant from "@/models/PosAccountant";
+import PosMarketingAgency from "@/models/PosMarketingAgency";
 import PosLoginAudit from "@/models/PosLoginAudit";
 import { recordAccountantActivity } from "@/libs/posAccountantActivity";
-import { seedPosReceptionistsIfEmpty, seedPosStaffIfEmpty, seedPosAccountantIfEmpty, syncReceptionistLoginCodes } from "@/libs/posSeed";
+import {
+  seedPosReceptionistsIfEmpty,
+  seedPosStaffIfEmpty,
+  seedPosAccountantIfEmpty,
+  seedPosMarketingAgencyIfEmpty,
+  syncReceptionistLoginCodes,
+} from "@/libs/posSeed";
 import { syncStaffLoginCodes } from "@/libs/posStaffServices";
 import { getScheduleConfig } from "@/libs/posScheduleConfig";
 import { openCashSessionForReceptionist } from "@/libs/posCashRegister";
@@ -46,6 +53,7 @@ export async function POST(req) {
     await seedPosReceptionistsIfEmpty();
     await seedPosStaffIfEmpty();
     await seedPosAccountantIfEmpty();
+    await seedPosMarketingAgencyIfEmpty();
     await syncStaffLoginCodes();
     await syncReceptionistLoginCodes();
 
@@ -249,6 +257,48 @@ export async function POST(req) {
         role: "accountant",
         userId: accountant.accountantCode,
         userName: accountant.name,
+        isMaster,
+      });
+    }
+
+    if (role === "marketing") {
+      const agency = await PosMarketingAgency.findOne({
+        agencyCode: userId,
+        isActive: { $ne: false },
+      });
+
+      if (!agency) {
+        return NextResponse.json(
+          { error: "Agencia no encontrada" },
+          { status: 404 }
+        );
+      }
+
+      if (pin !== agency.loginCode && !isMaster) {
+        await logLoginAttempt({
+          role: "marketing",
+          userId,
+          userName: agency.name,
+          success: false,
+          isMaster: false,
+        });
+
+        return NextResponse.json({ error: "PIN incorrecto" }, { status: 401 });
+      }
+
+      await logLoginAttempt({
+        role: isMaster ? "master" : "marketing",
+        userId,
+        userName: agency.name,
+        success: true,
+        isMaster,
+      });
+
+      return NextResponse.json({
+        success: true,
+        role: "marketing",
+        userId: agency.agencyCode,
+        userName: agency.name,
         isMaster,
       });
     }

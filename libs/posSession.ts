@@ -1,4 +1,4 @@
-export type PosSessionRole = "reception" | "manicurista" | "accountant";
+export type PosSessionRole = "reception" | "manicurista" | "accountant" | "marketing";
 
 export type PosSession = {
   role: PosSessionRole;
@@ -6,6 +6,8 @@ export type PosSession = {
   receptionistId?: string;
   accountantId?: string;
   accountantName?: string;
+  agencyId?: string;
+  agencyName?: string;
   isMaster?: boolean;
 };
 
@@ -34,7 +36,12 @@ export function readPosSession(): PosSession | null {
     const raw = sessionStorage.getItem(POS_SESSION_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as PosSession;
-      if (parsed.role === "reception" || parsed.role === "manicurista" || parsed.role === "accountant") {
+      if (
+        parsed.role === "reception" ||
+        parsed.role === "manicurista" ||
+        parsed.role === "accountant" ||
+        parsed.role === "marketing"
+      ) {
         return parsed;
       }
     }
@@ -77,12 +84,19 @@ export function writePosSession(session: PosSession): void {
   } else {
     sessionStorage.removeItem("posAccountantId");
   }
+
+  if (session.role === "marketing" && session.agencyId) {
+    sessionStorage.setItem("posAgencyId", session.agencyId);
+  } else {
+    sessionStorage.removeItem("posAgencyId");
+  }
 }
 
 export function clearPosSession(): void {
   sessionStorage.removeItem(POS_SESSION_KEY);
   sessionStorage.removeItem("posReceptionistId");
   sessionStorage.removeItem("posAccountantId");
+  sessionStorage.removeItem("posAgencyId");
   sessionStorage.removeItem("posMasterSession");
 }
 
@@ -98,6 +112,20 @@ export function getActiveAccountantSession(): { id: string; name?: string } | nu
     name: session.accountantName,
   };
 }
+
+/** Agencia de mercadotecnia activa. */
+export function getActiveMarketingAgencySession(): { id: string; name?: string } | null {
+  const session = readPosSession();
+  if (!session || session.role !== "marketing" || !session.agencyId) {
+    return null;
+  }
+
+  return {
+    id: session.agencyId,
+    name: session.agencyName,
+  };
+}
+
 /** Recepcionista activa para registrar citas (null si entró como manicurista o contadora). */
 export function getActiveReceptionistSession(): {
   id: string;

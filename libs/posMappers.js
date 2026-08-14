@@ -584,6 +584,10 @@ export function mapWeeklySnapshotDoc(doc) {
       count: entry.count ?? 0,
       total: entry.total ?? 0,
     })),
+    servicesByCount: (raw.servicesByCount || []).map((entry) => ({
+      serviceName: entry.serviceName || "",
+      count: entry.count ?? 0,
+    })),
     computedAt: raw.computedAt ? new Date(raw.computedAt).toISOString() : "",
     updatedAt: raw.updatedAt ? new Date(raw.updatedAt).toISOString() : "",
   };

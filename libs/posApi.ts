@@ -19,6 +19,7 @@ import {
   Staff,
   StaffBlockedSlot,
   Accountant,
+  MarketingAgency,
   StaffSettlement,
   StaffSettlementAppointmentSnapshot,
   AccountantActivity,
@@ -172,17 +173,18 @@ const posApi = {
     receptionists: Receptionist[];
     staff: Staff[];
     accountants: Accountant[];
+    marketingAgencies: MarketingAgency[];
   }> {
     return posClient.get("/pos/login/bootstrap");
   },
   verifyLogin(data: {
-    role: "reception" | "manicurista" | "accountant" | "admin";
+    role: "reception" | "manicurista" | "accountant" | "marketing" | "admin";
     userId: string;
     pin: string;
     openingFloat?: number;
   }): Promise<{
     success: boolean;
-    role: "reception" | "manicurista" | "accountant";
+    role: "reception" | "manicurista" | "accountant" | "marketing";
     userId: string;
     userName: string;
     isMaster: boolean;
@@ -227,6 +229,14 @@ const posApi = {
       loginCode: string;
       isActive: boolean;
     }>;
+    marketingAgencies: Array<{
+      role: "marketing";
+      id: string;
+      name: string;
+      subtitle: string;
+      loginCode: string;
+      isActive: boolean;
+    }>;
     master: {
       role: "master";
       id: string;
@@ -241,7 +251,7 @@ const posApi = {
   updateLoginCodes(payload: {
     adminPin: string;
     updates: Array<{
-      role: "staff" | "reception" | "accountant" | "master";
+      role: "staff" | "reception" | "accountant" | "marketing" | "master";
       id: string;
       loginCode: string;
       name?: string;

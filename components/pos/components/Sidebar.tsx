@@ -37,6 +37,9 @@ interface SidebarProps {
   onOpenMasterPanel?: () => void;
   allowedTabIds?: string[];
   adminNavItems?: AdminNavItem[];
+  hideDashboardSubmenu?: boolean;
+  /** Si se define, limita el submenú del Dashboard a esas secciones. */
+  allowedDashboardSections?: DashboardSectionId[];
   activeDashboardSection?: DashboardSectionId | null;
   onDashboardSection?: (sectionId: DashboardSectionId) => void;
 }
@@ -50,6 +53,8 @@ export default function Sidebar({
   onOpenMasterPanel,
   allowedTabIds,
   adminNavItems = [],
+  hideDashboardSubmenu = false,
+  allowedDashboardSections,
   activeDashboardSection = null,
   onDashboardSection,
 }: SidebarProps) {
@@ -108,7 +113,14 @@ export default function Sidebar({
   ].filter((item) => !allowedTabIds || allowedTabIds.includes(item.id));
 
   const showDashboardSubmenu =
-    !allowedTabIds || allowedTabIds.includes('dashboard');
+    !hideDashboardSubmenu &&
+    (!allowedTabIds || allowedTabIds.includes('dashboard'));
+
+  const dashboardNavItems = allowedDashboardSections
+    ? DASHBOARD_NAV_ITEMS.filter((section) =>
+        allowedDashboardSections.includes(section.id)
+      )
+    : DASHBOARD_NAV_ITEMS;
 
   const AdminSectionIcon = ADMIN_SECTION_ICON;
   const adminSectionActive = isAdminTab(currentTab);
@@ -172,7 +184,7 @@ export default function Sidebar({
 
                   {dashboardExpanded ? (
                     <div className="mt-1 space-y-1 lg:ml-3 lg:pl-3 lg:border-l lg:border-primary/10">
-                      {DASHBOARD_NAV_ITEMS.map((section) => {
+                      {dashboardNavItems.map((section) => {
                         const SectionIcon = section.icon;
                         const sectionActive =
                           dashboardActive && activeDashboardSection === section.id;

@@ -62,8 +62,19 @@ function niceMax(value: number) {
   return step * pow;
 }
 
-export default function WeeklyHistoryTrendCard() {
-  const [metric, setMetric] = useState<MetricId>("bruta");
+type WeeklyHistoryTrendCardProps = {
+  /** Solo métrica de citas (sin ventas/comisión/propinas/neta). */
+  citasOnly?: boolean;
+};
+
+export default function WeeklyHistoryTrendCard({
+  citasOnly = false,
+}: WeeklyHistoryTrendCardProps) {
+  const visibleMetrics = useMemo(
+    () => (citasOnly ? METRICS.filter((item) => item.id === "citas") : METRICS),
+    [citasOnly]
+  );
+  const [metric, setMetric] = useState<MetricId>(citasOnly ? "citas" : "bruta");
   const [snapshots, setSnapshots] = useState<WeeklyStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +104,8 @@ export default function WeeklyHistoryTrendCard() {
     };
   }, []);
 
-  const activeMetric = METRICS.find((m) => m.id === metric) || METRICS[1];
+  const activeMetric =
+    visibleMetrics.find((m) => m.id === metric) || visibleMetrics[0] || METRICS[0];
 
   const series = useMemo(
     () =>
@@ -167,7 +179,9 @@ export default function WeeklyHistoryTrendCard() {
               Histórico semanal
             </h3>
             <p className="text-xs text-outline mt-1">
-              Tendencia semana a semana · {n} {n === 1 ? "semana" : "semanas"}
+              {citasOnly
+                ? `Citas finalizadas · tendencia semana a semana · ${n} ${n === 1 ? "semana" : "semanas"}`
+                : `Tendencia semana a semana · ${n} ${n === 1 ? "semana" : "semanas"}`}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -200,23 +214,24 @@ export default function WeeklyHistoryTrendCard() {
           </div>
         </div>
 
-        {/* Selector de métrica */}
-        <div className="flex flex-wrap gap-1.5">
-          {METRICS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setMetric(item.id)}
-              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                metric === item.id
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface text-outline border border-primary/10 hover:text-primary"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {!citasOnly ? (
+          <div className="flex flex-wrap gap-1.5">
+            {visibleMetrics.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setMetric(item.id)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                  metric === item.id
+                    ? "bg-primary text-on-primary"
+                    : "bg-surface text-outline border border-primary/10 hover:text-primary"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {/* Gráfica */}
         {error ? (
@@ -398,8 +413,9 @@ export default function WeeklyHistoryTrendCard() {
         )}
 
         <p className="text-[10px] text-outline">
-          Cada punto es una semana. Línea punteada = promedio del periodo. Toca o pasa el cursor
-          sobre un punto para ver el detalle. Venta neta = bruta − comisión − propinas.
+          {citasOnly
+            ? "Cada punto es una semana de citas finalizadas. Línea punteada = promedio del periodo. Toca o pasa el cursor sobre un punto para ver el detalle."
+            : "Cada punto es una semana. Línea punteada = promedio del periodo. Toca o pasa el cursor sobre un punto para ver el detalle. Venta neta = bruta − comisión − propinas."}
         </p>
       </div>
     </section>

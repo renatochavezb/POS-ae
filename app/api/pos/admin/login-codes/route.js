@@ -6,11 +6,12 @@ import { ACTIVE_STAFF_FILTER } from "@/libs/posStaffQuery";
 import PosStaff from "@/models/PosStaff";
 import PosReceptionist from "@/models/PosReceptionist";
 import PosAccountant from "@/models/PosAccountant";
+import PosMarketingAgency from "@/models/PosMarketingAgency";
 import PosScheduleConfig from "@/models/PosScheduleConfig";
 
 export const dynamic = "force-dynamic";
 
-const VALID_ROLES = new Set(["staff", "reception", "accountant", "master"]);
+const VALID_ROLES = new Set(["staff", "reception", "accountant", "marketing", "master"]);
 
 function isValidPin(value) {
   return /^\d{4}$/.test(String(value || "").trim());
@@ -49,6 +50,17 @@ function mapAccountantRow(doc) {
   };
 }
 
+function mapMarketingRow(doc) {
+  return {
+    role: "marketing",
+    id: doc.agencyCode,
+    name: doc.name,
+    subtitle: doc.role || "Mercadotecnia",
+    loginCode: String(doc.loginCode || "").trim(),
+    isActive: doc.isActive !== false,
+  };
+}
+
 export async function GET(req) {
   try {
     const authResult = await requirePosSession();
@@ -64,17 +76,20 @@ export async function GET(req) {
 
     await connectMongo();
 
-    const [staff, receptionists, accountants, schedule] = await Promise.all([
-      PosStaff.find(ACTIVE_STAFF_FILTER).sort({ name: 1 }),
-      PosReceptionist.find().sort({ name: 1 }),
-      PosAccountant.find({ isActive: { $ne: false } }).sort({ name: 1 }),
-      getScheduleConfig(),
-    ]);
+    const [staff, receptionists, accountants, marketingAgencies, schedule] =
+      await Promise.all([
+        PosStaff.find(ACTIVE_STAFF_FILTER).sort({ name: 1 }),
+        PosReceptionist.find().sort({ name: 1 }),
+        PosAccountant.find({ isActive: { $ne: false } }).sort({ name: 1 }),
+        PosMarketingAgency.find({ isActive: { $ne: false } }).sort({ name: 1 }),
+        getScheduleConfig(),
+      ]);
 
     return NextResponse.json({
       staff: staff.map(mapStaffRow),
       receptionists: receptionists.map(mapReceptionRow),
       accountants: accountants.map(mapAccountantRow),
+      marketingAgencies: marketingAgencies.map(mapMarketingRow),
       master: {
         role: "master",
         id: "MASTER",
@@ -199,6 +214,22 @@ export async function PATCH(req) {
         if (!updated) {
           return NextResponse.json(
             { error: `Contabilidad ${id} no encontrada` },
+            { status: 404 }
+          );
+        }
+        applied.push({ role, id, loginCode });
+        continue;
+      }
+
+      if (role === "marketing") {
+        const updated = await PosMarketingAgency.findOneAndUpdate(
+          { agencyCode: id },
+          { $set: { loginCode } },
+          { new: true }
+        );
+        if (!updated) {
+          return NextResponse.json(
+            { error: `Agencia ${id} no encontrada` },
             { status: 404 }
           );
         }

@@ -11,6 +11,8 @@ import { dashboardSectionDomId } from "../dashboardNav";
 type WeeklyWeekComparisonCardProps = {
   /** Semana inicial opcional; el card maneja su propia navegación. */
   initialWeekStart?: Date;
+  /** Solo métrica de citas (sin ventas/comisión/neta). */
+  citasOnly?: boolean;
 };
 
 type MetricId = "citas" | "bruta" | "comision" | "neta";
@@ -84,14 +86,21 @@ function dayNet(day?: WeeklyBreakdownDay | null) {
 
 function buildRows(
   current: WeeklyStats | null,
-  previous: WeeklyStats | null
+  previous: WeeklyStats | null,
+  preferCompletedDays = false
 ): DayCompareRow[] {
-  const currentDays = current?.salesByDay?.length
-    ? current.salesByDay
-    : current?.completedByDay || [];
-  const previousDays = previous?.salesByDay?.length
-    ? previous.salesByDay
-    : previous?.completedByDay || [];
+  const currentDays =
+    preferCompletedDays && current?.completedByDay?.length
+      ? current.completedByDay
+      : current?.salesByDay?.length
+        ? current.salesByDay
+        : current?.completedByDay || [];
+  const previousDays =
+    preferCompletedDays && previous?.completedByDay?.length
+      ? previous.completedByDay
+      : previous?.salesByDay?.length
+        ? previous.salesByDay
+        : previous?.completedByDay || [];
 
   const length = Math.max(currentDays.length, previousDays.length, 7);
 
@@ -164,11 +173,16 @@ function DualBars({
 
 export default function WeeklyWeekComparisonCard({
   initialWeekStart,
+  citasOnly = false,
 }: WeeklyWeekComparisonCardProps) {
+  const visibleMetrics = useMemo(
+    () => (citasOnly ? METRICS.filter((item) => item.id === "citas") : METRICS),
+    [citasOnly]
+  );
   const [weekStart, setWeekStart] = useState<Date>(
     () => initialWeekStart || getStudioWeekStart(new Date())
   );
-  const [metric, setMetric] = useState<MetricId>("bruta");
+  const [metric, setMetric] = useState<MetricId>(citasOnly ? "citas" : "bruta");
   const previousWeekStart = useMemo(() => addDays(weekStart, -7), [weekStart]);
   const viewingCurrentWeek = isCurrentWeek(weekStart);
   const {
@@ -183,7 +197,10 @@ export default function WeeklyWeekComparisonCard({
   } = useWeeklySnapshot(previousWeekStart);
 
   const isLoading = loadingCurrent || loadingPrevious;
-  const rows = useMemo(() => buildRows(current, previous), [current, previous]);
+  const rows = useMemo(
+    () => buildRows(current, previous, citasOnly),
+    [current, previous, citasOnly]
+  );
 
   const totals = useMemo(() => {
     if (current && previous) {
@@ -223,7 +240,8 @@ export default function WeeklyWeekComparisonCard({
     );
   }, [current, previous, rows]);
 
-  const activeMetric = METRICS.find((item) => item.id === metric) || METRICS[1];
+  const activeMetric =
+    visibleMetrics.find((item) => item.id === metric) || visibleMetrics[0] || METRICS[0];
 
   const dayMax = useMemo(() => {
     return Math.max(
@@ -246,7 +264,9 @@ export default function WeeklyWeekComparisonCard({
               Comparativo semanal
             </h3>
             <p className="text-xs text-outline mt-1">
-              Semana anterior frente a la semana seleccionada
+              {citasOnly
+                ? "Citas finalizadas · semana anterior frente a la seleccionada"
+                : "Semana anterior frente a la semana seleccionada"}
             </p>
           </div>
 
@@ -299,9 +319,13 @@ export default function WeeklyWeekComparisonCard({
           </div>
         </div>
 
-        {/* Totales: 4 columnas */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          {METRICS.map((item) => {
+        {/* Totales */}
+        <div
+          className={`grid grid-cols-1 gap-3 ${
+            citasOnly ? "sm:grid-cols-1 max-w-sm" : "sm:grid-cols-2 xl:grid-cols-4"
+          }`}
+        >
+          {visibleMetrics.map((item) => {
             const prev = totals[item.totalPrev];
             const act = totals[item.totalAct];
             const selected = metric === item.id;
@@ -364,26 +388,28 @@ export default function WeeklyWeekComparisonCard({
 
         {/* Día a día de la métrica seleccionada */}
         <div className="rounded-2xl border border-primary/8 bg-surface-container-low/20 overflow-hidden">
-          <div className="px-4 py-3 border-b border-primary/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="px-4 py-3 border-b border-primary/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <p className="text-xs font-bold text-primary">
               Por día · {activeMetric.label}
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {METRICS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setMetric(item.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    metric === item.id
-                      ? "bg-primary text-on-primary"
-                      : "bg-surface text-outline border border-primary/10 hover:text-primary"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            {!citasOnly ? (
+              <div className="flex flex-wrap gap-1.5">
+                {visibleMetrics.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setMetric(item.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      metric === item.id
+                        ? "bg-primary text-on-primary"
+                        : "bg-surface text-outline border border-primary/10 hover:text-primary"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="divide-y divide-primary/5">
@@ -464,8 +490,9 @@ export default function WeeklyWeekComparisonCard({
         </div>
 
         <p className="text-[10px] text-outline">
-          Barra gris = semana anterior · barra oscura = semana actual. Venta neta = bruta −
-          comisión − propinas.
+          {citasOnly
+            ? "Barra gris = semana anterior · barra oscura = semana actual. Solo citas finalizadas."
+            : "Barra gris = semana anterior · barra oscura = semana actual. Venta neta = bruta − comisión − propinas."}
         </p>
       </div>
     </section>

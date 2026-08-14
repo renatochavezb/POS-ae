@@ -3,10 +3,12 @@ import connectMongo from "@/libs/mongoose";
 import PosReceptionist from "@/models/PosReceptionist";
 import PosStaff from "@/models/PosStaff";
 import PosAccountant from "@/models/PosAccountant";
+import PosMarketingAgency from "@/models/PosMarketingAgency";
 import {
   seedPosReceptionistsIfEmpty,
   seedPosStaffIfEmpty,
   seedPosAccountantIfEmpty,
+  seedPosMarketingAgencyIfEmpty,
   syncReceptionistLoginCodes,
 } from "@/libs/posSeed";
 import {
@@ -56,26 +58,39 @@ function mapPublicAccountant(doc) {
   };
 }
 
+function mapPublicMarketingAgency(doc) {
+  const raw = doc.toObject ? doc.toObject() : doc;
+
+  return {
+    id: raw.agencyCode,
+    name: raw.name,
+    role: raw.role || "Mercadotecnia",
+  };
+}
+
 export async function GET() {
   try {
     await connectMongo();
     await seedPosReceptionistsIfEmpty();
     await seedPosStaffIfEmpty();
     await seedPosAccountantIfEmpty();
+    await seedPosMarketingAgencyIfEmpty();
     await syncStaffAllowedServices();
     await syncStaffLoginCodes();
     await syncReceptionistLoginCodes();
 
-    const [receptionists, staff, accountants] = await Promise.all([
+    const [receptionists, staff, accountants, marketingAgencies] = await Promise.all([
       PosReceptionist.find().sort({ name: 1 }),
       PosStaff.find(ACTIVE_STAFF_FILTER).sort({ name: 1 }),
       PosAccountant.find({ isActive: { $ne: false } }).sort({ name: 1 }),
+      PosMarketingAgency.find({ isActive: { $ne: false } }).sort({ name: 1 }),
     ]);
 
     return NextResponse.json({
       receptionists: receptionists.map(mapPublicReceptionist),
       staff: staff.map(mapPublicStaff),
       accountants: accountants.map(mapPublicAccountant),
+      marketingAgencies: marketingAgencies.map(mapPublicMarketingAgency),
     });
   } catch (error) {
     console.error("GET /api/pos/login/bootstrap", error);

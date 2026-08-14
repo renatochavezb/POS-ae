@@ -104,6 +104,14 @@ const RECEPTIONIST_TAB_IDS = [
   ...RECEPTIONIST_ADMIN_TAB_IDS,
 ];
 const ACCOUNTANT_TAB_IDS = ['staff', 'inventario', ...ACCOUNTANT_ADMIN_TAB_IDS];
+const MARKETING_TAB_IDS = ['dashboard'];
+const MARKETING_DASHBOARD_SECTIONS: DashboardSectionId[] = [
+  'citas-finalizadas',
+  'citas-semana',
+  'comparativo-semanal',
+  'historico-semanal',
+  'servicios-recurrentes',
+];
 /** Agenda por defecto: semana anterior + semana en curso (sáb–vie). */
 
 const isReceptionSupervisorRole = (role?: string) => /supervis/i.test(role || '');
@@ -241,6 +249,8 @@ export default function POSDashboard() {
   const [loggedInReceptionistId, setLoggedInReceptionistId] = useState<string | null>(null);
   const [loggedInAccountantId, setLoggedInAccountantId] = useState<string | null>(null);
   const [loggedInAccountantName, setLoggedInAccountantName] = useState<string | null>(null);
+  const [loggedInAgencyId, setLoggedInAgencyId] = useState<string | null>(null);
+  const [loggedInAgencyName, setLoggedInAgencyName] = useState<string | null>(null);
   const [loggedInStaffId, setLoggedInStaffId] = useState<string | null>(null);
   const [isMasterSession, setIsMasterSession] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>(INITIAL_APPOINTMENTS);
@@ -321,6 +331,12 @@ export default function POSDashboard() {
     setLoggedInAccountantName(
       session.role === 'accountant' ? (session.accountantName || null) : null
     );
+    setLoggedInAgencyId(
+      session.role === 'marketing' ? (session.agencyId || null) : null
+    );
+    setLoggedInAgencyName(
+      session.role === 'marketing' ? (session.agencyName || null) : null
+    );
     setIsMasterSession(Boolean(session.isMaster));
 
     if (session.role === 'manicurista' && session.staffId) {
@@ -337,6 +353,12 @@ export default function POSDashboard() {
       setCurrentTab('staff');
     }
 
+    if (session.role === 'marketing') {
+      setSelectedStaffId(null);
+      setSelectedClientId(null);
+      setCurrentTab('dashboard');
+    }
+
     if (session.role === 'reception') {
       const receptionist =
         INITIAL_RECEPTIONISTS.find((member) => member.id === session.receptionistId) || null;
@@ -349,16 +371,19 @@ export default function POSDashboard() {
   };
 
   const isAccountantSession = Boolean(loggedInAccountantId);
+  const isMarketingSession = Boolean(loggedInAgencyId);
   const isManicuristaProfile = Boolean(loggedInStaffId);
   const isManicuristaSession = isManicuristaProfile && !isMasterSession;
 
   const handleLocalLogin = (
-    role: 'reception' | 'manicurista' | 'accountant',
+    role: 'reception' | 'manicurista' | 'accountant' | 'marketing',
     staffId?: string,
     receptionistId?: string,
     isMaster?: boolean,
     accountantId?: string,
-    accountantName?: string
+    accountantName?: string,
+    agencyId?: string,
+    agencyName?: string
   ) => {
     const session: PosSession = {
       role,
@@ -366,7 +391,10 @@ export default function POSDashboard() {
       receptionistId: role === 'reception' ? receptionistId : undefined,
       accountantId: role === 'accountant' ? accountantId : undefined,
       accountantName: role === 'accountant' ? accountantName : undefined,
-      isMaster: Boolean(isMaster),
+      agencyId: role === 'marketing' ? agencyId : undefined,
+      agencyName: role === 'marketing' ? agencyName : undefined,
+      // Master PIN no eleva privilegios de la agencia
+      isMaster: role === 'marketing' ? false : Boolean(isMaster),
     };
 
     writePosSession(session);
@@ -394,6 +422,8 @@ export default function POSDashboard() {
     setLoggedInReceptionistId(null);
     setLoggedInAccountantId(null);
     setLoggedInAccountantName(null);
+    setLoggedInAgencyId(null);
+    setLoggedInAgencyName(null);
     setLoggedInStaffId(null);
     setIsMasterSession(false);
     setSelectedClientId(null);
@@ -451,7 +481,9 @@ export default function POSDashboard() {
     ? 'Supervisión'
     : 'Recepción';
 
-  const allowedTabIds = isAccountantSession
+  const allowedTabIds = isMarketingSession
+    ? MARKETING_TAB_IDS
+    : isAccountantSession
     ? ACCOUNTANT_TAB_IDS
     : isManicuristaSession
     ? MANICURISTA_TAB_IDS
@@ -462,11 +494,11 @@ export default function POSDashboard() {
   const adminNavItems = useMemo(
     () =>
       filterAdminNavByRole(ADMIN_NAV_ITEMS, {
-        isMaster: isMasterSession,
+        isMaster: isMasterSession && !isMarketingSession,
         isAccountant: isAccountantSession,
-        isReception: Boolean(loggedInReceptionistId) && !isAccountantSession,
+        isReception: Boolean(loggedInReceptionistId) && !isAccountantSession && !isMarketingSession,
       }),
-    [isMasterSession, isAccountantSession, loggedInReceptionistId]
+    [isMasterSession, isAccountantSession, isMarketingSession, loggedInReceptionistId]
   );
 
   const activeSession = isMasterSession && loggedInReceptionist
@@ -491,6 +523,17 @@ export default function POSDashboard() {
         name: loggedInAccountantName,
         subtitle: 'Contabilidad · Liquidaciones',
         initials: loggedInAccountantName
+          .split(' ')
+          .map((part) => part[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2),
+      }
+    : loggedInAgencyName
+    ? {
+        name: loggedInAgencyName,
+        subtitle: 'Mercadotecnia · Solo lectura',
+        initials: loggedInAgencyName
           .split(' ')
           .map((part) => part[0])
           .join('')
@@ -795,6 +838,15 @@ export default function POSDashboard() {
   }, [isAccountantSession, currentTab]);
 
   useEffect(() => {
+    if (!isMarketingSession) return;
+    if (!MARKETING_TAB_IDS.includes(currentTab)) {
+      setCurrentTab('dashboard');
+    }
+    setSelectedClientId(null);
+    setSelectedStaffId(null);
+  }, [isMarketingSession, currentTab]);
+
+  useEffect(() => {
     if (!isManicuristaSession || !loggedInStaffId) return;
     if (!MANICURISTA_TAB_IDS.includes(currentTab)) {
       setCurrentTab('agenda');
@@ -811,7 +863,7 @@ export default function POSDashboard() {
   }, [isPlainReceptionSession, currentTab]);
 
   useEffect(() => {
-    if (!isMasterSession || mobileLogoClicks < 3 || isAccountantSession) return;
+    if (!isMasterSession || mobileLogoClicks < 3 || isAccountantSession || isMarketingSession) return;
 
     setCurrentTab('master-log');
     setMobileLogoClicks(0);
@@ -1785,7 +1837,7 @@ export default function POSDashboard() {
             clients={clients}
             appointments={appointments}
             services={services}
-            canManageStatuses={isMasterSession}
+            canManageStatuses={isMasterSession && !isMarketingSession}
             onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
             onAdminRevertAppointmentStatus={
               isMasterSession ? handleAdminRevertAppointmentStatus : undefined
@@ -1812,6 +1864,7 @@ export default function POSDashboard() {
             scheduleConfig={scheduleConfig}
             onRefreshData={handleManualAgendaRefresh}
             isRefreshingData={isAgendaRefreshing}
+            hideKpis={isMarketingSession}
           />
         );
       case 'agenda':
@@ -1996,7 +2049,7 @@ export default function POSDashboard() {
           clients={clients}
           appointments={appointments}
           services={services}
-          canManageStatuses={isMasterSession}
+          canManageStatuses={isMasterSession && !isMarketingSession}
           onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
           onAdminRevertAppointmentStatus={
             isMasterSession ? handleAdminRevertAppointmentStatus : undefined
@@ -2021,6 +2074,7 @@ export default function POSDashboard() {
           scrollToSection={dashboardSection}
           scrollToken={dashboardScrollToken}
           scheduleConfig={scheduleConfig}
+          hideKpis={isMarketingSession}
         />;
     }
   };
@@ -2081,6 +2135,17 @@ export default function POSDashboard() {
           </p>
         </div>
       )}
+      {loggedInAgencyName && (
+        <div className="shrink-0 px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-center">
+          <p className="text-xs font-sans font-bold text-primary">
+            Sesión de mercadotecnia ·{' '}
+            <span className="text-violet-800 uppercase tracking-wider">{loggedInAgencyName}</span>
+            <span className="text-outline font-medium normal-case tracking-normal">
+              {' '}· Citas finalizadas y agenda (solo lectura)
+            </span>
+          </p>
+        </div>
+      )}
       {loggedInStaffMember && isManicuristaSession && (
         <div className="shrink-0 px-4 py-2 bg-sky-500/10 border-b border-sky-500/20 text-center">
           <p className="text-xs font-sans font-bold text-primary">
@@ -2097,6 +2162,7 @@ export default function POSDashboard() {
       <Sidebar 
         currentTab={currentTab} 
         setCurrentTab={(tab) => {
+          if (isMarketingSession && !MARKETING_TAB_IDS.includes(tab)) return;
           if (isAccountantSession && !ACCOUNTANT_TAB_IDS.includes(tab)) return;
           if (isManicuristaSession && !MANICURISTA_TAB_IDS.includes(tab)) return;
           if (isPlainReceptionSession && !RECEPTIONIST_TAB_IDS.includes(tab)) return;
@@ -2114,8 +2180,18 @@ export default function POSDashboard() {
         onOpenMasterPanel={() => setCurrentTab('master-log')}
         allowedTabIds={allowedTabIds}
         adminNavItems={adminNavItems}
+        hideDashboardSubmenu={false}
+        allowedDashboardSections={
+          isMarketingSession ? MARKETING_DASHBOARD_SECTIONS : undefined
+        }
         activeDashboardSection={dashboardSection}
         onDashboardSection={(sectionId) => {
+          if (
+            isMarketingSession &&
+            !MARKETING_DASHBOARD_SECTIONS.includes(sectionId)
+          ) {
+            return;
+          }
           if (isAccountantSession && !ACCOUNTANT_TAB_IDS.includes('dashboard')) return;
           if (isManicuristaSession && !MANICURISTA_TAB_IDS.includes('dashboard')) return;
           if (isPlainReceptionSession && !RECEPTIONIST_TAB_IDS.includes('dashboard')) return;
@@ -2155,6 +2231,11 @@ export default function POSDashboard() {
             {loggedInAccountantName && (
               <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
                 {loggedInAccountantName} · Contabilidad
+              </p>
+            )}
+            {loggedInAgencyName && (
+              <p className="text-[10px] text-secondary font-bold uppercase tracking-wider truncate mt-0.5">
+                {loggedInAgencyName} · Mercadotecnia
               </p>
             )}
             {loggedInStaffMember && isManicuristaSession && (
@@ -2275,6 +2356,12 @@ export default function POSDashboard() {
                 <div className="px-2">
                   <p className="text-xs font-bold text-primary uppercase">{loggedInAccountantName}</p>
                   <p className="text-[10px] text-outline">Contabilidad · Equipo y administración</p>
+                </div>
+              )}
+              {loggedInAgencyName && (
+                <div className="px-2">
+                  <p className="text-xs font-bold text-primary uppercase">{loggedInAgencyName}</p>
+                  <p className="text-[10px] text-outline">Mercadotecnia · Citas en solo lectura</p>
                 </div>
               )}
               <button
