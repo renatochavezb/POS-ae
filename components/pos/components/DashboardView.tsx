@@ -883,7 +883,7 @@ export default function DashboardView({
           id={dashboardSectionDomId('citas-finalizadas')}
           className="h-full min-h-0 scroll-mt-4"
         >
-          <WeeklyCompletedAppointmentsCard />
+          <WeeklyCompletedAppointmentsCard showProjection />
         </div>
 
         <div
